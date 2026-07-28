@@ -42,7 +42,7 @@ TRAIN_BEST_MODEL_SAVE_PATH = _ROOT / "weights" / "hitandrun_model_best.pth"
 TRAIN_BATCH_SIZE = 8  # GPU VRAM 상황에 맞게 조절 (예: 16, 32, 64 등)(기본값: 15)
 TRAIN_NUM_EPOCHS = 100
 TRAIN_SPLIT_RATIO = 0.8
-TRAIN_EARLY_STOPPING_PATIENCE = 15 # 학습 중 조기 종료를 위한 에포크 수(10에서 15로 상향)
+TRAIN_EARLY_STOPPING_PATIENCE = 15 # patience 값 변경 10 -> 15로 변경 (이정주)
 TRAIN_LEARNING_RATE = 0.00003  # S3D 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
 
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
@@ -50,12 +50,12 @@ PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_model_best.finally.pth"
 PREDICT_VIDEO_PATH = _ROOT / "data" / "real" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "real" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
-PREDICT_INFER_BATCH_SIZE = 16
+PREDICT_INFER_BATCH_SIZE = 8 # batch size 8로 바꾸었음(이정주)
 PREDICT_WINDOW_STRIDE = 15  # CPU 추론 기본: 15 (GPU면 1로 낮춰 정확도↑)
 
 # ---------- 실제영상 정확도 평가 전용 ----------
 EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_model_best.pth"
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 EVAL_NUM_SAMPLES = 10
-EVAL_INFER_BATCH_SIZE = 8
+EVAL_INFER_BATCH_SIZE = 8 # batch size 8로 바꾸었음(이정주)
 EVAL_WINDOW_STRIDE = 1  # 기본값: 1 (올리면 속도↑ 정확도 소폭↓)
