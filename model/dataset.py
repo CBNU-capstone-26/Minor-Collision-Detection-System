@@ -127,6 +127,15 @@ class HitAndRunDataset(Dataset):
         saturation = random.uniform(0.7, 1.3)   # 카메라별 채도 특성 차이
         hue = random.uniform(-0.1, 0.1)  # 카메라 화이트밸런스·조명 색온도 차이
 
+        # 날씨 증강: 전체 학습 클립 중 약 5%에만 적용 (장대비 2.5%, 함박눈 2.5%)
+        # 프레임마다 입자 위치를 조금씩 이동시켜 실제 날씨처럼 시간적 움직임을 만든다.
+        weather_rand = random.random()
+        weather_type = None
+        if weather_rand < 0.025:
+            weather_type = "rain"
+        elif weather_rand < 0.05:
+            weather_type = "snow"
+
         aug_frames = []
         for frame in frames:
             img = Image.fromarray(frame)
@@ -139,7 +148,83 @@ class HitAndRunDataset(Dataset):
                 img = TF.adjust_hue(img, hue)
             aug_frames.append(np.array(img))
 
+        if weather_type == "rain":
+            aug_frames = self._apply_rain(aug_frames)
+        elif weather_type == "snow":
+            aug_frames = self._apply_snow(aug_frames)
+
         return aug_frames
+
+    def _apply_rain(self, frames):
+        if not frames:
+            return frames
+
+        h, w = frames[0].shape[:2]
+        # 장대비 느낌을 위해 빗줄기 수·길이·두께를 키운다.
+        num_drops = max(25, (h * w) // 1600)
+        length = random.randint(18, 32)
+        speed = random.randint(8, 14)
+        slant = random.randint(-6, 6)
+        thickness = random.choice([1, 2, 2])
+        drops = [
+            [random.randint(0, w - 1), random.randint(-h, h - 1)]
+            for _ in range(num_drops)
+        ]
+
+        rainy_frames = []
+        for frame_idx, frame in enumerate(frames):
+            out = frame.copy()
+            overlay = out.copy()
+            for x, y in drops:
+                y_shifted = (y + frame_idx * speed) % (h + length) - length
+                x_shifted = int((x + frame_idx * slant) % w)
+                cv2.line(
+                    overlay,
+                    (x_shifted, int(y_shifted)),
+                    (int(np.clip(x_shifted + slant, 0, w - 1)),
+                     int(np.clip(y_shifted + length, 0, h - 1))),
+                    (200, 215, 230),
+                    thickness,
+                    cv2.LINE_AA,
+                )
+            out = cv2.addWeighted(overlay, 0.52, out, 0.48, 0)
+            out = cv2.convertScaleAbs(out, alpha=0.86, beta=-8)
+            rainy_frames.append(out)
+        return rainy_frames
+
+    def _apply_snow(self, frames):
+        if not frames:
+            return frames
+
+        h, w = frames[0].shape[:2]
+        # 함박눈 느낌을 위해 눈송이 수와 크기를 키운다.
+        num_flakes = max(20, (h * w) // 2000)
+        speed = random.uniform(1.5, 3.2)
+        wind = random.uniform(-1.4, 1.4)
+        flakes = [
+            [random.uniform(0, w - 1), random.uniform(-h, h - 1),
+             random.choice([2, 2, 3, 3, 4])]
+            for _ in range(num_flakes)
+        ]
+
+        snowy_frames = []
+        for frame_idx, frame in enumerate(frames):
+            out = frame.copy()
+            overlay = out.copy()
+            for x, y, radius in flakes:
+                y_shifted = (y + frame_idx * speed) % (h + radius) - radius
+                x_shifted = (x + frame_idx * wind) % w
+                cv2.circle(
+                    overlay,
+                    (int(x_shifted), int(y_shifted)),
+                    int(radius),
+                    (245, 245, 245),
+                    -1,
+                    cv2.LINE_AA,
+                )
+            out = cv2.addWeighted(overlay, 0.48, out, 0.52, 0)
+            snowy_frames.append(out)
+        return snowy_frames
 
     def _frames_to_tensor(self, frames):
         arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
