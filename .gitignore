@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+venv311/
+
+# Node / frontend build output
+node_modules/
+dist/
+dist-ssr/
+
+# Runtime uploads and generated media
+storage/
+data/train/*.mp4
+
+# Local notebooks and docs
+*.ipynb
+*.md
+
+# Local editor and OS files
+.vscode/
+.idea/
+.DS_Store
+*.local
+
