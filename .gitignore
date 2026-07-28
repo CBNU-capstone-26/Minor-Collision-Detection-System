@@ -21,11 +21,13 @@ dist-ssr/
 storage/
 data/train/*.mp4
 
-# Local notebooks
+# Local notebooks and docs
 hitandrun_colab.ipynb
+*.md
 
 # Local editor and OS files
 .vscode/
 .idea/
 .DS_Store
 *.local
+
