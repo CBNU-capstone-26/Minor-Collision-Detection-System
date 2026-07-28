@@ -35,8 +35,8 @@ function LoginPage({ onLogin }) {
           <div className="brand-badge">Parking Scratch Detection</div>
           <h1>주차 사고 이벤트 확인 시스템</h1>
           <p>
-            CCTV 영상에서 차량 접촉/스크래치 의심 이벤트를 감지하고
-            날짜별로 정리하여 확인할 수 있는 웹 UI입니다.
+            CCTV 영상에서 주차된 차량 접촉사고 의심 이벤트를 감지하고
+            날짜별로 정리하여 확인할 수 있는 웹서비스 시스템입니다.
           </p>
         </div>
       </div>
@@ -44,7 +44,6 @@ function LoginPage({ onLogin }) {
       <div className="login-right-panel">
         <div className="login-form-wrapper">
           <h2>로그인</h2>
-          <p className="login-subtitle">관리자 화면으로 접속합니다.</p>
 
           <div className="input-group">
             <input
@@ -143,19 +142,24 @@ function SignupPage() {
           <p className="login-subtitle">새 계정을 만듭니다.</p>
 
           <div className="input-group">
-            <input type="text" placeholder="아이디 *" value={form.username} onChange={update("username")} />
+            <input type="text" placeholder="이름 *" value={form.name} onChange={update("name")}
+              lang="ko" style={{ imeMode: "active" }} />
           </div>
           <div className="input-group">
-            <input type="text" placeholder="이름 *" value={form.name} onChange={update("name")} />
+            <input type="text" placeholder="아이디 *" value={form.username} onChange={update("username")}
+              lang="en" style={{ imeMode: "inactive" }} autoCapitalize="off" autoCorrect="off" />
           </div>
           <div className="input-group">
-            <input type="email" placeholder="이메일" value={form.email} onChange={update("email")} />
+            <input type="email" placeholder="이메일" value={form.email} onChange={update("email")}
+              lang="en" style={{ imeMode: "inactive" }} autoCapitalize="off" autoCorrect="off" />
           </div>
           <div className="input-group">
-            <input type="password" placeholder="비밀번호 *" value={form.password} onChange={update("password")} />
+            <input type="password" placeholder="비밀번호 *" value={form.password} onChange={update("password")}
+              lang="en" style={{ imeMode: "inactive" }} />
           </div>
           <div className="input-group">
-            <input type="password" placeholder="비밀번호 확인 *" value={form.passwordConfirm} onChange={update("passwordConfirm")} />
+            <input type="password" placeholder="비밀번호 확인 *" value={form.passwordConfirm} onChange={update("passwordConfirm")}
+              lang="en" style={{ imeMode: "inactive" }} />
           </div>
 
           {error && <p className="login-error-text">{error}</p>}
@@ -650,6 +654,41 @@ function Dashboard({ onLogout, view }) {
   // 업로드 모달
   const [showUpload, setShowUpload] = useState(false);
 
+  // 영상 삭제 모드
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState([]); // 선택된 영상 id 목록
+
+  const toggleDeleteSelect = (videoId) => {
+    setSelectedForDelete((prev) =>
+      prev.includes(videoId)
+        ? prev.filter((id) => id !== videoId)
+        : [...prev, videoId]
+    );
+  };
+
+  const exitDeleteMode = () => {
+    setDeleteMode(false);
+    setSelectedForDelete([]);
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedForDelete.length === 0) {
+      showToast("삭제할 영상을 선택해 주세요.", "warning");
+      return;
+    }
+    if (!window.confirm(`선택한 ${selectedForDelete.length}개 영상을 삭제하시겠습니까? 되돌릴 수 없습니다.`)) {
+      return;
+    }
+    try {
+      await Promise.all(selectedForDelete.map((id) => api.deleteVideo(id)));
+      showToast(`${selectedForDelete.length}개 영상을 삭제했습니다.`, "success");
+      exitDeleteMode();
+      await loadVideos();
+    } catch (e) {
+      showToast(`삭제 실패: ${e.message}`, "error");
+    }
+  };
+
   const showToast = (message, type = "warning") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 2600);
@@ -742,8 +781,17 @@ function Dashboard({ onLogout, view }) {
   const filteredVideos = useMemo(() => {
     const today = new Date();
     const startDate = formatDate(addDays(today, -filterDays));
-    if (filterDays >= 9999) return videos;
-    return videos.filter((video) => video.date >= startDate);
+    const list =
+      filterDays >= 9999
+        ? videos
+        : videos.filter((video) => video.date >= startDate);
+    // 녹화 일자 최신순 정렬 (같은 날짜는 시작시간 → id 순)
+    return [...list].sort((a, b) => {
+      if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
+      if ((a.startTime || "") !== (b.startTime || ""))
+        return (b.startTime || "").localeCompare(a.startTime || "");
+      return b.id - a.id;
+    });
   }, [filterDays, videos]);
 
   const videosByDate = useMemo(() => {
@@ -1134,7 +1182,7 @@ function Dashboard({ onLogout, view }) {
         />
       ) : !selectedVideo ? (
         <main className="home-view">
-          {/* 기간 필터 + 업로드 버튼 */}
+          {/* 기간 필터 + 업로드/삭제 버튼 */}
           <div className="home-toolbar">
             <div className="filter-pills">
               <button className={filterDays === 7 ? "active" : ""} onClick={() => setFilterDays(7)}>1주일</button>
@@ -1143,9 +1191,28 @@ function Dashboard({ onLogout, view }) {
               <button className={filterDays === 90 ? "active" : ""} onClick={() => setFilterDays(90)}>3개월</button>
               <button className={filterDays === 9999 ? "active" : ""} onClick={() => setFilterDays(9999)}>전체</button>
             </div>
-            <button className="upload-open-btn" onClick={() => setShowUpload(true)}>
-              ⬆ 영상 업로드
-            </button>
+
+            <div className="home-toolbar-actions">
+              {deleteMode ? (
+                <>
+                  <button className="delete-cancel-btn" onClick={exitDeleteMode}>
+                    취소
+                  </button>
+                  <button className="delete-confirm-btn" onClick={handleDeleteSelected}>
+                    🗑 선택 삭제 ({selectedForDelete.length})
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="upload-open-btn" onClick={() => setShowUpload(true)}>
+                    ⬆ 영상 업로드
+                  </button>
+                  <button className="delete-open-btn" onClick={() => setDeleteMode(true)}>
+                    🗑 영상 삭제
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* 영상 썸네일 그리드 */}
@@ -1153,18 +1220,39 @@ function Dashboard({ onLogout, view }) {
             {filteredVideos.length === 0 ? (
               <div className="empty-state">선택한 기간에 해당하는 영상이 없습니다.</div>
             ) : (
-              filteredVideos.map((video) => (
-                <div key={video.id} className="video-card" onClick={() => handleWatchVideo(video)}>
+              filteredVideos.map((video) => {
+                const isSelected = selectedForDelete.includes(video.id);
+                return (
+                <div
+                  key={video.id}
+                  className={`video-card ${deleteMode ? "delete-mode" : ""} ${isSelected ? "delete-selected" : ""}`}
+                  onClick={() =>
+                    deleteMode ? toggleDeleteSelect(video.id) : handleWatchVideo(video)
+                  }
+                >
                   <div className="video-thumbnail">
-                    {/* 썸네일 이미지 자리 */}
+                    {/* 영상 첫 프레임 썸네일 */}
+                    <img
+                      className="video-thumbnail-img"
+                      src={api.thumbnailUrl(video.id)}
+                      alt={`${video.date} ${video.camera} 썸네일`}
+                      loading="lazy"
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    />
                     <span className="event-count-badge">이벤트 {video.events.length}건</span>
+                    {deleteMode && (
+                      <span className={`delete-check ${isSelected ? "checked" : ""}`}>
+                        {isSelected ? "✓" : ""}
+                      </span>
+                    )}
                   </div>
                   <div className="video-info">
                     <h3>{video.date} {video.camera} 녹화본</h3>
                     <p>영상 길이: {formatTime(video.duration)}</p>
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         </main>
@@ -1903,6 +1991,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
           <input
             type="date"
             value={recordingDate}
+            max={formatDate(new Date())}
             onChange={(e) => setRecordingDate(e.target.value)}
           />
         </div>

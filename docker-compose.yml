@@ -10,6 +10,8 @@ services:
     # (컨테이너를 삭제·재생성해도 mysql_data 볼륨에 데이터가 유지됨)
     volumes:
       - mysql_data:/var/lib/mysql
+    # Docker(데몬/Desktop) 시작 시 자동 기동 — 재부팅 후에도 수동 실행 불필요
+    restart: unless-stopped
 
   redis:
     image: redis:alpine
@@ -19,6 +21,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    restart: unless-stopped
 
 volumes:
   mysql_data:

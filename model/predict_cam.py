@@ -21,9 +21,10 @@ def get_activation(name):
 
 
 def _frames_to_video_tensor(frames):
-    mean = torch.tensor([0.485, 0.456, 0.406],
+    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(S3D Kinetics-400)
+    mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225],
+    std = torch.tensor(config.NORM_STD,
                        dtype=torch.float32).view(3, 1, 1, 1)
     arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
     tensor = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()

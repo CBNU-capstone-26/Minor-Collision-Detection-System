@@ -26,6 +26,7 @@ def _get_model():
     from hitandrun_model import HitAndRun3DCNN
     from device_utils import get_device, is_channels_last_3d_supported
 
+    # 추론 디바이스(config.INFER_DEVICE_TYPE) 사용 — 서비스 워커는 기본 CPU
     device = get_device(model_config.INFER_DEVICE_TYPE)
     model = HitAndRun3DCNN(num_classes=model_config.MODEL_NUM_CLASSES).to(device)
     if is_channels_last_3d_supported(device) and model_config.USE_CHANNELS_LAST:

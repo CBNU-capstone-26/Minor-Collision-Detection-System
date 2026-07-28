@@ -16,6 +16,7 @@ class Settings:
     STORAGE_DIR: Path = BASE_DIR / "storage"
     UPLOAD_DIR: Path = STORAGE_DIR / "uploads"
     CLIP_DIR: Path = STORAGE_DIR / "clips"
+    THUMBNAIL_DIR: Path = STORAGE_DIR / "thumbnails"
 
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
@@ -40,3 +41,4 @@ settings = Settings()
 # 저장소 폴더 보장
 settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 settings.CLIP_DIR.mkdir(parents=True, exist_ok=True)
+settings.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)

@@ -17,15 +17,19 @@ class HitAndRunDataset(Dataset):
         clip_length=config.CLIP_LENGTH,
         r_value=config.R_VALUE,
         resize=config.RESIZE,
+        augment=True,
     ):
         self.data_dir = data_dir
         self.clip_length = clip_length
         self.r_value = r_value
         self.resize = resize
+        # augment=True → 학습용(랜덤 증강 적용), False → 검증용(증강 없음, 결정적)
+        self.augment = augment
+        # 정규화 통계는 사전학습(S3D Kinetics-400)과 동일하게 config에서 일괄 관리
         self.mean = torch.tensor(
-            [0.485, 0.456, 0.406], dtype=torch.float32).view(3, 1, 1, 1)
-        self.std = torch.tensor([0.229, 0.224, 0.225],
-                                dtype=torch.float32).view(3, 1, 1, 1)
+            config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
+        self.std = torch.tensor(
+            config.NORM_STD, dtype=torch.float32).view(3, 1, 1, 1)
 
         self.file_names = sorted(f.rsplit('.', 1)[0] for f in os.listdir(
             data_dir) if f.endswith('.mp4'))
@@ -115,8 +119,8 @@ class HitAndRunDataset(Dataset):
 
     def _apply_augmentation(self, frames):
         # 실제 주차장 CCTV 환경 대응 데이터 증강
-        # 조명 환경·날씨·카메라 색감 차이로 인한 도메인 갭을 줄이기 위해
-        # 색상 계열 증강을 중심으로 구성. 모든 프레임에 동일한 변환 적용 (시간적 일관성 유지)
+        # 변환 파라미터는 클립당 1회 샘플링해 모든 프레임에 동일 적용 (시간적 일관성 유지)
+        # ※ 센서 노이즈만 프레임별로 새로 샘플링 (실제 노이즈는 프레임마다 다름)
 
         do_hflip = random.random() > 0.5
 
@@ -126,6 +130,13 @@ class HitAndRunDataset(Dataset):
         contrast = random.uniform(0.7, 1.3)   # 저대비(흐린 날) ~ 고대비(직사광)
         saturation = random.uniform(0.7, 1.3)   # 카메라별 채도 특성 차이
         hue = random.uniform(-0.1, 0.1)  # 카메라 화이트밸런스·조명 색온도 차이
+
+        # 야간 적외선(IR) CCTV: 사실상 무채색 영상 → 색 없이도 동작 판별하도록 학습
+        do_gray = random.random() < 0.15
+        # 저화질 CCTV: 초점 흐림/압축 열화(블러), 센서 노이즈(야간 게인↑) 시뮬레이션
+        do_blur = random.random() < 0.2
+        do_noise = random.random() < 0.2
+        noise_sigma = random.uniform(2.0, 8.0)
 
         aug_frames = []
         for frame in frames:
@@ -137,7 +148,16 @@ class HitAndRunDataset(Dataset):
                 img = TF.adjust_contrast(img, contrast)
                 img = TF.adjust_saturation(img, saturation)
                 img = TF.adjust_hue(img, hue)
-            aug_frames.append(np.array(img))
+            if do_gray:
+                img = TF.rgb_to_grayscale(img, num_output_channels=3)
+            if do_blur:
+                img = TF.gaussian_blur(img, kernel_size=3)
+            arr = np.array(img)
+            if do_noise:
+                noise = np.random.normal(0.0, noise_sigma, arr.shape)
+                arr = np.clip(arr.astype(np.float32) + noise,
+                              0, 255).astype(np.uint8)
+            aug_frames.append(arr)
 
         return aug_frames
 
@@ -148,9 +168,28 @@ class HitAndRunDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
+        start_f = sample['start_f']
+        bbox = sample['bbox']
+
+        if self.augment:
+            # ① 시간 오프셋 지터: 학습 클립이 항상 '충돌 시작 = 윈도 첫 프레임'이면
+            #    추론(슬라이딩 윈도)에서 충돌이 윈도 중간에 걸릴 때 분포가 어긋난다.
+            #    시작점을 0~10프레임 앞으로 당겨 충돌 위치를 윈도 내에서 다양화.
+            start_f = max(0, start_f - random.randint(0, 10))
+            # ② bbox 지터: 서비스에서는 사용자가 마우스로 대충 박스를 그린다.
+            #    GT 좌표 그대로만 학습하면 손그림 박스와 분포가 어긋나므로
+            #    중심 이동(±5%)·크기 배율(0.9~1.15)로 부정확한 박스를 시뮬레이션.
+            x1, y1, x2, y2 = bbox
+            bw, bh = x2 - x1, y2 - y1
+            cx = (x1 + x2) // 2 + int(bw * random.uniform(-0.05, 0.05))
+            cy = (y1 + y2) // 2 + int(bh * random.uniform(-0.05, 0.05))
+            s = random.uniform(0.9, 1.15)
+            hw, hh = int(bw * s / 2), int(bh * s / 2)
+            bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
+
         cap = cv2.VideoCapture(sample['mp4_path'])
         frames = []
-        cap.set(cv2.CAP_PROP_POS_FRAMES, sample['start_f'])
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_f)
 
         for _ in range(self.clip_length):
             ret, frame = cap.read()
@@ -158,13 +197,15 @@ class HitAndRunDataset(Dataset):
                 break
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frames.append(self._crop_and_pad(
-                frame, sample['bbox'], self.r_value))
+                frame, bbox, self.r_value))
         cap.release()
 
         while len(frames) < self.clip_length:
             frames.append(
                 frames[-1] if frames else np.zeros((self.resize[1], self.resize[0], 3), dtype=np.uint8))
 
-        frames = self._apply_augmentation(frames)
+        # 증강은 학습 세트에만 적용 (검증 세트는 결정적이어야 val loss가 안정됨)
+        if self.augment:
+            frames = self._apply_augmentation(frames)
 
         return self._frames_to_tensor(frames), torch.tensor(sample['label'], dtype=torch.long)

@@ -1,0 +1,59 @@
+# ================================================================
+# requirements.txt — Hit-and-Run 3D-CNN 프로젝트
+# ================================================================
+#
+# 권장 Python 버전: 3.11.x
+#   - PyTorch ROCm/CUDA 빌드, numpy 2.x 모두와 안정적으로 호환
+#   - 3.12: 일부 패키지 빌드 오류 가능성 있어 미권장
+#   - 3.10: 사용 가능하나 EOL(2026-10) 예정으로 미권장
+#
+# 권장 ROCm 버전: 6.2 (현재 설정 — AMD RX 9070 XT / gfx1201)
+#   - gfx1201 (RDNA 4) 은 ROCm 6.2+ 에서 공식 지원
+#   - Linux 또는 WSL2 환경 필수 (ROCm은 Windows 미지원)
+#
+# 권장 CUDA 버전: 12.1 (향후 NVIDIA GPU 전환 시)
+#   - PyTorch 2.4.x 공식 지원 버전 중 가장 안정적
+#   - RTX 20/30/40 시리즈 및 Quadro/Data Center GPU 모두 호환
+#
+# ================================================================
+# [환경별 설치 방법]
+#
+# ① AMD GPU — Linux/WSL2 ROCm (현재 설정)
+#   pip install torch torchvision \
+#       --index-url https://download.pytorch.org/whl/rocm6.2
+#   pip install -r requirements.txt
+#
+# ② NVIDIA GPU — CUDA 12.1 (향후 전환 시)
+#   pip install torch torchvision \
+#       --index-url https://download.pytorch.org/whl/cu121
+#   pip install -r requirements.txt
+#
+# ③ CPU only
+#   pip install -r requirements.txt
+#
+# ※ torch / torchvision 은 위 명령어로 먼저 설치하세요.
+#    아래에 명시된 버전은 CPU 기본값이며,
+#    ①② 의 경우 이미 설치된 빌드가 우선 적용됩니다.
+# ================================================================
+
+# ------ Core Deep Learning ------
+# ROCm/CUDA 빌드는 위 설치 방법의 --index-url 로 먼저 설치
+# 아래는 CPU 기본값 (ROCm/CUDA 빌드가 없을 때 폴백용)
+torch==2.4.1
+torchvision==0.19.1
+
+# ------ 영상·이미지 처리 ------
+# 4.9 ~ 4.x: VideoCapture, VideoWriter, BGR↔RGB 변환, CAM 히트맵 등
+# 5.0은 API 변경 가능성 있어 상한 설정
+opencv-python>=4.9.0,<5.0
+
+# torchvision.transforms.functional (PIL Image 기반 데이터 증강)
+# 10.x: LANCZOS 상수 변경 등 Pillow 내부 API 정리 완료, 안정적
+Pillow>=10.3.0,<12.0
+
+# ------ 수치 연산 ------
+# torch 2.4.x는 numpy 1.x / 2.x 모두 지원
+numpy>=1.26.4,<3.0
+
+# ------ 학습 진행 표시 ------
+tqdm>=4.66.0

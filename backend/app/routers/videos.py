@@ -132,6 +132,38 @@ def get_video(
     return to_video_out(_get_owned_video(video_id, db, user))
 
 
+@router.delete("/{video_id}")
+def delete_video(
+    video_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    """영상 삭제 — 관련 파일(원본·썸네일·CAM 클립)과 DB(이벤트·태스크·영상) 모두 제거."""
+    video = _get_owned_video(video_id, db, user)
+
+    # 1) 관련 CAM 클립 파일 삭제 + crash_events 행 삭제
+    events = db.query(db_models.CrashEvent).filter(
+        db_models.CrashEvent.video_id == video_id).all()
+    for ev in events:
+        if ev.cam_heatmap_path:
+            settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+        db.delete(ev)
+
+    # 2) analysis_tasks 행 삭제
+    for task in db.query(db_models.AnalysisTask).filter(
+            db_models.AnalysisTask.video_id == video_id).all():
+        db.delete(task)
+
+    # 3) 원본 영상 + 썸네일 파일 삭제
+    settings.abs_path(video.video_path).unlink(missing_ok=True)
+    (settings.THUMBNAIL_DIR / f"{Path(video.video_path).stem}.jpg").unlink(missing_ok=True)
+
+    # 4) 영상 행 삭제
+    db.delete(video)
+    db.commit()
+    return {"deleted": video_id}
+
+
 @router.get("/{video_id}/stream")
 def stream_video(video_id: int, db: Session = Depends(get_db)):
     # <video src> 태그는 커스텀 헤더를 못 보내므로 인증 미적용 (MVP)
@@ -143,3 +175,26 @@ def stream_video(video_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
     # FileResponse는 HTTP Range 요청(영상 탐색)을 지원한다.
     return FileResponse(str(path), media_type="video/mp4")
+
+
+@router.get("/{video_id}/thumbnail")
+def video_thumbnail(video_id: int, db: Session = Depends(get_db)):
+    # <img src> 태그용 — 인증 미적용 (MVP). 영상 첫 프레임을 jpg로 캐시 생성.
+    video = db.get(db_models.Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+
+    thumb = settings.THUMBNAIL_DIR / f"{Path(video.video_path).stem}.jpg"
+    if not thumb.exists():
+        src = settings.abs_path(video.video_path)
+        if not src.exists():
+            raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
+        import cv2  # 지연 임포트
+        cap = cv2.VideoCapture(str(src))
+        ok, frame = cap.read()  # 첫 프레임 (BGR)
+        cap.release()
+        if not ok:
+            raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
+        cv2.imwrite(str(thumb), frame)
+
+    return FileResponse(str(thumb), media_type="image/jpeg")
