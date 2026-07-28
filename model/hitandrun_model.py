@@ -34,7 +34,7 @@ class HitAndRun3DCNN(nn.Module):
         self.features = base.features
 
         self.avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
-        self.dropout = nn.Dropout(p=0.4)
+        self.dropout = nn.Dropout(p=0.2) #dropout 값 0.4 -> 0.2로 변경 (이정주)
         # 분류 헤드는 logit을 출력하므로 BN/ReLU 없이 Conv3d 단독 (CAM 가중치로도 사용)
         self.head_conv = nn.Conv3d(1024, num_classes, kernel_size=1)
 
