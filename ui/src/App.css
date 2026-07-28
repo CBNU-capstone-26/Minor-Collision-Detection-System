@@ -79,6 +79,9 @@ button {
   margin: 0;
   color: #1f2937;
   font-weight: 700;
+  /* 폼(입력칸 등)은 그대로 두고 '로그인' 글자만 위로 띄움 */
+  position: relative;
+  top: -48px;
 }
 
 .login-subtitle {
@@ -517,6 +520,14 @@ button {
   position: relative;
   overflow: hidden;
   margin-bottom: 12px;
+}
+.video-thumbnail-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .event-count-badge {
@@ -3116,6 +3127,63 @@ body.dark-mode .bbox-copy-btn {
   cursor: pointer;
 }
 .upload-open-btn:hover { background: #1d4ed8; }
+
+/* 업로드/삭제 버튼 그룹 (오른쪽) */
+.home-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.delete-open-btn,
+.delete-cancel-btn,
+.delete-confirm-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.delete-open-btn,
+.delete-cancel-btn {
+  background: #fff;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+.delete-open-btn:hover,
+.delete-cancel-btn:hover { background: #f1f5f9; }
+.delete-confirm-btn {
+  background: #dc2626;
+  color: #fff;
+  border-color: #dc2626;
+}
+.delete-confirm-btn:hover { background: #b91c1c; }
+
+/* 삭제 모드 카드 */
+.video-card.delete-mode { cursor: pointer; }
+.video-card.delete-mode:hover { outline: 2px dashed #f87171; outline-offset: 2px; }
+.video-card.delete-selected {
+  outline: 3px solid #dc2626 !important;
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+/* 선택 체크 표시 (썸네일 좌상단) */
+.delete-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  font-weight: 900;
+  font-size: 15px;
+}
+.delete-check.checked { background: #dc2626; border-color: #fff; }
 
 /* 사고 차량 지정 + 사고감지 실행 버튼을 나란히 묶는 그룹 */
 .watch-header-actions {

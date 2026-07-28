@@ -93,6 +93,8 @@ export const api = {
     return request("/videos", { method: "POST", body: form, isForm: true });
   },
   streamUrl: (id) => `/api/videos/${id}/stream`,
+  thumbnailUrl: (id) => `/api/videos/${id}/thumbnail`,
+  deleteVideo: (id) => request(`/videos/${id}`, { method: "DELETE" }),
 
   // ---------- 분석 ----------
   analyze: (videoId, bbox) =>
