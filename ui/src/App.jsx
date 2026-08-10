@@ -641,6 +641,12 @@ function Dashboard({ onLogout, view }) {
   const videoElRef = useRef(null); // 실제 <video> 엘리먼트 (원본 해상도 환산용)
   const [showBBoxPanel, setShowBBoxPanel] = useState(false);
 
+  // YOLO 차량 자동 탐지 및 마우스 Hover 관련 상태
+  const [isDetectingVehicles, setIsDetectingVehicles] = useState(false);
+  const [detectedBoxes, setDetectedBoxes] = useState([]); // [{ id, class_name, confidence, bbox: [x1,y1,x2,y2] }]
+  const [hoveredDetectedBox, setHoveredDetectedBox] = useState(null);
+
+
   // 사고감지 실행 / 분석 관련 상태
   const [showDetectConfirm, setShowDetectConfirm] = useState(false); // 확인 팝오버
   const [toast, setToast] = useState(null); // { type, message }
@@ -762,6 +768,17 @@ function Dashboard({ onLogout, view }) {
         setIsBBoxMode(false);
         setShowDetectConfirm(false);
         setCurrentTime(0);
+        if (v.detected_vehicles) {
+          try {
+            setDetectedBoxes(JSON.parse(v.detected_vehicles));
+          } catch {
+            setDetectedBoxes([]);
+          }
+        } else {
+          setDetectedBoxes([]);
+        }
+        setHoveredDetectedBox(null);
+
         if (v.date) {
           setCalendarMonth(new Date(`${v.date}T00:00:00`));
           setSelectedCalendarDate(v.date);
@@ -830,6 +847,34 @@ function Dashboard({ onLogout, view }) {
   const handleBackToHome = () => {
     navigate("/videos");
   };
+
+  // YOLO 차량 탐지 실행 (영상 pause → 백엔드 탐지 → Hover 선택 활성화)
+  const handleAutoDetectVehicles = async () => {
+    if (!selectedVideo) return;
+    if (videoElRef.current) {
+      videoElRef.current.pause();
+      setIsPlaying(false);
+    }
+    setIsDetectingVehicles(true);
+    showToast("YOLO 모델로 차량을 탐지 중입니다...", "info");
+    try {
+      const res = await api.detectVehicles(selectedVideo.id, currentTime);
+      const list = res.detected_vehicles || [];
+      setDetectedBoxes(list);
+      setIsBBoxMode(true);
+      setShowBBoxPanel(true);
+      if (list.length === 0) {
+        showToast("탐지된 차량이 없습니다. 직접 드래그하여 차량을 지정해 주세요.", "warning");
+      } else {
+        showToast(`${list.length}대의 차량이 탐지되었습니다! 마우스를 올리면 박스가 미리보기로 표시되며 클릭하여 선택할 수 있습니다.`, "success");
+      }
+    } catch (err) {
+      showToast(`차량 탐지 실패: ${err.message}`, "error");
+    } finally {
+      setIsDetectingVehicles(false);
+    }
+  };
+
 
   // '사고감지 실행' 클릭 → bbox 없으면 경고, 있으면 확인 팝오버
   const handleDetectClick = () => {
@@ -1265,17 +1310,26 @@ function Dashboard({ onLogout, view }) {
 
             {/* 영상(player) 컬럼에 맞춰 정렬되는 오른쪽 영역 */}
             <div className="watch-header-right">
-            {/* 사고 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
+            {/* 탐지하기 + 사고 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
             <div className="watch-header-actions">
+            <button
+              className={`auto-detect-btn ${isDetectingVehicles ? "detecting" : ""}`}
+              disabled={isAnalyzing || isDetectingVehicles}
+              onClick={handleAutoDetectVehicles}
+              title="YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지합니다"
+            >
+              {isDetectingVehicles ? "차량 탐지 중..." : "🔍 탐지하기"}
+            </button>
+
             <button
               className={`bbox-designate-btn ${isBBoxMode ? "active" : ""}`}
               disabled={isAnalyzing}
               onClick={() => {
                 setIsBBoxMode((prev) => {
                   if (prev) {
-                    // 모드 해제 시 진행 중인 드래그 초기화
                     setCurrentDraw(null);
                     setIsDrawing(false);
+                    setHoveredDetectedBox(null);
                   } else {
                     setShowBBoxPanel(true);
                   }
@@ -1284,8 +1338,9 @@ function Dashboard({ onLogout, view }) {
               }}
               title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (isBBoxMode ? "바운딩박스 모드 종료" : "사고 차량 바운딩박스 지정 모드 시작")}
             >
-              {isBBoxMode ? "지정 모드 종료" : "사고 차량 지정하기"}
+              {isBBoxMode ? "지정 모드 종료" : "수동 차량 지정"}
             </button>
+
 
             {/* 사고감지 실행 버튼 + 확인 팝오버 */}
             <div className="detect-btn-wrapper">
@@ -1478,6 +1533,25 @@ function Dashboard({ onLogout, view }) {
                   style={{ position: "relative", userSelect: "none" }}
                   onMouseDown={(e) => {
                     if (!isBBoxMode) return;
+                    if (hoveredDetectedBox && bboxOverlayRef.current && videoElRef.current) {
+                      const rect = bboxOverlayRef.current.getBoundingClientRect();
+                      const displayWidth = rect.width;
+                      const displayHeight = rect.height;
+                      const videoWidth = selectedVideo?.width || videoElRef.current.videoWidth || displayWidth;
+                      const videoHeight = selectedVideo?.height || videoElRef.current.videoHeight || displayHeight;
+                      const scaleX = displayWidth / videoWidth;
+                      const scaleY = displayHeight / videoHeight;
+
+                      const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
+                      const dispX1 = Math.round(x1 * scaleX);
+                      const dispY1 = Math.round(y1 * scaleY);
+                      const dispX2 = Math.round(x2 * scaleX);
+                      const dispY2 = Math.round(y2 * scaleY);
+
+                      setBboxList([{ id: Date.now(), xmin: dispX1, ymin: dispY1, xmax: dispX2, ymax: dispY2 }]);
+                      showToast(`${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
+                      return;
+                    }
                     const rect = bboxOverlayRef.current.getBoundingClientRect();
                     const x = Math.round(e.clientX - rect.left);
                     const y = Math.round(e.clientY - rect.top);
@@ -1485,11 +1559,40 @@ function Dashboard({ onLogout, view }) {
                     setCurrentDraw({ startX: x, startY: y, endX: x, endY: y });
                   }}
                   onMouseMove={(e) => {
-                    if (!isBBoxMode || !isDrawing) return;
+                    if (!isBBoxMode) return;
                     const rect = bboxOverlayRef.current.getBoundingClientRect();
                     const x = Math.round(e.clientX - rect.left);
                     const y = Math.round(e.clientY - rect.top);
-                    setCurrentDraw((prev) => prev ? { ...prev, endX: x, endY: y } : null);
+
+                    if (isDrawing) {
+                      setCurrentDraw((prev) => (prev ? { ...prev, endX: x, endY: y } : null));
+                      return;
+                    }
+
+                    if (detectedBoxes.length > 0 && videoElRef.current) {
+                      const displayWidth = rect.width;
+                      const displayHeight = rect.height;
+                      const videoWidth = selectedVideo?.width || videoElRef.current.videoWidth || displayWidth;
+                      const videoHeight = selectedVideo?.height || videoElRef.current.videoHeight || displayHeight;
+
+                      const mouseXInDisplay = e.clientX - rect.left;
+                      const mouseYInDisplay = e.clientY - rect.top;
+
+                      const scaleX = videoWidth / displayWidth;
+                      const scaleY = videoHeight / displayHeight;
+
+                      const realX = mouseXInDisplay * scaleX;
+                      const realY = mouseYInDisplay * scaleY;
+
+                      const hit = detectedBoxes.find((box) => {
+                        const [x1, y1, x2, y2] = box.bbox;
+                        return realX >= x1 && realX <= x2 && realY >= y1 && realY <= y2;
+                      });
+
+                      setHoveredDetectedBox(hit || null);
+                    } else {
+                      setHoveredDetectedBox(null);
+                    }
                   }}
                   onMouseUp={(e) => {
                     if (!isBBoxMode || !isDrawing || !currentDraw) return;
@@ -1501,7 +1604,6 @@ function Dashboard({ onLogout, view }) {
                     const xmax = Math.max(currentDraw.startX, x);
                     const ymax = Math.max(currentDraw.startY, y);
                     if (xmax - xmin > 5 && ymax - ymin > 5) {
-                      // 단일 박스만 유지 — 새로 그리면 기존 박스 교체
                       setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
                     }
                     setCurrentDraw(null);
@@ -1514,14 +1616,15 @@ function Dashboard({ onLogout, view }) {
                       const xmax = Math.max(currentDraw.startX, currentDraw.endX);
                       const ymax = Math.max(currentDraw.startY, currentDraw.endY);
                       if (xmax - xmin > 5 && ymax - ymin > 5) {
-                        // 단일 박스만 유지
                         setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
                       }
                     }
                     setCurrentDraw(null);
                     setIsDrawing(false);
+                    setHoveredDetectedBox(null);
                   }}
                 >
+
                   {/* 실제 업로드 영상 재생 (bbox 모드에서는 포인터 이벤트를 컨테이너로 전달) */}
                   <video
                     ref={videoElRef}
@@ -1592,7 +1695,41 @@ function Dashboard({ onLogout, view }) {
                       </div>
                     );
                   })()}
+
+                  {/* YOLO 탐지 BBOX 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
+                  {isBBoxMode && hoveredDetectedBox && !isDrawing && bboxOverlayRef.current && (() => {
+                    const rect = bboxOverlayRef.current.getBoundingClientRect();
+                    const displayWidth = rect.width;
+                    const displayHeight = rect.height;
+                    const videoWidth = selectedVideo?.width || videoElRef.current?.videoWidth || displayWidth;
+                    const videoHeight = selectedVideo?.height || videoElRef.current?.videoHeight || displayHeight;
+                    const scaleX = displayWidth / videoWidth;
+                    const scaleY = displayHeight / videoHeight;
+
+                    const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
+                    const dispX1 = Math.round(x1 * scaleX);
+                    const dispY1 = Math.round(y1 * scaleY);
+                    const dispX2 = Math.round(x2 * scaleX);
+                    const dispY2 = Math.round(y2 * scaleY);
+
+                    return (
+                      <div
+                        className="bbox-hover-preview"
+                        style={{
+                          left: dispX1,
+                          top: dispY1,
+                          width: Math.max(10, dispX2 - dispX1),
+                          height: Math.max(10, dispY2 - dispY1),
+                        }}
+                      >
+                        <span className="bbox-hover-label">
+                          🚗 {hoveredDetectedBox.class_name} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
+
 
                 {/* 커스텀 재생바 및 이벤트 마커 표시 */}
                 <div className="custom-progress-bar">

@@ -20,9 +20,19 @@ app.add_middleware(
 # 서버 시작 시 테이블이 없으면 자동 생성
 Base.metadata.create_all(bind=engine)
 
+# 기존 테이블에 detected_vehicles 컬럼 마이그레이션 보장
+with engine.connect() as conn:
+    try:
+        from sqlalchemy import text
+        conn.execute(text("ALTER TABLE videos ADD COLUMN detected_vehicles TEXT NULL;"))
+        conn.commit()
+    except Exception:
+        pass
+
 app.include_router(auth.router)
 app.include_router(videos.router)
 app.include_router(analysis.router)
+
 
 
 @app.get("/")

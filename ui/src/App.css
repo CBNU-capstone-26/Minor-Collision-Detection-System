@@ -2677,10 +2677,9 @@ body.dark-mode .camera-bar-wrapper {
 
 /* ===================== 바운딩박스 지정 모드 ===================== */
 
-/* 사고 차량 지정하기 버튼 */
-/* 사고 차량 지정/사고감지 실행 버튼 공통 스타일 (색상만 회색/빨강으로 분기) */
 .bbox-designate-btn,
-.detect-run-btn {
+.detect-run-btn,
+.auto-detect-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2695,8 +2694,34 @@ body.dark-mode .camera-bar-wrapper {
   white-space: nowrap;
 }
 
+/* 🔍 탐지하기 = 파란색 메인 버튼 */
+.auto-detect-btn {
+  border-color: #3b82f6;
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.auto-detect-btn:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+
+.auto-detect-btn.detecting {
+  opacity: 0.8;
+  cursor: wait;
+  animation: pulse-detect-btn 1.5s infinite;
+}
+
+@keyframes pulse-detect-btn {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+}
+
 /* 사고 차량 지정하기 = 회색 */
 .bbox-designate-btn {
+
   border-color: #cbd5e1;
   background: #f1f5f9;
   color: #334155;
@@ -2865,6 +2890,40 @@ body.dark-mode .camera-bar-wrapper {
   letter-spacing: 0.3px;
   box-shadow: 0 2px 6px rgba(245, 158, 11, 0.4);
 }
+
+/* YOLO 탐지 마우스 Hover 미리보기 박스 */
+.bbox-hover-preview {
+  position: absolute;
+  border: 2.5px solid #10b981;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.22);
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.5), inset 0 0 10px rgba(16, 185, 129, 0.3);
+  animation: bbox-hover-pulse 1.2s infinite alternate;
+}
+
+@keyframes bbox-hover-pulse {
+  from { border-color: #10b981; box-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+  to { border-color: #34d399; box-shadow: 0 0 20px rgba(52, 211, 153, 0.8); }
+}
+
+.bbox-hover-label {
+  position: absolute;
+  top: -28px;
+  left: 0;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  letter-spacing: 0.3px;
+}
+
 
 
 /* 바운딩박스 결과 패널 */

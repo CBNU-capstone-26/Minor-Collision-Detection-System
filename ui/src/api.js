@@ -97,8 +97,13 @@ export const api = {
   deleteVideo: (id) => request(`/videos/${id}`, { method: "DELETE" }),
 
   // ---------- 분석 ----------
+  detectVehicles: (videoId, timestampSec = 0) =>
+    request(`/videos/${videoId}/detect-vehicles?timestamp_sec=${timestampSec}`, {
+      method: "POST",
+    }),
   analyze: (videoId, bbox) =>
     request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox }),
   taskStatus: (taskId) => request(`/tasks/${taskId}`),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,
 };
+
