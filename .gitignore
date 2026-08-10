@@ -1,30 +1,40 @@
-# Dependencies
-node_modules/
-.venv/
-
-# Build outputs
-dist/
-dist-ssr/
-*.local
-
-# Project specific
-Data/
-Predictions/
-
-# macOS system files
-.DS_Store
-._*
-
-# Python/Environment cache
+# Python / Cache
 __pycache__/
 *.py[cod]
 *$py.class
-.ipynb_checkpoints/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
 
-# IDE files
+# Virtual environments
+venv/
+.venv/
+venv311/
+
+# Node / frontend build output
+node_modules/
+dist/
+dist-ssr/
+
+# Runtime uploads and generated media
+storage/
+Data/
+Predictions/
+data/train/*.mp4
+
+# Model weights (대용량 바이너리 — git에서 제외)
+weights/
+
+# Local notebooks and docs
+*.ipynb
+
+# Local editor and OS files
 .vscode/
 .idea/
+.DS_Store
+._*
+*.local
 *.suo
 *.ntvs*
 *.njsproj
