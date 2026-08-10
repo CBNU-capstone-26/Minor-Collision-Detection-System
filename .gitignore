@@ -1,11 +1,11 @@
-# Python
+# Python / Cache
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.ipynb_checkpoints/
 
 # Virtual environments
 venv/
@@ -19,6 +19,8 @@ dist-ssr/
 
 # Runtime uploads and generated media
 storage/
+Data/
+Predictions/
 data/train/*.mp4
 
 # Model weights (대용량 바이너리 — git에서 제외)
@@ -26,11 +28,15 @@ weights/
 
 # Local notebooks and docs
 *.ipynb
-*.md
 
 # Local editor and OS files
 .vscode/
 .idea/
 .DS_Store
+._*
 *.local
-
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
