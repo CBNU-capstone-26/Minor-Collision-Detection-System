@@ -19,11 +19,19 @@ dist-ssr/
 
 # Runtime uploads and generated media
 storage/
+outputs/
 data/train/*.mp4
+*.mp4
+*.jpg
+*.jpeg
+*.png
+*.pth
+*.pt
 
 # Local notebooks and docs
 hitandrun_colab.ipynb
 *.md
+!model/YOLO_AUTO_BBOX_README.md
 
 # Local editor and OS files
 .vscode/
