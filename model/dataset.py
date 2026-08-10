@@ -17,15 +17,19 @@ class HitAndRunDataset(Dataset):
         clip_length=config.CLIP_LENGTH,
         r_value=config.R_VALUE,
         resize=config.RESIZE,
+        augment=True,
     ):
         self.data_dir = data_dir
         self.clip_length = clip_length
         self.r_value = r_value
         self.resize = resize
+        # augment=True → 학습용(랜덤 증강 적용), False → 검증용(증강 없음, 결정적)
+        self.augment = augment
+        # 정규화 통계는 사전학습(S3D Kinetics-400)과 동일하게 config에서 일괄 관리
         self.mean = torch.tensor(
-            [0.485, 0.456, 0.406], dtype=torch.float32).view(3, 1, 1, 1)
-        self.std = torch.tensor([0.229, 0.224, 0.225],
-                                dtype=torch.float32).view(3, 1, 1, 1)
+            config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
+        self.std = torch.tensor(
+            config.NORM_STD, dtype=torch.float32).view(3, 1, 1, 1)
 
         self.file_names = sorted(f.rsplit('.', 1)[0] for f in os.listdir(
             data_dir) if f.endswith('.mp4'))
@@ -115,8 +119,8 @@ class HitAndRunDataset(Dataset):
 
     def _apply_augmentation(self, frames):
         # 실제 주차장 CCTV 환경 대응 데이터 증강
-        # 조명 환경·날씨·카메라 색감 차이로 인한 도메인 갭을 줄이기 위해
-        # 색상 계열 증강을 중심으로 구성. 모든 프레임에 동일한 변환 적용 (시간적 일관성 유지)
+        # 변환 파라미터는 클립당 1회 샘플링해 모든 프레임에 동일 적용 (시간적 일관성 유지)
+        # ※ 센서 노이즈만 프레임별로 새로 샘플링 (실제 노이즈는 프레임마다 다름)
 
         do_hflip = random.random() > 0.5
 
@@ -127,14 +131,12 @@ class HitAndRunDataset(Dataset):
         saturation = random.uniform(0.7, 1.3)   # 카메라별 채도 특성 차이
         hue = random.uniform(-0.1, 0.1)  # 카메라 화이트밸런스·조명 색온도 차이
 
-        # 날씨 증강: 전체 학습 클립 중 약 5%에만 적용 (장대비 2.5%, 함박눈 2.5%)
-        # 프레임마다 입자 위치를 조금씩 이동시켜 실제 날씨처럼 시간적 움직임을 만든다.
-        weather_rand = random.random()
-        weather_type = None
-        if weather_rand < 0.025:
-            weather_type = "rain"
-        elif weather_rand < 0.05:
-            weather_type = "snow"
+        # 야간 적외선(IR) CCTV: 사실상 무채색 영상 → 색 없이도 동작 판별하도록 학습
+        do_gray = random.random() < 0.15
+        # 저화질 CCTV: 초점 흐림/압축 열화(블러), 센서 노이즈(야간 게인↑) 시뮬레이션
+        do_blur = random.random() < 0.2
+        do_noise = random.random() < 0.2
+        noise_sigma = random.uniform(2.0, 8.0)
 
         aug_frames = []
         for frame in frames:
@@ -146,85 +148,18 @@ class HitAndRunDataset(Dataset):
                 img = TF.adjust_contrast(img, contrast)
                 img = TF.adjust_saturation(img, saturation)
                 img = TF.adjust_hue(img, hue)
-            aug_frames.append(np.array(img))
-
-        if weather_type == "rain":
-            aug_frames = self._apply_rain(aug_frames)
-        elif weather_type == "snow":
-            aug_frames = self._apply_snow(aug_frames)
+            if do_gray:
+                img = TF.rgb_to_grayscale(img, num_output_channels=3)
+            if do_blur:
+                img = TF.gaussian_blur(img, kernel_size=3)
+            arr = np.array(img)
+            if do_noise:
+                noise = np.random.normal(0.0, noise_sigma, arr.shape)
+                arr = np.clip(arr.astype(np.float32) + noise,
+                              0, 255).astype(np.uint8)
+            aug_frames.append(arr)
 
         return aug_frames
-
-    def _apply_rain(self, frames):
-        if not frames:
-            return frames
-
-        h, w = frames[0].shape[:2]
-        # 장대비 느낌을 위해 빗줄기 수·길이·두께를 키운다.
-        num_drops = max(25, (h * w) // 1600)
-        length = random.randint(18, 32)
-        speed = random.randint(8, 14)
-        slant = random.randint(-6, 6)
-        thickness = random.choice([1, 2, 2])
-        drops = [
-            [random.randint(0, w - 1), random.randint(-h, h - 1)]
-            for _ in range(num_drops)
-        ]
-
-        rainy_frames = []
-        for frame_idx, frame in enumerate(frames):
-            out = frame.copy()
-            overlay = out.copy()
-            for x, y in drops:
-                y_shifted = (y + frame_idx * speed) % (h + length) - length
-                x_shifted = int((x + frame_idx * slant) % w)
-                cv2.line(
-                    overlay,
-                    (x_shifted, int(y_shifted)),
-                    (int(np.clip(x_shifted + slant, 0, w - 1)),
-                     int(np.clip(y_shifted + length, 0, h - 1))),
-                    (200, 215, 230),
-                    thickness,
-                    cv2.LINE_AA,
-                )
-            out = cv2.addWeighted(overlay, 0.52, out, 0.48, 0)
-            out = cv2.convertScaleAbs(out, alpha=0.86, beta=-8)
-            rainy_frames.append(out)
-        return rainy_frames
-
-    def _apply_snow(self, frames):
-        if not frames:
-            return frames
-
-        h, w = frames[0].shape[:2]
-        # 함박눈 느낌을 위해 눈송이 수와 크기를 키운다.
-        num_flakes = max(20, (h * w) // 2000)
-        speed = random.uniform(1.5, 3.2)
-        wind = random.uniform(-1.4, 1.4)
-        flakes = [
-            [random.uniform(0, w - 1), random.uniform(-h, h - 1),
-             random.choice([2, 2, 3, 3, 4])]
-            for _ in range(num_flakes)
-        ]
-
-        snowy_frames = []
-        for frame_idx, frame in enumerate(frames):
-            out = frame.copy()
-            overlay = out.copy()
-            for x, y, radius in flakes:
-                y_shifted = (y + frame_idx * speed) % (h + radius) - radius
-                x_shifted = (x + frame_idx * wind) % w
-                cv2.circle(
-                    overlay,
-                    (int(x_shifted), int(y_shifted)),
-                    int(radius),
-                    (245, 245, 245),
-                    -1,
-                    cv2.LINE_AA,
-                )
-            out = cv2.addWeighted(overlay, 0.48, out, 0.52, 0)
-            snowy_frames.append(out)
-        return snowy_frames
 
     def _frames_to_tensor(self, frames):
         arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
@@ -233,9 +168,28 @@ class HitAndRunDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
+        start_f = sample['start_f']
+        bbox = sample['bbox']
+
+        if self.augment:
+            # ① 시간 오프셋 지터: 학습 클립이 항상 '충돌 시작 = 윈도 첫 프레임'이면
+            #    추론(슬라이딩 윈도)에서 충돌이 윈도 중간에 걸릴 때 분포가 어긋난다.
+            #    시작점을 0~10프레임 앞으로 당겨 충돌 위치를 윈도 내에서 다양화.
+            start_f = max(0, start_f - random.randint(0, 10))
+            # ② bbox 지터: 서비스에서는 사용자가 마우스로 대충 박스를 그린다.
+            #    GT 좌표 그대로만 학습하면 손그림 박스와 분포가 어긋나므로
+            #    중심 이동(±5%)·크기 배율(0.9~1.15)로 부정확한 박스를 시뮬레이션.
+            x1, y1, x2, y2 = bbox
+            bw, bh = x2 - x1, y2 - y1
+            cx = (x1 + x2) // 2 + int(bw * random.uniform(-0.05, 0.05))
+            cy = (y1 + y2) // 2 + int(bh * random.uniform(-0.05, 0.05))
+            s = random.uniform(0.9, 1.15)
+            hw, hh = int(bw * s / 2), int(bh * s / 2)
+            bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
+
         cap = cv2.VideoCapture(sample['mp4_path'])
         frames = []
-        cap.set(cv2.CAP_PROP_POS_FRAMES, sample['start_f'])
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_f)
 
         for _ in range(self.clip_length):
             ret, frame = cap.read()
@@ -243,13 +197,15 @@ class HitAndRunDataset(Dataset):
                 break
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frames.append(self._crop_and_pad(
-                frame, sample['bbox'], self.r_value))
+                frame, bbox, self.r_value))
         cap.release()
 
         while len(frames) < self.clip_length:
             frames.append(
                 frames[-1] if frames else np.zeros((self.resize[1], self.resize[0], 3), dtype=np.uint8))
 
-        frames = self._apply_augmentation(frames)
+        # 증강은 학습 세트에만 적용 (검증 세트는 결정적이어야 val loss가 안정됨)
+        if self.augment:
+            frames = self._apply_augmentation(frames)
 
         return self._frames_to_tensor(frames), torch.tensor(sample['label'], dtype=torch.long)

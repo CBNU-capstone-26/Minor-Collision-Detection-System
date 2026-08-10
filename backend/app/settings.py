@@ -11,7 +11,7 @@ class Settings:
     # capstone-26/backend/app/settings.py → parents[2] == capstone-26
     BASE_DIR: Path = Path(__file__).resolve().parents[2]
     MODEL_DIR: Path = BASE_DIR / "model"
-    WEIGHTS_PATH: Path = BASE_DIR / "weights" / "hitandrun_model_best.pth"
+    # 배포 가중치 경로는 model/config.py 의 SERVICE_WEIGHTS_PATH 에서 관리한다.
 
     STORAGE_DIR: Path = BASE_DIR / "storage"
     UPLOAD_DIR: Path = STORAGE_DIR / "uploads"
