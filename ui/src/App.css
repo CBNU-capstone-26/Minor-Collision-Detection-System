@@ -923,15 +923,16 @@ button {
   backdrop-filter: blur(8px);
 }
 
-/* 재생바 및 이벤트 마커 */
+/* 재생바 및 이벤트 마커 (비디오 화면 바깥 하단에 배치) */
 .custom-progress-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  width: 100%;
   padding: 14px 18px 16px;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.12), rgba(15, 23, 42, 0.96) 34%);
+  background: #0f172a;
+  border-radius: 0 0 12px 12px;
+  box-sizing: border-box;
 }
+
 
 .progress-track {
   width: 100%;
@@ -2786,30 +2787,58 @@ body.dark-mode .camera-bar-wrapper {
   outline-offset: -3px;
 }
 
-/* 바운딩박스 드로잉 안내 문구 */
-.bbox-mode-guide {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
+/* 영상 바깥 상단 안내 바 */
+.bbox-mode-guide-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(239, 68, 68, 0.85);
-  color: #ffffff;
-  padding: 8px 18px;
-  border-radius: 999px;
+  gap: 10px;
+  background: #0f172a;
+  color: #38bdf8;
+  border: 1px solid #334155;
+  padding: 10px 18px;
+  border-radius: 12px 12px 0 0;
   font-size: 14px;
   font-weight: 700;
-  pointer-events: none;
-  backdrop-filter: blur(6px);
-  white-space: nowrap;
-  z-index: 10;
+  margin-bottom: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.delete-select-all-btn {
+  background: #334155;
+  color: #f8fafc;
+  border: 1px solid #475569;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-select-all-btn:hover {
+  background: #475569;
+}
+
+.mode-exit-btn {
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-exit-btn:hover {
+  background: #b91c1c;
 }
 
 .bbox-guide-icon {
   font-size: 16px;
 }
+
 
 /* 그려진 바운딩박스 */
 .bbox-drawn {
