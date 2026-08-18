@@ -632,8 +632,10 @@ function Dashboard({ onLogout, view }) {
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
   const playerContainerRef = useRef(null);
 
-  // 바운딩박스 관련 상태
+  // 바운딩박스 / 차량 지정 모드 상태 ("none" | "manual" | "auto")
+  const [selectionMode, setSelectionMode] = useState("none");
   const [isBBoxMode, setIsBBoxMode] = useState(false);
+
   const [bboxList, setBboxList] = useState([]);
   const [currentDraw, setCurrentDraw] = useState(null); // { startX, startY, endX, endY }
   const [isDrawing, setIsDrawing] = useState(false);
@@ -766,7 +768,9 @@ function Dashboard({ onLogout, view }) {
         setIsSidebarOpen(true);
         setBboxList([]);
         setIsBBoxMode(false);
+        setSelectionMode("none");
         setShowDetectConfirm(false);
+
         setCurrentTime(0);
         if (v.detected_vehicles) {
           try {
@@ -848,6 +852,24 @@ function Dashboard({ onLogout, view }) {
     navigate("/videos");
   };
 
+  // 수동 차량 지정 모드 시작
+  const handleStartManualDesignate = () => {
+    setSelectionMode("manual");
+    setIsBBoxMode(true);
+    setHoveredDetectedBox(null);
+    setShowBBoxPanel(true);
+    showToast("🖱️ 수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요.", "info");
+  };
+
+  // 탐지/지정 모드 해제
+  const handleEndDesignateMode = () => {
+    setSelectionMode("none");
+    setIsBBoxMode(false);
+    setCurrentDraw(null);
+    setIsDrawing(false);
+    setHoveredDetectedBox(null);
+  };
+
   // YOLO 차량 탐지 실행 (영상 pause → 백엔드 탐지 → Hover 선택 활성화)
   const handleAutoDetectVehicles = async () => {
     if (!selectedVideo) return;
@@ -855,6 +877,7 @@ function Dashboard({ onLogout, view }) {
       videoElRef.current.pause();
       setIsPlaying(false);
     }
+    setSelectionMode("auto");
     setIsDetectingVehicles(true);
     showToast("YOLO 모델로 차량을 탐지 중입니다...", "info");
     try {
@@ -864,9 +887,9 @@ function Dashboard({ onLogout, view }) {
       setIsBBoxMode(true);
       setShowBBoxPanel(true);
       if (list.length === 0) {
-        showToast("탐지된 차량이 없습니다. 직접 드래그하여 차량을 지정해 주세요.", "warning");
+        showToast("탐지된 차량이 없습니다. 수동 차량 지정을 이용해 주세요.", "warning");
       } else {
-        showToast(`${list.length}대의 차량이 탐지되었습니다! 마우스를 올리면 박스가 미리보기로 표시되며 클릭하여 선택할 수 있습니다.`, "success");
+        showToast(`${list.length}대의 차량이 탐지되었습니다! 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`, "success");
       }
     } catch (err) {
       showToast(`차량 탐지 실패: ${err.message}`, "error");
@@ -874,6 +897,7 @@ function Dashboard({ onLogout, view }) {
       setIsDetectingVehicles(false);
     }
   };
+
 
 
   // '사고감지 실행' 클릭 → bbox 없으면 경고, 있으면 확인 팝오버
@@ -1240,6 +1264,20 @@ function Dashboard({ onLogout, view }) {
             <div className="home-toolbar-actions">
               {deleteMode ? (
                 <>
+                  <button
+                    className="delete-select-all-btn"
+                    onClick={() => {
+                      if (selectedForDelete.length === filteredVideos.length && filteredVideos.length > 0) {
+                        setSelectedForDelete([]);
+                      } else {
+                        setSelectedForDelete(filteredVideos.map((v) => v.id));
+                      }
+                    }}
+                  >
+                    {selectedForDelete.length === filteredVideos.length && filteredVideos.length > 0
+                      ? "☑ 전체 해제"
+                      : "☐ 전체 선택"}
+                  </button>
                   <button className="delete-cancel-btn" onClick={exitDeleteMode}>
                     취소
                   </button>
@@ -1248,6 +1286,7 @@ function Dashboard({ onLogout, view }) {
                   </button>
                 </>
               ) : (
+
                 <>
                   <button className="upload-open-btn" onClick={() => setShowUpload(true)}>
                     ⬆ 영상 업로드
@@ -1310,36 +1349,42 @@ function Dashboard({ onLogout, view }) {
 
             {/* 영상(player) 컬럼에 맞춰 정렬되는 오른쪽 영역 */}
             <div className="watch-header-right">
-            {/* 탐지하기 + 사고 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
+            {/* 탐지하기 + 수동 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
             <div className="watch-header-actions">
             <button
-              className={`auto-detect-btn ${isDetectingVehicles ? "detecting" : ""}`}
+              className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
               disabled={isAnalyzing || isDetectingVehicles}
               onClick={handleAutoDetectVehicles}
-              title="YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지합니다"
+              title="YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"
             >
               {isDetectingVehicles ? "차량 탐지 중..." : "🔍 탐지하기"}
             </button>
 
             <button
-              className={`bbox-designate-btn ${isBBoxMode ? "active" : ""}`}
+              className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
               disabled={isAnalyzing}
               onClick={() => {
-                setIsBBoxMode((prev) => {
-                  if (prev) {
-                    setCurrentDraw(null);
-                    setIsDrawing(false);
-                    setHoveredDetectedBox(null);
-                  } else {
-                    setShowBBoxPanel(true);
-                  }
-                  return !prev;
-                });
+                if (selectionMode === "manual") {
+                  handleEndDesignateMode();
+                } else {
+                  handleStartManualDesignate();
+                }
               }}
-              title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (isBBoxMode ? "바운딩박스 모드 종료" : "사고 차량 바운딩박스 지정 모드 시작")}
+              title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "수동 지정 모드 종료" : "직접 드래그하여 차량 지정")}
             >
-              {isBBoxMode ? "지정 모드 종료" : "수동 차량 지정"}
+              {selectionMode === "manual" ? "수동 지정 종료" : "수동 차량 지정"}
             </button>
+
+            {selectionMode !== "none" && (
+              <button
+                className="mode-exit-btn"
+                onClick={handleEndDesignateMode}
+                title="모든 지정 모드 해제"
+              >
+                ✕ 모드 해제
+              </button>
+            )}
+
 
 
             {/* 사고감지 실행 버튼 + 확인 팝오버 */}
@@ -1526,14 +1571,32 @@ function Dashboard({ onLogout, view }) {
 
             {/* 우측/중앙: 메인 비디오 플레이어 */}
             <section className="player-section">
+              {/* 지정 모드 안내문 (영상 상단을 가리지 않도록 비디오 플레이어 바깥 위에 배치) */}
+              {selectionMode !== "none" && (
+                <div className="bbox-mode-guide-bar">
+                  <span className="bbox-guide-icon">{selectionMode === "auto" ? "🔍" : "🖱️"}</span>
+                  <span>
+                    {selectionMode === "auto"
+                      ? "YOLO 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다."
+                      : "수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요."}
+                  </span>
+                </div>
+              )}
+
               <div className="player-container" ref={playerContainerRef}>
                 <div
                   className={`mock-video-player ${isBBoxMode ? "bbox-mode-active" : ""}`}
                   ref={bboxOverlayRef}
-                  style={{ position: "relative", userSelect: "none" }}
+                  style={{
+                    position: "relative",
+                    userSelect: "none",
+                    aspectRatio: selectedVideo?.width && selectedVideo?.height
+                      ? `${selectedVideo.width} / ${selectedVideo.height}`
+                      : "16 / 9",
+                  }}
                   onMouseDown={(e) => {
                     if (!isBBoxMode) return;
-                    if (hoveredDetectedBox && bboxOverlayRef.current && videoElRef.current) {
+                    if (selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && videoElRef.current) {
                       const rect = bboxOverlayRef.current.getBoundingClientRect();
                       const displayWidth = rect.width;
                       const displayHeight = rect.height;
@@ -1552,24 +1615,26 @@ function Dashboard({ onLogout, view }) {
                       showToast(`${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
                       return;
                     }
-                    const rect = bboxOverlayRef.current.getBoundingClientRect();
-                    const x = Math.round(e.clientX - rect.left);
-                    const y = Math.round(e.clientY - rect.top);
-                    setIsDrawing(true);
-                    setCurrentDraw({ startX: x, startY: y, endX: x, endY: y });
+                    if (selectionMode === "manual") {
+                      const rect = bboxOverlayRef.current.getBoundingClientRect();
+                      const x = Math.round(e.clientX - rect.left);
+                      const y = Math.round(e.clientY - rect.top);
+                      setIsDrawing(true);
+                      setCurrentDraw({ startX: x, startY: y, endX: x, endY: y });
+                    }
                   }}
                   onMouseMove={(e) => {
                     if (!isBBoxMode) return;
                     const rect = bboxOverlayRef.current.getBoundingClientRect();
-                    const x = Math.round(e.clientX - rect.left);
-                    const y = Math.round(e.clientY - rect.top);
 
-                    if (isDrawing) {
+                    if (selectionMode === "manual" && isDrawing) {
+                      const x = Math.round(e.clientX - rect.left);
+                      const y = Math.round(e.clientY - rect.top);
                       setCurrentDraw((prev) => (prev ? { ...prev, endX: x, endY: y } : null));
                       return;
                     }
 
-                    if (detectedBoxes.length > 0 && videoElRef.current) {
+                    if (selectionMode === "auto" && detectedBoxes.length > 0 && videoElRef.current) {
                       const displayWidth = rect.width;
                       const displayHeight = rect.height;
                       const videoWidth = selectedVideo?.width || videoElRef.current.videoWidth || displayWidth;
@@ -1590,27 +1655,28 @@ function Dashboard({ onLogout, view }) {
                       });
 
                       setHoveredDetectedBox(hit || null);
-                    } else {
+                    } else if (selectionMode !== "auto") {
                       setHoveredDetectedBox(null);
                     }
                   }}
                   onMouseUp={(e) => {
-                    if (!isBBoxMode || !isDrawing || !currentDraw) return;
-                    const rect = bboxOverlayRef.current.getBoundingClientRect();
-                    const x = Math.round(e.clientX - rect.left);
-                    const y = Math.round(e.clientY - rect.top);
-                    const xmin = Math.min(currentDraw.startX, x);
-                    const ymin = Math.min(currentDraw.startY, y);
-                    const xmax = Math.max(currentDraw.startX, x);
-                    const ymax = Math.max(currentDraw.startY, y);
-                    if (xmax - xmin > 5 && ymax - ymin > 5) {
-                      setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
+                    if (selectionMode === "manual" && isDrawing && currentDraw) {
+                      const rect = bboxOverlayRef.current.getBoundingClientRect();
+                      const x = Math.round(e.clientX - rect.left);
+                      const y = Math.round(e.clientY - rect.top);
+                      const xmin = Math.min(currentDraw.startX, x);
+                      const ymin = Math.min(currentDraw.startY, y);
+                      const xmax = Math.max(currentDraw.startX, x);
+                      const ymax = Math.max(currentDraw.startY, y);
+                      if (xmax - xmin > 5 && ymax - ymin > 5) {
+                        setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
+                      }
+                      setCurrentDraw(null);
+                      setIsDrawing(false);
                     }
-                    setCurrentDraw(null);
-                    setIsDrawing(false);
                   }}
                   onMouseLeave={() => {
-                    if (isDrawing && currentDraw) {
+                    if (selectionMode === "manual" && isDrawing && currentDraw) {
                       const xmin = Math.min(currentDraw.startX, currentDraw.endX);
                       const ymin = Math.min(currentDraw.startY, currentDraw.endY);
                       const xmax = Math.max(currentDraw.startX, currentDraw.endX);
@@ -1638,18 +1704,11 @@ function Dashboard({ onLogout, view }) {
                       display: "block",
                       width: "100%",
                       height: "100%",
-                      objectFit: "fill",
+                      objectFit: "contain",
                       background: "#000",
                       pointerEvents: isBBoxMode ? "none" : "auto",
                     }}
                   />
-                  {/* 바운딩박스 모드 안내 문구 */}
-                  {isBBoxMode && (
-                    <div className="bbox-mode-guide">
-                      <span className="bbox-guide-icon">🖱️</span>
-                      <span>드래그하여 사고 차량에 박스를 그리세요</span>
-                    </div>
-                  )}
 
                   {/* 저장된 바운딩 박스 렌더링 (단일 박스) */}
                   {bboxList.map((box) => (
@@ -1678,8 +1737,8 @@ function Dashboard({ onLogout, view }) {
                     </div>
                   ))}
 
-                  {/* 현재 드래그 중인 박스 미리보기 */}
-                  {isBBoxMode && isDrawing && currentDraw && (() => {
+                  {/* 현재 수동 드래그 중인 박스 미리보기 */}
+                  {selectionMode === "manual" && isDrawing && currentDraw && (() => {
                     const xmin = Math.min(currentDraw.startX, currentDraw.endX);
                     const ymin = Math.min(currentDraw.startY, currentDraw.endY);
                     const xmax = Math.max(currentDraw.startX, currentDraw.endX);
@@ -1696,8 +1755,8 @@ function Dashboard({ onLogout, view }) {
                     );
                   })()}
 
-                  {/* YOLO 탐지 BBOX 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
-                  {isBBoxMode && hoveredDetectedBox && !isDrawing && bboxOverlayRef.current && (() => {
+                  {/* YOLO 자동 탐지 모드: 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
+                  {selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && (() => {
                     const rect = bboxOverlayRef.current.getBoundingClientRect();
                     const displayWidth = rect.width;
                     const displayHeight = rect.height;
@@ -1730,8 +1789,7 @@ function Dashboard({ onLogout, view }) {
                   })()}
                 </div>
 
-
-                {/* 커스텀 재생바 및 이벤트 마커 표시 */}
+                {/* 커스텀 재생바 및 이벤트 마커 표시 (비디오 화면 바깥 하단으로 이동하여 화면 침범 방지) */}
                 <div className="custom-progress-bar">
                   <div className="progress-track" onClick={handleSeek}>
                     {/* 실제 재생 진행률 */}
@@ -1760,6 +1818,7 @@ function Dashboard({ onLogout, view }) {
                     })}
                   </div>
                   <div className="time-labels">
+
                     <span>0:00</span>
                     <span>{formatTime(selectedVideo.duration)}</span>
                   </div>
