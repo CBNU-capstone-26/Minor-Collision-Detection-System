@@ -1696,7 +1696,8 @@ function Dashboard({ onLogout, view }) {
                     ref={videoElRef}
                     className="real-video"
                     src={api.streamUrl(selectedVideo.id)}
-                    controls={!isBBoxMode}
+                    controls={false}
+
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
