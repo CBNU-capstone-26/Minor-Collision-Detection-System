@@ -34,3 +34,5 @@ weights/
 .DS_Store
 *.local
 
+# Local dataset directory
+Data/
