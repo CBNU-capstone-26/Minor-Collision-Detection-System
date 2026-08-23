@@ -6,6 +6,8 @@ from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from .ui_helpers import resize_box
+
 
 class VideoCanvas(QWidget):
     box_created = Signal(QRectF)
@@ -71,6 +73,21 @@ class VideoCanvas(QWidget):
                 return bbox
         return None
 
+    def _handle_points(self, bbox: list[int]) -> dict[str, QPoint]:
+        x1, y1, x2, y2 = bbox
+        return {
+            "nw": self._to_widget(x1, y1), "n": self._to_widget((x1 + x2) / 2, y1), "ne": self._to_widget(x2, y1),
+            "e": self._to_widget(x2, (y1 + y2) / 2), "se": self._to_widget(x2, y2), "s": self._to_widget((x1 + x2) / 2, y2),
+            "sw": self._to_widget(x1, y2), "w": self._to_widget(x1, (y1 + y2) / 2),
+        }
+
+    def _handle_at(self, point: QPoint, bbox: list[int]) -> str | None:
+        radius = 10
+        for handle, center in self._handle_points(bbox).items():
+            if abs(point.x() - center.x()) <= radius and abs(point.y() - center.y()) <= radius:
+                return handle
+        return None
+
     def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#080B0D"))
@@ -85,6 +102,10 @@ class VideoCanvas(QWidget):
             painter.setPen(pen)
             painter.drawRect(QRectF(top_left, bottom_right))
             painter.drawText(top_left + QPoint(4, -6), f"car {vehicle_id}")
+            if vehicle_id == self.selected_id:
+                painter.setBrush(QColor("#F4F0E8"))
+                for center in self._handle_points([x1, y1, x2, y2]).values():
+                    painter.drawEllipse(center, 5, 5)
         if self._drag_start and self._drag_current and not self._dragging_existing:
             painter.setPen(QPen(QColor("#F4F0E8"), 2, Qt.PenStyle.DashLine))
             painter.drawRect(QRectF(self._drag_start, self._drag_current).normalized())
@@ -99,9 +120,7 @@ class VideoCanvas(QWidget):
             self._dragging_existing = True
             self._drag_vehicle_id = hit
             self._drag_box = list(self._box_for(hit) or [0, 0, 0, 0])
-            x, y = self._to_video(event.position().toPoint())
-            near_corner = abs(x - self._drag_box[2]) < max(12, self.video_width / 120) and abs(y - self._drag_box[3]) < max(12, self.video_height / 120)
-            self._drag_mode = "resize" if near_corner else "move"
+            self._drag_mode = self._handle_at(event.position().toPoint(), self._drag_box) or "move"
         else:
             self._dragging_existing = False
             self._drag_mode = "create"
@@ -116,8 +135,8 @@ class VideoCanvas(QWidget):
                 start_x, start_y = self._to_video(self._drag_start)
                 current_x, current_y = self._to_video(self._drag_current)
                 dx, dy = current_x - start_x, current_y - start_y
-                if self._drag_mode == "resize":
-                    new_box = [self._drag_box[0], self._drag_box[1], round(max(self._drag_box[0] + 4, min(self.video_width, self._drag_box[2] + dx))), round(max(self._drag_box[1] + 4, min(self.video_height, self._drag_box[3] + dy)))]
+                if self._drag_mode in {"nw", "n", "ne", "e", "se", "s", "sw", "w"}:
+                    new_box = resize_box(self._drag_box, self._drag_mode, dx, dy, self.video_width, self.video_height)
                 else:
                     width, height = self._drag_box[2] - self._drag_box[0], self._drag_box[3] - self._drag_box[1]
                     x1 = round(max(0, min(self.video_width - width, self._drag_box[0] + dx)))

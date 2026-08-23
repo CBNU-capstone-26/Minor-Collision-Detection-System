@@ -23,7 +23,7 @@ GUI에서는 차량이 가장 명확하게 보이는 프레임을 선택해 박�
 ```bash
 cd "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System"
 python3 -m venv .venv
-source ../.venv/bin/activate
+source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r Pre-Processing/requirements.txt
 ```
@@ -40,7 +40,7 @@ brew install ffmpeg
 
 ```bash
 cd "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Pre-Processing"
-source .venv/bin/activate
+source ../.venv/bin/activate
 python -m src.app \
   --source-root ../Accident \
   --annotations work/annotations.json \
@@ -49,18 +49,21 @@ python -m src.app \
 
 `src`를 모듈로 실행해야 상대 import가 정상적으로 동작한다. GUI가 열리면 `학습용`과 `테스트용`의 MP4가 왼쪽 목록에 표시된다. `폴더 열기`로 다른 폴더를 선택할 수도 있다.
 
+영상 목록 위의 정렬 메뉴에서 `번호순`, `파일명순`, `검수 상태순`을 선택할 수 있다. 번호순은 파일명의 숫자를 자연스러운 숫자 순서로 정렬하고, 검수 상태순은 `미작성 → 검수 중 → 완료` 순서로 배치한다.
+
 ## 작업 순서
 
 1. 왼쪽 영상 목록에서 영상을 선택한다.
-2. 차량이 가장 잘 보이는 프레임으로 이동한다.
+2. 영상 아래 재생 바를 드래그하거나 좌우 버튼·방향키로 차량이 가장 잘 보이는 프레임으로 이동한다.
 3. 영상 위에서 마우스로 차량을 드래그해 박스를 만든다.
-4. 박스를 클릭하면 선택되고, 드래그하면 이동한다. 오른쪽 아래 모서리를 드래그하면 크기가 바뀐다.
-5. 오른쪽 `기준 차량 박스` 목록에서 입력된 ID와 좌표를 확인한다.
-6. `사고 차량 ID`를 선택한다.
-7. 시작·종료 프레임을 입력한다.
-8. `사고 이벤트 추가`를 누른 뒤 `검수 완료`를 누른다.
-9. `저장`을 눌러 작업을 JSON에 저장한다.
-10. `TXT + 검수 MP4 생성`을 눌러 결과를 만든다.
+4. 박스를 클릭하면 선택된다. 박스 안을 드래그하면 이동한다.
+5. 선택된 박스에는 8개의 조절점이 표시된다. 네 변 중앙 점은 한 방향만 조절하고, 네 모서리 점은 원래 가로·세로 비율을 유지하며 크기를 조절한다.
+6. 오른쪽 `기준 차량 박스` 목록에서 입력된 ID와 좌표를 확인한다. `선택 박스 삭제` 버튼 또는 목록 우클릭 메뉴로 박스를 삭제할 수 있다.
+7. `사고 차량 ID`를 선택한다.
+8. 시작·종료 프레임을 입력한다.
+9. `사고 이벤트 추가`를 누른 뒤 `검수 완료`를 누른다.
+10. `저장`을 눌러 작업을 JSON에 저장한다.
+11. `TXT + 검수 MP4 생성`을 눌러 결과를 만든다.
 
 단축키:
 
