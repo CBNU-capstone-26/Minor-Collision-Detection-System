@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import cv2
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QVBoxLayout, QWidget, QComboBox
+
+from .annotation_model import Box, Event, VideoAnnotation, load_annotations, save_annotations, validate_annotation
+from .exporter import export_event
+from .video_view import VideoCanvas
+
+
+class AnnotationWindow(QMainWindow):
+    def __init__(self, source_root: Path, annotation_path: Path, output_root: Path) -> None:
+        super().__init__()
+        self.setWindowTitle("FRAME / Manual Collision Annotation")
+        self.resize(1440, 900)
+        self.source_root, self.annotation_path, self.output_root = source_root, annotation_path, output_root
+        self.annotations = load_annotations(annotation_path) if annotation_path.is_file() else {}
+        self.videos: list[Path] = []
+        self.capture: cv2.VideoCapture | None = None
+        self.current: VideoAnnotation | None = None
+        self.frame_index = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.next_frame)
+        self._build_ui()
+        self.load_folder(source_root)
+
+    def _build_ui(self) -> None:
+        self.setStyleSheet("QMainWindow, QWidget { background:#101820; color:#F4F0E8; } QListWidget, QSpinBox, QComboBox { background:#18232B; border:1px solid #34434D; padding:6px; } QPushButton { background:#22343D; border:1px solid #48606C; padding:8px 12px; } QPushButton:hover { background:#2D4A55; } QLabel#frame { color:#68D5D0; font-family:monospace; font-size:18px; }")
+        self.video_list = QListWidget()
+        self.video_list.currentRowChanged.connect(self.open_row)
+        self.canvas = VideoCanvas()
+        self.canvas.box_created.connect(self.create_box)
+        self.canvas.box_selected.connect(self.select_box)
+        self.canvas.box_deleted.connect(self.delete_box)
+        self.canvas.box_changed.connect(self.update_box)
+        self.frame_label = QLabel("frame 0000")
+        self.frame_label.setObjectName("frame")
+        self.status_label = QLabel("작업할 영상을 선택하세요.")
+        self.vehicle_list = QListWidget()
+        self.vehicle_list.currentRowChanged.connect(self.select_vehicle_row)
+        self.vehicle_combo = QComboBox()
+        self.start_spin = QSpinBox(); self.end_spin = QSpinBox()
+        self.confirm_button = QPushButton("검수 완료")
+        self.confirm_button.clicked.connect(self.confirm_event)
+        self.event_button = QPushButton("사고 이벤트 추가")
+        self.event_button.clicked.connect(self.add_event)
+        self.save_button = QPushButton("저장")
+        self.save_button.clicked.connect(self.save_current)
+        self.export_button = QPushButton("TXT + 검수 MP4 생성")
+        self.export_button.clicked.connect(self.export_current)
+        self.open_folder_button = QPushButton("폴더 열기")
+        self.open_folder_button.clicked.connect(self.choose_folder)
+
+        left = QVBoxLayout(); left.addWidget(QLabel("영상 목록")); left.addWidget(self.video_list); left.addWidget(self.open_folder_button)
+        controls = QHBoxLayout()
+        for label, callback in [("이전", self.previous_frame), ("재생", self.toggle_play), ("다음", self.next_frame)]:
+            button = QPushButton(label); button.clicked.connect(callback); controls.addWidget(button)
+        controls.addWidget(self.frame_label); controls.addStretch()
+        center = QVBoxLayout(); center.addWidget(self.status_label); center.addWidget(self.canvas, 1); center.addLayout(controls)
+        form = QFormLayout(); form.addRow("사고 차량 ID", self.vehicle_combo); form.addRow("시작 프레임", self.start_spin); form.addRow("종료 프레임", self.end_spin)
+        right = QVBoxLayout(); right.addWidget(QLabel("기준 차량 박스")); right.addWidget(self.vehicle_list); right.addLayout(form); right.addWidget(self.event_button); right.addWidget(self.confirm_button); right.addWidget(self.save_button); right.addWidget(self.export_button); right.addStretch()
+        root = QSplitter(); left_widget = QWidget(); left_widget.setLayout(left); center_widget = QWidget(); center_widget.setLayout(center); right_widget = QWidget(); right_widget.setLayout(right); root.addWidget(left_widget); root.addWidget(center_widget); root.addWidget(right_widget); root.setSizes([220, 900, 280]); self.setCentralWidget(root)
+
+    def load_folder(self, folder: Path) -> None:
+        self.videos = sorted(folder.rglob("*.mp4")) if folder.is_dir() else []
+        self.video_list.clear(); self.video_list.addItems([path.name for path in self.videos])
+        if self.videos: self.video_list.setCurrentRow(0)
+
+    def choose_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "영상 폴더 선택", str(self.source_root))
+        if folder: self.load_folder(Path(folder))
+
+    def open_row(self, row: int) -> None:
+        if row < 0 or row >= len(self.videos): return
+        path = self.videos[row]
+        if self.capture: self.capture.release()
+        self.capture = cv2.VideoCapture(str(path))
+        if not self.capture.isOpened(): QMessageBox.critical(self, "열기 실패", str(path)); return
+        width = int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH)); height = int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT)); fps = self.capture.get(cv2.CAP_PROP_FPS) or 30.0; count = int(self.capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        split = "learning" if "학습용" in path.parts or "learning" in path.parts else "testing" if "테스트용" in path.parts or "testing" in path.parts else "normal"
+        video_id = path.stem
+        self.current = self.annotations.get(video_id, VideoAnnotation(video_id, str(path), split, width, height, count, fps))
+        self.current.source_video = str(path); self.frame_index = 0; self.start_spin.setRange(0, count - 1); self.end_spin.setRange(0, count - 1); self.refresh_vehicle_list(); self.show_frame()
+
+    def show_frame(self) -> None:
+        if not self.capture or not self.current: return
+        self.capture.set(cv2.CAP_PROP_POS_FRAMES, self.frame_index); ok, frame = self.capture.read()
+        if not ok: return
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB); image = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888).copy()
+        self.canvas.set_frame(image, self.current.width, self.current.height, [(box.vehicle_id, box.bbox) for box in self.current.boxes]); self.frame_label.setText(f"frame {self.frame_index:04d} / {self.current.frame_count - 1:04d}")
+
+    def previous_frame(self) -> None: self.frame_index = max(0, self.frame_index - 1); self.show_frame()
+    def next_frame(self) -> None: self.frame_index = min((self.current.frame_count - 1) if self.current else 0, self.frame_index + 1); self.show_frame()
+    def toggle_play(self) -> None:
+        if self.timer.isActive(): self.timer.stop()
+        else: self.timer.start(max(1, round(1000 / (self.current.fps if self.current else 30))))
+
+    def refresh_vehicle_list(self) -> None:
+        self.vehicle_list.clear(); self.vehicle_combo.clear()
+        if not self.current: return
+        for box in self.current.boxes: self.vehicle_list.addItem(f"car {box.vehicle_id}  {box.bbox}  @ {box.reference_frame}"); self.vehicle_combo.addItem(str(box.vehicle_id), box.vehicle_id)
+        if self.current.events:
+            event = self.current.events[0]; self.vehicle_combo.setCurrentIndex(max(0, self.vehicle_combo.findData(event.vehicle_id))); self.start_spin.setValue(event.start_frame); self.end_spin.setValue(event.end_frame)
+
+    def create_box(self, rect) -> None:
+        if not self.current: return
+        vehicle_id = max([box.vehicle_id for box in self.current.boxes], default=-1) + 1
+        self.current.boxes.append(Box(vehicle_id, [round(rect.left()), round(rect.top()), round(rect.right()), round(rect.bottom())], self.frame_index)); self.refresh_vehicle_list(); self.show_frame()
+    def select_box(self, vehicle_id: int) -> None:
+        self.canvas.selected_id = vehicle_id; self.show_frame()
+    def select_vehicle_row(self, row: int) -> None:
+        if self.current and 0 <= row < len(self.current.boxes): self.canvas.selected_id = self.current.boxes[row].vehicle_id; self.show_frame()
+    def delete_box(self, vehicle_id: int) -> None:
+        if self.current: self.current.boxes = [box for box in self.current.boxes if box.vehicle_id != vehicle_id]; self.refresh_vehicle_list(); self.show_frame()
+    def update_box(self, vehicle_id: int, rect) -> None:
+        if self.current:
+            for box in self.current.boxes:
+                if box.vehicle_id == vehicle_id:
+                    box.bbox = [round(rect.left()), round(rect.top()), round(rect.right()), round(rect.bottom())]
+                    break
+            self.refresh_vehicle_list()
+    def add_event(self) -> None:
+        if not self.current or not self.current.boxes: return
+        event_id = f"{self.current.video_id}-a{len(self.current.events) + 1}"; vehicle_id = int(self.vehicle_combo.currentData() or self.current.boxes[0].vehicle_id); self.current.events.append(Event(event_id, vehicle_id, self.frame_index, self.frame_index, "needs_review")); self.start_spin.setValue(self.frame_index); self.end_spin.setValue(self.frame_index)
+    def confirm_event(self) -> None:
+        if not self.current or not self.current.events: self.add_event()
+        if self.current and self.current.events:
+            event = self.current.events[-1]; event.vehicle_id = int(self.vehicle_combo.currentData()); event.start_frame = self.start_spin.value(); event.end_frame = self.end_spin.value(); event.status = "confirmed"; self.save_current()
+    def save_current(self) -> None:
+        if self.current:
+            self.annotations[self.current.video_id] = self.current; save_annotations(self.annotation_path, self.annotations); self.status_label.setText(f"저장됨 · {self.current.video_id}")
+    def export_current(self) -> None:
+        if not self.current: return
+        self.save_current(); errors = validate_annotation(self.current)
+        if errors: QMessageBox.warning(self, "검증 실패", "\n".join(errors)); return
+        try:
+            for index, event in enumerate(self.current.events): export_event(self.current, event, self.output_root, index)
+        except Exception as exc: QMessageBox.critical(self, "생성 실패", str(exc)); return
+        self.status_label.setText("TXT와 검수용 MP4를 생성했습니다.")
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if event.key() == Qt.Key.Key_Left:
+            self.previous_frame()
+        elif event.key() == Qt.Key.Key_Right:
+            self.next_frame()
+        elif event.key() == Qt.Key.Key_Space:
+            self.toggle_play()
+        elif event.key() == Qt.Key.Key_S:
+            self.save_current()
+        else:
+            super().keyPressEvent(event)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Paper-compatible manual vehicle annotation GUI")
+    parser.add_argument("--source-root", type=Path, default=Path("Accident"))
+    parser.add_argument("--annotations", type=Path, default=Path("Pre-Processing/work/annotations.json"))
+    parser.add_argument("--output-root", type=Path, default=Path("Pre-Processing/output"))
+    args = parser.parse_args()
+    app = QApplication(sys.argv); window = AnnotationWindow(args.source_root, args.annotations, args.output_root); window.show(); sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

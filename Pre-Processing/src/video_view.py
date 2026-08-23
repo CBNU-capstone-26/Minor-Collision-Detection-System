@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+from typing import Iterable
+
+from PySide6.QtCore import QPoint, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QImage, QPainter, QPen
+from PySide6.QtWidgets import QWidget
+
+
+class VideoCanvas(QWidget):
+    box_created = Signal(QRectF)
+    box_selected = Signal(int)
+    box_deleted = Signal(int)
+    box_changed = Signal(int, QRectF)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setMinimumSize(640, 360)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.image = QImage()
+        self.video_width = 1
+        self.video_height = 1
+        self.boxes: list[tuple[int, list[int]]] = []
+        self.selected_id: int | None = None
+        self._drag_start: QPoint | None = None
+        self._drag_current: QPoint | None = None
+        self._dragging_existing = False
+        self._drag_mode = ""
+        self._drag_vehicle_id: int | None = None
+        self._drag_box: list[int] | None = None
+
+    def set_frame(self, image: QImage, width: int, height: int, boxes: Iterable[tuple[int, list[int]]]) -> None:
+        self.image = image
+        self.video_width = max(1, width)
+        self.video_height = max(1, height)
+        self.boxes = [(int(vehicle_id), list(bbox)) for vehicle_id, bbox in boxes]
+        self.update()
+
+    def _image_rect(self) -> QRectF:
+        if self.image.isNull():
+            return QRectF()
+        scale = min(self.width() / self.video_width, self.height() / self.video_height)
+        width = self.video_width * scale
+        height = self.video_height * scale
+        return QRectF((self.width() - width) / 2, (self.height() - height) / 2, width, height)
+
+    def _to_video(self, point: QPoint) -> tuple[float, float]:
+        rect = self._image_rect()
+        if rect.isNull():
+            return 0, 0
+        return ((point.x() - rect.left()) * self.video_width / rect.width(), (point.y() - rect.top()) * self.video_height / rect.height())
+
+    def _to_widget(self, x: float, y: float) -> QPoint:
+        rect = self._image_rect()
+        return QPoint(round(rect.left() + x * rect.width() / self.video_width), round(rect.top() + y * rect.height() / self.video_height))
+
+    @staticmethod
+    def _rect_from_box(box: list[int]) -> QRectF:
+        return QRectF(box[0], box[1], box[2] - box[0], box[3] - box[1])
+
+    def _box_at(self, point: QPoint) -> int | None:
+        x, y = self._to_video(point)
+        for vehicle_id, (x1, y1, x2, y2) in reversed(self.boxes):
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return vehicle_id
+        return None
+
+    def _box_for(self, vehicle_id: int) -> list[int] | None:
+        for current_id, bbox in self.boxes:
+            if current_id == vehicle_id:
+                return bbox
+        return None
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#080B0D"))
+        rect = self._image_rect()
+        if not self.image.isNull():
+            painter.drawImage(rect, self.image)
+        for vehicle_id, (x1, y1, x2, y2) in self.boxes:
+            top_left = self._to_widget(x1, y1)
+            bottom_right = self._to_widget(x2, y2)
+            color = QColor("#F2B84B") if vehicle_id == self.selected_id else QColor("#68D5D0")
+            pen = QPen(color, 3 if vehicle_id == self.selected_id else 2)
+            painter.setPen(pen)
+            painter.drawRect(QRectF(top_left, bottom_right))
+            painter.drawText(top_left + QPoint(4, -6), f"car {vehicle_id}")
+        if self._drag_start and self._drag_current and not self._dragging_existing:
+            painter.setPen(QPen(QColor("#F4F0E8"), 2, Qt.PenStyle.DashLine))
+            painter.drawRect(QRectF(self._drag_start, self._drag_current).normalized())
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if event.button() != Qt.MouseButton.LeftButton or self.image.isNull():
+            return
+        hit = self._box_at(event.position().toPoint())
+        if hit is not None:
+            self.selected_id = hit
+            self.box_selected.emit(hit)
+            self._dragging_existing = True
+            self._drag_vehicle_id = hit
+            self._drag_box = list(self._box_for(hit) or [0, 0, 0, 0])
+            x, y = self._to_video(event.position().toPoint())
+            near_corner = abs(x - self._drag_box[2]) < max(12, self.video_width / 120) and abs(y - self._drag_box[3]) < max(12, self.video_height / 120)
+            self._drag_mode = "resize" if near_corner else "move"
+        else:
+            self._dragging_existing = False
+            self._drag_mode = "create"
+        self._drag_start = event.position().toPoint()
+        self._drag_current = self._drag_start
+        self.update()
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if self._drag_start:
+            self._drag_current = event.position().toPoint()
+            if self._dragging_existing and self._drag_vehicle_id is not None and self._drag_box is not None:
+                start_x, start_y = self._to_video(self._drag_start)
+                current_x, current_y = self._to_video(self._drag_current)
+                dx, dy = current_x - start_x, current_y - start_y
+                if self._drag_mode == "resize":
+                    new_box = [self._drag_box[0], self._drag_box[1], round(max(self._drag_box[0] + 4, min(self.video_width, self._drag_box[2] + dx))), round(max(self._drag_box[1] + 4, min(self.video_height, self._drag_box[3] + dy)))]
+                else:
+                    width, height = self._drag_box[2] - self._drag_box[0], self._drag_box[3] - self._drag_box[1]
+                    x1 = round(max(0, min(self.video_width - width, self._drag_box[0] + dx)))
+                    y1 = round(max(0, min(self.video_height - height, self._drag_box[1] + dy)))
+                    new_box = [x1, y1, x1 + width, y1 + height]
+                self.boxes = [(vehicle_id, new_box if vehicle_id == self._drag_vehicle_id else bbox) for vehicle_id, bbox in self.boxes]
+                self.box_changed.emit(self._drag_vehicle_id, self._rect_from_box(new_box))
+            self.update()
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if event.button() != Qt.MouseButton.LeftButton or not self._drag_start:
+            return
+        end = event.position().toPoint()
+        if not self._dragging_existing:
+            x1, y1 = self._to_video(self._drag_start)
+            x2, y2 = self._to_video(end)
+            box = [round(max(0, min(x1, x2))), round(max(0, min(y1, y2))), round(min(self.video_width, max(x1, x2))), round(min(self.video_height, max(y1, y2)))]
+            if box[2] - box[0] >= 4 and box[3] - box[1] >= 4:
+                self.box_created.emit(self._rect_from_box(box))
+        self._drag_start = None
+        self._drag_current = None
+        self._dragging_existing = False
+        self._drag_mode = ""
+        self._drag_vehicle_id = None
+        self._drag_box = None
+        self.update()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if event.key() == Qt.Key.Key_Delete and self.selected_id is not None:
+            self.box_deleted.emit(self.selected_id)
+            self.selected_id = None
+            self.update()
+        else:
+            super().keyPressEvent(event)
