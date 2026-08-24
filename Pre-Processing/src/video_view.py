@@ -13,6 +13,8 @@ class VideoCanvas(QWidget):
     box_created = Signal(QRectF)
     box_selected = Signal(int)
     box_deselected = Signal()
+    box_edit_started = Signal()
+    box_edit_finished = Signal()
     box_deleted = Signal(int)
     box_changed = Signal(int, QRectF)
 
@@ -140,6 +142,7 @@ class VideoCanvas(QWidget):
             self._drag_vehicle_id = hit
             self._drag_box = list(self._box_for(hit) or [0, 0, 0, 0])
             self._drag_mode = handle or self._handle_at(point, self._drag_box) or "move"
+            self.box_edit_started.emit()
             self.box_selected.emit(hit)
         else:
             self.selected_id = None
@@ -180,6 +183,8 @@ class VideoCanvas(QWidget):
             if raw_box[2] - raw_box[0] >= 4 and raw_box[3] - raw_box[1] >= 4:
                 box = clamp_box(raw_box, self.video_width, self.video_height)
                 self.box_created.emit(self._rect_from_box(box))
+        else:
+            self.box_edit_finished.emit()
         self._drag_start = None
         self._drag_current = None
         self._dragging_existing = False

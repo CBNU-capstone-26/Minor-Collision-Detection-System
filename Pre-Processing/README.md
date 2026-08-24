@@ -90,6 +90,8 @@ python -m src.app \
 - `Space`: 재생·정지
 - `Delete`: 선택한 박스 삭제
 - `ESC`: 박스 선택 해제
+- `Cmd/Ctrl+Z`: 마지막 박스 작업 실행 취소
+- `Cmd/Ctrl+Shift+Z` 또는 `Ctrl+Y`: 실행 취소한 박스 작업 다시 실행
 - `S`: 저장
 
 프로그램을 닫았다가 다시 실행해도 `Pre-Processing/work/annotations.json`에서 작업을 복구한다.

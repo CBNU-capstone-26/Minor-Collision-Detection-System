@@ -6,8 +6,8 @@ from pathlib import Path
 
 import cv2
 from PySide6.QtCore import QSignalBlocker, QTimer, Qt
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter, QVBoxLayout, QWidget, QComboBox, QSlider, QMenu
+from PySide6.QtGui import QImage, QKeySequence
+from PySide6.QtWidgets import QApplication, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QShortcut, QSpinBox, QSplitter, QVBoxLayout, QWidget, QComboBox, QSlider, QMenu
 
 from .annotation_model import Box, Event, VideoAnnotation, load_annotations, save_annotations, validate_annotation
 from .exporter import export_event
@@ -28,6 +28,8 @@ class AnnotationWindow(QMainWindow):
         self.capture: cv2.VideoCapture | None = None
         self.current: VideoAnnotation | None = None
         self.frame_index = 0
+        self._undo_boxes: list[tuple[list[Box], int | None]] = []
+        self._redo_boxes: list[tuple[list[Box], int | None]] = []
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.next_frame)
         self._build_ui()
@@ -46,6 +48,7 @@ class AnnotationWindow(QMainWindow):
         self.canvas.box_created.connect(self.create_box)
         self.canvas.box_selected.connect(self.select_box)
         self.canvas.box_deselected.connect(self.clear_box_selection)
+        self.canvas.box_edit_started.connect(self.record_box_action)
         self.canvas.box_deleted.connect(self.delete_box)
         self.canvas.box_changed.connect(self.update_box)
         self.frame_label = QLabel("frame 0000")
@@ -89,6 +92,12 @@ class AnnotationWindow(QMainWindow):
         self.timeline.setSingleStep(1)
         self.timeline.setPageStep(10)
         self.timeline.valueChanged.connect(self.seek_frame)
+        self.undo_shortcut = QShortcut(QKeySequence(QKeySequence.StandardKey.Undo), self)
+        self.undo_shortcut.activated.connect(self.undo_boxes)
+        self.redo_shortcut = QShortcut(QKeySequence(QKeySequence.StandardKey.Redo), self)
+        self.redo_shortcut.activated.connect(self.redo_boxes)
+        self.redo_alt_shortcut = QShortcut(QKeySequence("Ctrl+Y"), self)
+        self.redo_alt_shortcut.activated.connect(self.redo_boxes)
 
         left = QVBoxLayout(); left.addWidget(QLabel("영상 목록")); left.addWidget(self.sort_combo); left.addWidget(self.video_list); left.addWidget(self.open_folder_button)
         controls = QHBoxLayout()
@@ -134,7 +143,7 @@ class AnnotationWindow(QMainWindow):
         split = "learning" if "학습용" in path.parts or "learning" in path.parts else "testing" if "테스트용" in path.parts or "testing" in path.parts else "normal"
         video_id = path.stem
         self.current = self.annotations.get(video_id, VideoAnnotation(video_id, str(path), split, width, height, count, fps))
-        self.current.source_video = str(path); self.frame_index = 0; self.start_spin.setRange(0, count - 1); self.end_spin.setRange(0, count - 1); self.timeline.setRange(0, max(0, count - 1)); self.set_status_combo(self.current.status); self.refresh_vehicle_list(); self.refresh_event_list(); self.show_frame()
+        self.current.source_video = str(path); self.frame_index = 0; self._undo_boxes.clear(); self._redo_boxes.clear(); self.start_spin.setRange(0, count - 1); self.end_spin.setRange(0, count - 1); self.timeline.setRange(0, max(0, count - 1)); self.set_status_combo(self.current.status); self.refresh_vehicle_list(); self.refresh_event_list(); self.show_frame()
 
     def show_frame(self) -> None:
         if not self.capture or not self.current: return
@@ -205,8 +214,9 @@ class AnnotationWindow(QMainWindow):
 
     def create_box(self, rect) -> None:
         if not self.current: return
+        self.record_box_action()
         vehicle_id = max([box.vehicle_id for box in self.current.boxes], default=-1) + 1
-        self.current.boxes.append(Box(vehicle_id, [round(rect.left()), round(rect.top()), round(rect.right()), round(rect.bottom())], self.frame_index)); self.current.status = "in_progress"; self.set_status_combo(self.current.status); self.refresh_vehicle_list(); self.show_frame()
+        self.current.boxes.append(Box(vehicle_id, [round(rect.left()), round(rect.top()), round(rect.right()), round(rect.bottom())], self.frame_index)); self.canvas.selected_id = vehicle_id; self.current.status = "in_progress"; self.set_status_combo(self.current.status); self.refresh_vehicle_list(); self.show_frame()
     def select_box(self, vehicle_id: int) -> None:
         self.canvas.selected_id = vehicle_id; self.show_frame()
     def clear_box_selection(self) -> None:
@@ -214,10 +224,45 @@ class AnnotationWindow(QMainWindow):
         with QSignalBlocker(self.vehicle_list):
             self.vehicle_list.setCurrentRow(-1)
         self.canvas.update()
+
+    def _box_state(self) -> tuple[list[Box], int | None]:
+        if not self.current:
+            return [], None
+        boxes = [Box(box.vehicle_id, list(box.bbox), box.reference_frame) for box in self.current.boxes]
+        return boxes, self.canvas.selected_id
+
+    def record_box_action(self) -> None:
+        if self.current:
+            self._undo_boxes.append(self._box_state())
+            self._redo_boxes.clear()
+
+    def _restore_box_state(self, state: tuple[list[Box], int | None]) -> None:
+        if not self.current:
+            return
+        boxes, selected_id = state
+        self.current.boxes = [Box(box.vehicle_id, list(box.bbox), box.reference_frame) for box in boxes]
+        self.canvas.selected_id = selected_id
+        self.refresh_vehicle_list()
+        self.show_frame()
+
+    def undo_boxes(self) -> None:
+        if not self.current or not self._undo_boxes:
+            return
+        self._redo_boxes.append(self._box_state())
+        self._restore_box_state(self._undo_boxes.pop())
+        self.status_label.setText("박스 작업을 되돌렸습니다 · 저장 버튼을 눌러 확정하세요.")
+
+    def redo_boxes(self) -> None:
+        if not self.current or not self._redo_boxes:
+            return
+        self._undo_boxes.append(self._box_state())
+        self._restore_box_state(self._redo_boxes.pop())
+        self.status_label.setText("박스 작업을 다시 적용했습니다 · 저장 버튼을 눌러 확정하세요.")
     def select_vehicle_row(self, row: int) -> None:
         if self.current and 0 <= row < len(self.current.boxes): self.canvas.selected_id = self.current.boxes[row].vehicle_id; self.show_frame()
     def delete_box(self, vehicle_id: int) -> None:
-        if self.current: self.current.boxes = [box for box in self.current.boxes if box.vehicle_id != vehicle_id]; self.refresh_vehicle_list(); self.show_frame()
+        if self.current and any(box.vehicle_id == vehicle_id for box in self.current.boxes):
+            self.record_box_action(); self.current.boxes = [box for box in self.current.boxes if box.vehicle_id != vehicle_id]; self.canvas.selected_id = None; self.refresh_vehicle_list(); self.show_frame()
     def delete_selected_vehicle(self) -> None:
         row = self.vehicle_list.currentRow()
         if self.current and 0 <= row < len(self.current.boxes):
