@@ -64,9 +64,9 @@ def sort_video_paths(paths: Iterable[Path], mode: str, annotations: Mapping[str,
     if mode == "status":
         def status(path: Path) -> int:
             annotation = annotations.get(path.stem)
-            if annotation is None or not getattr(annotation, "events", None):
+            if annotation is None:
                 return 0
-            return 2 if all(getattr(event, "status", "") == "confirmed" for event in annotation.events) else 1
+            return {"not_started": 0, "in_progress": 1, "confirmed": 2, "excluded": 3}.get(getattr(annotation, "status", "not_started"), 0)
         return sorted(items, key=lambda path: (status(path), natural_video_key(path)))
     if mode == "name":
         return sorted(items, key=lambda path: path.name.lower())

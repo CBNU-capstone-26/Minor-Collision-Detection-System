@@ -4,7 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.ui_helpers import natural_video_key, resize_box
+from src.annotation_model import Event, VideoAnnotation
+from src.ui_helpers import natural_video_key, resize_box, sort_video_paths
 
 
 class UiHelperTests(unittest.TestCase):
@@ -18,6 +19,15 @@ class UiHelperTests(unittest.TestCase):
     def test_corner_handle_preserves_original_aspect_ratio(self):
         result = resize_box([100, 100, 300, 200], "se", 40, 60, 1000, 800)
         self.assertEqual(result, [100, 100, 420, 260])
+
+    def test_status_sort_uses_saved_video_status(self):
+        paths = [Path("003.mp4"), Path("001.mp4"), Path("002.mp4")]
+        annotations = {
+            "001": VideoAnnotation("001", "001.mp4", "learning", 10, 10, 1, 30, status="confirmed"),
+            "002": VideoAnnotation("002", "002.mp4", "learning", 10, 10, 1, 30, status="in_progress"),
+            "003": VideoAnnotation("003", "003.mp4", "learning", 10, 10, 1, 30, status="not_started"),
+        }
+        self.assertEqual([path.stem for path in sort_video_paths(paths, "status", annotations)], ["003", "002", "001"])
 
 
 if __name__ == "__main__":

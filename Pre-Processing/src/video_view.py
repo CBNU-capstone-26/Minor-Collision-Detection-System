@@ -95,19 +95,23 @@ class VideoCanvas(QWidget):
         if not self.image.isNull():
             painter.drawImage(rect, self.image)
         for vehicle_id, (x1, y1, x2, y2) in self.boxes:
+            painter.save()
             top_left = self._to_widget(x1, y1)
             bottom_right = self._to_widget(x2, y2)
             color = QColor("#F2B84B") if vehicle_id == self.selected_id else QColor("#68D5D0")
             pen = QPen(color, 3 if vehicle_id == self.selected_id else 2)
             painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(QRectF(top_left, bottom_right))
             painter.drawText(top_left + QPoint(4, -6), f"car {vehicle_id}")
             if vehicle_id == self.selected_id:
                 painter.setBrush(QColor("#F4F0E8"))
                 for center in self._handle_points([x1, y1, x2, y2]).values():
                     painter.drawEllipse(center, 5, 5)
+            painter.restore()
         if self._drag_start and self._drag_current and not self._dragging_existing:
             painter.setPen(QPen(QColor("#F4F0E8"), 2, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(QRectF(self._drag_start, self._drag_current).normalized())
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API

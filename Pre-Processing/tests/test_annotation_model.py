@@ -37,6 +37,7 @@ class AnnotationModelTests(unittest.TestCase):
 
     def test_json_round_trip(self):
         annotation = self.make_annotation()
+        annotation.status = "in_progress"
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "annotations.json"
             save_annotations(path, {annotation.video_id: annotation})

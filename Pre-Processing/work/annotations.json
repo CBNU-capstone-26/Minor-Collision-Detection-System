@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "videos": [
+    {
+      "video_id": "001 - Damar Security Parking Lot Accident [Y7r2PavFInQ]",
+      "source_video": "../Accident/학습용/001 - Damar Security Parking Lot Accident [Y7r2PavFInQ].mp4",
+      "split": "normal",
+      "width": 640,
+      "height": 480,
+      "frame_count": 301,
+      "fps": 30.0,
+      "boxes": [
+        {
+          "vehicle_id": 0,
+          "bbox": [178, 21, 606, 185],
+          "reference_frame": 0
+        },
+        {
+          "vehicle_id": 1,
+          "bbox": [171, 108, 640, 317],
+          "reference_frame": 0
+        }
+      ],
+      "events": [
+        {
+          "event_id": "001 - Damar Security Parking Lot Accident [Y7r2PavFInQ]-a1",
+          "vehicle_id": 0,
+          "start_frame": 62,
+          "end_frame": 267,
+          "status": "confirmed",
+          "note": ""
+        }
+      ],
+      "status": "confirmed",
+      "schema_version": 1
+    },
+    {
+      "video_id": "002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8]",
+      "source_video": "../Accident/학습용/002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8].mp4",
+      "split": "normal",
+      "width": 1280,
+      "height": 700,
+      "frame_count": 325,
+      "fps": 30.0,
+      "boxes": [
+        {
+          "vehicle_id": 0,
+          "bbox": [950, 34, 1123, 149],
+          "reference_frame": 0
+        },
+        {
+          "vehicle_id": 1,
+          "bbox": [1131, 117, 1280, 240],
+          "reference_frame": 99
+        }
+      ],
+      "events": [
+        {
+          "event_id": "002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8]-a1",
+          "vehicle_id": 0,
+          "start_frame": 252,
+          "end_frame": 252,
+          "status": "confirmed",
+          "note": ""
+        }
+      ],
+      "status": "confirmed",
+      "schema_version": 1
+    },
+    {
+      "video_id": "004 - Car Accident in Parking Lot Captured by SentriForce [X4qMykwdxNo]",
+      "source_video": "../Accident/학습용/004 - Car Accident in Parking Lot Captured by SentriForce [X4qMykwdxNo].mp4",
+      "split": "normal",
+      "width": 640,
+      "height": 480,
+      "frame_count": 394,
+      "fps": 29.97002997002997,
+      "boxes": [
+        {
+          "vehicle_id": 0,
+          "bbox": [113, 162, 348, 253],
+          "reference_frame": 141
+        },
+        {
+          "vehicle_id": 1,
+          "bbox": [97, 100, 287, 180],
+          "reference_frame": 5
+        }
+      ],
+      "events": [],
+      "status": "in_progress",
+      "schema_version": 1
+    }
+  ]
+}

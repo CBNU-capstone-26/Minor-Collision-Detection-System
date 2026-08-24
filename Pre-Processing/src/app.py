@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 from PySide6.QtCore import QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QVBoxLayout, QWidget, QComboBox, QSlider, QMenu
+from PySide6.QtWidgets import QApplication, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter, QVBoxLayout, QWidget, QComboBox, QSlider, QMenu
 
 from .annotation_model import Box, Event, VideoAnnotation, load_annotations, save_annotations, validate_annotation
 from .exporter import export_event
@@ -16,6 +16,8 @@ from .ui_helpers import sort_video_paths
 
 
 class AnnotationWindow(QMainWindow):
+    STATUS_LABELS = {"not_started": "미작성", "in_progress": "작업 중", "confirmed": "완료", "excluded": "제외"}
+
     def __init__(self, source_root: Path, annotation_path: Path, output_root: Path) -> None:
         super().__init__()
         self.setWindowTitle("FRAME / Manual Collision Annotation")
@@ -53,11 +55,26 @@ class AnnotationWindow(QMainWindow):
         self.vehicle_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.vehicle_list.customContextMenuRequested.connect(self.open_vehicle_menu)
         self.vehicle_combo = QComboBox()
+        self.event_list = QListWidget()
+        self.event_list.currentRowChanged.connect(self.select_event_row)
+        self.event_status_combo = QComboBox()
+        for value, label in (("needs_review", "검수 필요"), ("confirmed", "완료"), ("excluded", "제외")):
+            self.event_status_combo.addItem(label, value)
+        self.event_note = QLineEdit()
+        self.event_note.setPlaceholderText("이벤트 메모")
+        self.status_combo = QComboBox()
+        for value, label in self.STATUS_LABELS.items():
+            self.status_combo.addItem(label, value)
+        self.status_combo.currentIndexChanged.connect(self.change_status)
         self.start_spin = QSpinBox(); self.end_spin = QSpinBox()
         self.confirm_button = QPushButton("검수 완료")
         self.confirm_button.clicked.connect(self.confirm_event)
         self.event_button = QPushButton("사고 이벤트 추가")
         self.event_button.clicked.connect(self.add_event)
+        self.save_event_button = QPushButton("선택 이벤트 저장")
+        self.save_event_button.clicked.connect(self.save_event)
+        self.delete_event_button = QPushButton("선택 이벤트 삭제")
+        self.delete_event_button.clicked.connect(self.delete_event)
         self.save_button = QPushButton("저장")
         self.save_button.clicked.connect(self.save_current)
         self.export_button = QPushButton("TXT + 검수 MP4 생성")
@@ -78,9 +95,11 @@ class AnnotationWindow(QMainWindow):
             button = QPushButton(label); button.clicked.connect(callback); controls.addWidget(button)
         controls.addWidget(self.frame_label); controls.addStretch()
         center = QVBoxLayout(); center.addWidget(self.status_label); center.addWidget(self.canvas, 1); center.addWidget(self.timeline); center.addLayout(controls)
-        form = QFormLayout(); form.addRow("사고 차량 ID", self.vehicle_combo); form.addRow("시작 프레임", self.start_spin); form.addRow("종료 프레임", self.end_spin)
-        right = QVBoxLayout(); right.addWidget(QLabel("기준 차량 박스")); right.addWidget(self.vehicle_list); right.addWidget(self.delete_vehicle_button); right.addLayout(form); right.addWidget(self.event_button); right.addWidget(self.confirm_button); right.addWidget(self.save_button); right.addWidget(self.export_button); right.addStretch()
-        root = QSplitter(); left_widget = QWidget(); left_widget.setLayout(left); center_widget = QWidget(); center_widget.setLayout(center); right_widget = QWidget(); right_widget.setLayout(right); root.addWidget(left_widget); root.addWidget(center_widget); root.addWidget(right_widget); root.setSizes([220, 900, 280]); self.setCentralWidget(root)
+        form = QFormLayout(); form.addRow("영상 현황", self.status_combo); form.addRow("사고 차량 ID", self.vehicle_combo); form.addRow("시작 프레임", self.start_spin); form.addRow("종료 프레임", self.end_spin); form.addRow("이벤트 상태", self.event_status_combo); form.addRow("메모", self.event_note)
+        right = QVBoxLayout(); right.setContentsMargins(8, 8, 8, 8); right.addWidget(QLabel("기준 차량 박스")); right.addWidget(self.vehicle_list); right.addWidget(self.delete_vehicle_button); right.addWidget(QLabel("이벤트 목록")); right.addWidget(self.event_list); right.addLayout(form); right.addWidget(self.event_button); right.addWidget(self.save_event_button); right.addWidget(self.delete_event_button); right.addWidget(self.confirm_button); right.addWidget(self.save_button); right.addWidget(self.export_button); right.addStretch()
+        root = QSplitter(); left_widget = QWidget(); left_widget.setLayout(left); center_widget = QWidget(); center_widget.setLayout(center); right_widget = QWidget(); right_widget.setMinimumWidth(350); right_widget.setLayout(right)
+        right_scroll = QScrollArea(); right_scroll.setWidgetResizable(True); right_scroll.setFrameShape(QScrollArea.Shape.NoFrame); right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); right_scroll.setWidget(right_widget)
+        root.addWidget(left_widget); root.addWidget(center_widget); root.addWidget(right_scroll); root.setSizes([220, 900, 370]); self.setCentralWidget(root)
 
     def load_folder(self, folder: Path) -> None:
         self.videos = list(folder.rglob("*.mp4")) if folder.is_dir() else []
@@ -94,12 +113,7 @@ class AnnotationWindow(QMainWindow):
         self.video_list.clear()
         for path in self.videos:
             annotation = self.annotations.get(path.stem)
-            if annotation is None or not annotation.events:
-                status = "미작성"
-            elif all(event.status == "confirmed" for event in annotation.events):
-                status = "완료"
-            else:
-                status = "검수 중"
+            status = self.STATUS_LABELS.get(annotation.status, "미작성") if annotation is not None else "미작성"
             self.video_list.addItem(f"{path.stem}  ·  {status}")
         self.video_list.blockSignals(False)
         if self.videos:
@@ -119,7 +133,7 @@ class AnnotationWindow(QMainWindow):
         split = "learning" if "학습용" in path.parts or "learning" in path.parts else "testing" if "테스트용" in path.parts or "testing" in path.parts else "normal"
         video_id = path.stem
         self.current = self.annotations.get(video_id, VideoAnnotation(video_id, str(path), split, width, height, count, fps))
-        self.current.source_video = str(path); self.frame_index = 0; self.start_spin.setRange(0, count - 1); self.end_spin.setRange(0, count - 1); self.timeline.setRange(0, max(0, count - 1)); self.refresh_vehicle_list(); self.show_frame()
+        self.current.source_video = str(path); self.frame_index = 0; self.start_spin.setRange(0, count - 1); self.end_spin.setRange(0, count - 1); self.timeline.setRange(0, max(0, count - 1)); self.set_status_combo(self.current.status); self.refresh_vehicle_list(); self.refresh_event_list(); self.show_frame()
 
     def show_frame(self) -> None:
         if not self.capture or not self.current: return
@@ -143,13 +157,55 @@ class AnnotationWindow(QMainWindow):
         self.vehicle_list.clear(); self.vehicle_combo.clear()
         if not self.current: return
         for box in self.current.boxes: self.vehicle_list.addItem(f"car {box.vehicle_id}  {box.bbox}  @ {box.reference_frame}"); self.vehicle_combo.addItem(str(box.vehicle_id), box.vehicle_id)
-        if self.current.events:
-            event = self.current.events[0]; self.vehicle_combo.setCurrentIndex(max(0, self.vehicle_combo.findData(event.vehicle_id))); self.start_spin.setValue(event.start_frame); self.end_spin.setValue(event.end_frame)
+
+    def refresh_event_list(self, selected_index: int = 0) -> None:
+        self.event_list.blockSignals(True)
+        self.event_list.clear()
+        if self.current:
+            for event in self.current.events:
+                label = {"needs_review": "검수 필요", "confirmed": "완료", "excluded": "제외"}.get(event.status, event.status)
+                self.event_list.addItem(f"{event.event_id} · {label}")
+            if self.current.events:
+                self.event_list.setCurrentRow(min(max(selected_index, 0), len(self.current.events) - 1))
+        self.event_list.blockSignals(False)
+        if self.current and self.current.events:
+            self.load_event(self.event_list.currentRow())
+
+    def select_event_row(self, row: int) -> None:
+        self.load_event(row)
+
+    def load_event(self, row: int) -> None:
+        if not self.current or not (0 <= row < len(self.current.events)):
+            return
+        event = self.current.events[row]
+        with QSignalBlocker(self.event_status_combo):
+            index = self.event_status_combo.findData(event.status)
+            self.event_status_combo.setCurrentIndex(max(0, index))
+        self.vehicle_combo.setCurrentIndex(max(0, self.vehicle_combo.findData(event.vehicle_id)))
+        self.start_spin.setValue(event.start_frame)
+        self.end_spin.setValue(event.end_frame)
+        self.event_note.setText(event.note)
+
+    def selected_event(self) -> Event | None:
+        if not self.current:
+            return None
+        row = self.event_list.currentRow()
+        return self.current.events[row] if 0 <= row < len(self.current.events) else None
+
+    def set_status_combo(self, status: str) -> None:
+        with QSignalBlocker(self.status_combo):
+            index = self.status_combo.findData(status)
+            self.status_combo.setCurrentIndex(max(0, index))
+
+    def change_status(self, index: int) -> None:
+        if self.current and index >= 0:
+            self.current.status = str(self.status_combo.itemData(index))
+            self.status_label.setText(f"현황 변경됨 · {self.STATUS_LABELS[self.current.status]} · 저장 버튼을 눌러 확정하세요.")
 
     def create_box(self, rect) -> None:
         if not self.current: return
         vehicle_id = max([box.vehicle_id for box in self.current.boxes], default=-1) + 1
-        self.current.boxes.append(Box(vehicle_id, [round(rect.left()), round(rect.top()), round(rect.right()), round(rect.bottom())], self.frame_index)); self.refresh_vehicle_list(); self.show_frame()
+        self.current.boxes.append(Box(vehicle_id, [round(rect.left()), round(rect.top()), round(rect.right()), round(rect.bottom())], self.frame_index)); self.current.status = "in_progress"; self.set_status_combo(self.current.status); self.refresh_vehicle_list(); self.show_frame()
     def select_box(self, vehicle_id: int) -> None:
         self.canvas.selected_id = vehicle_id; self.show_frame()
     def select_vehicle_row(self, row: int) -> None:
@@ -178,11 +234,47 @@ class AnnotationWindow(QMainWindow):
             self.refresh_vehicle_list()
     def add_event(self) -> None:
         if not self.current or not self.current.boxes: return
-        event_id = f"{self.current.video_id}-a{len(self.current.events) + 1}"; vehicle_id = int(self.vehicle_combo.currentData() or self.current.boxes[0].vehicle_id); self.current.events.append(Event(event_id, vehicle_id, self.frame_index, self.frame_index, "needs_review")); self.start_spin.setValue(self.frame_index); self.end_spin.setValue(self.frame_index)
+        event_id = f"{self.current.video_id}-a{len(self.current.events) + 1}"; vehicle_id = int(self.vehicle_combo.currentData() or self.current.boxes[0].vehicle_id); self.current.events.append(Event(event_id, vehicle_id, self.frame_index, self.frame_index, "needs_review")); self.current.status = "in_progress"; self.set_status_combo(self.current.status); self.start_spin.setValue(self.frame_index); self.end_spin.setValue(self.frame_index)
+        self.refresh_event_list(len(self.current.events) - 1)
+
+    def save_event(self) -> None:
+        event = self.selected_event()
+        if not self.current or event is None or self.vehicle_combo.currentData() is None:
+            QMessageBox.warning(self, "이벤트 없음", "저장할 이벤트를 먼저 선택하세요.")
+            return
+        event.vehicle_id = int(self.vehicle_combo.currentData())
+        event.start_frame = self.start_spin.value()
+        event.end_frame = self.end_spin.value()
+        event.status = str(self.event_status_combo.currentData())
+        event.note = self.event_note.text()
+        self.current.status = "confirmed" if self.current.events and all(item.status == "confirmed" for item in self.current.events) else "in_progress"
+        self.set_status_combo(self.current.status)
+        self.refresh_event_list(self.event_list.currentRow())
+        self.save_current()
+
+    def delete_event(self) -> None:
+        if not self.current:
+            return
+        row = self.event_list.currentRow()
+        if not (0 <= row < len(self.current.events)):
+            QMessageBox.warning(self, "이벤트 없음", "삭제할 이벤트를 먼저 선택하세요.")
+            return
+        event = self.current.events[row]
+        answer = QMessageBox.question(self, "이벤트 삭제 확인", f"'{event.event_id}' 이벤트를 삭제할까요?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.current.events.pop(row)
+        if self.current.status == "confirmed":
+            self.current.status = "in_progress" if self.current.events else "not_started"
+            self.set_status_combo(self.current.status)
+        self.refresh_event_list(max(0, row - 1))
+        self.save_current()
+
     def confirm_event(self) -> None:
         if not self.current or not self.current.events: self.add_event()
-        if self.current and self.current.events:
-            event = self.current.events[-1]; event.vehicle_id = int(self.vehicle_combo.currentData()); event.start_frame = self.start_spin.value(); event.end_frame = self.end_spin.value(); event.status = "confirmed"; self.save_current()
+        event = self.selected_event()
+        if self.current and event is not None:
+            event.vehicle_id = int(self.vehicle_combo.currentData()); event.start_frame = self.start_spin.value(); event.end_frame = self.end_spin.value(); event.status = "confirmed"; event.note = self.event_note.text(); self.current.status = "confirmed"; self.set_status_combo(self.current.status); self.refresh_event_list(self.event_list.currentRow()); self.save_current()
     def save_current(self) -> None:
         if self.current:
             self.annotations[self.current.video_id] = self.current; save_annotations(self.annotation_path, self.annotations); self.refresh_video_list(); self.status_label.setText(f"저장됨 · {self.current.video_id}")
