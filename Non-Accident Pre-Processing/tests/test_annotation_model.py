@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.annotation_model import Box, Event, VideoAnnotation, event_output_stem, load_annotations, paper_txt, save_annotations, validate_annotation
+from src.nonaccident_pipeline import classify_annotation_tag
 
 
 class AnnotationModelTests(unittest.TestCase):
@@ -49,6 +50,17 @@ class AnnotationModelTests(unittest.TestCase):
     def test_multiple_events_get_distinct_output_names(self):
         self.assertEqual(event_output_stem("demo", 0), "demo")
         self.assertEqual(event_output_stem("demo", 1), "demo__a2")
+
+    def test_two_valid_boxes_are_tagged_normal(self):
+        annotation = self.make_annotation()
+        annotation.events = []
+        self.assertEqual(classify_annotation_tag(annotation), "normal")
+
+    def test_empty_boxes_are_tagged_needs_review(self):
+        annotation = self.make_annotation()
+        annotation.boxes = []
+        annotation.events = []
+        self.assertEqual(classify_annotation_tag(annotation), "needs_review")
 
 
 if __name__ == "__main__":

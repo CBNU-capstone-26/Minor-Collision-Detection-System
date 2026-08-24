@@ -1,0 +1,1372 @@
+{
+    "schema_version": 1,
+    "videos": [
+        {
+            "video_id": "001 - Car in parking Garage - Parking garage security camera system [-1aCzFt1_mw]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/001 - Car in parking Garage - Parking garage security camera system [-1aCzFt1_mw].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 212,
+            "fps": 15.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "002 - ClearPix Camera Parking Lot [DrMOC56cRhc]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/002 - ClearPix Camera Parking Lot [DrMOC56cRhc].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 360,
+            "frame_count": 121,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [343, 23, 404, 55],
+                    "reference_frame": 28
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [272, 13, 338, 43],
+                    "reference_frame": 28
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "003 - ClearPix Camera Mall Parking at Night [vGwW6drgabY]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/003 - ClearPix Camera Mall Parking at Night [vGwW6drgabY].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 325,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [919, 141, 956, 170],
+                    "reference_frame": 196
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [760, 136, 803, 177],
+                    "reference_frame": 196
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "004 - ClearPix Camera Grocery Parking Lot [KhtwB8faMpU]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/004 - ClearPix Camera Grocery Parking Lot [KhtwB8faMpU].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 170,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [0, 232, 323, 395],
+                    "reference_frame": 160
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [705, 150, 911, 226],
+                    "reference_frame": 160
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "005 - ClearPix Camera Grocery Parking [zEuekKCmZP0]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/005 - ClearPix Camera Grocery Parking [zEuekKCmZP0].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 140,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [1204, 213, 1280, 284],
+                    "reference_frame": 123
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1064, 188, 1220, 252],
+                    "reference_frame": 123
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "005 - ClearPix Camera Grocery Parking [zEuekKCmZP0]_1",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/005 - ClearPix Camera Grocery Parking [zEuekKCmZP0]_1.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 80,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [478, 278, 747, 375],
+                    "reference_frame": 6
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [637, 216, 947, 318],
+                    "reference_frame": 6
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "005 - ClearPix Camera Grocery Parking [zEuekKCmZP0]_2",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/005 - ClearPix Camera Grocery Parking [zEuekKCmZP0]_2.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 495,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [590, 322, 882, 444],
+                    "reference_frame": 99
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [451, 279, 713, 375],
+                    "reference_frame": 99
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "006 - NE Parking - Video Export Sample [PdSv3RsKkTc]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/006 - NE Parking - Video Export Sample [PdSv3RsKkTc].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 335,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [610, 267, 730, 353],
+                    "reference_frame": 58
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1221, 210, 1406, 349],
+                    "reference_frame": 58
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "007 - ClearPix Camera School Parking [XVYQFhVvFAU]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/007 - ClearPix Camera School Parking [XVYQFhVvFAU].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 606,
+            "fps": 10.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "008 - Stock Footage_ Security Camera Surveillance Footage of Cars in a Rooftop Parking Lot [sVhbMvx7qcs]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/008 - Stock Footage_ Security Camera Surveillance Footage of Cars in a Rooftop Parking Lot [sVhbMvx7qcs].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 696,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [565, 483, 749, 580],
+                    "reference_frame": 388
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [336, 500, 532, 602],
+                    "reference_frame": 388
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "009 - AXIS Q1798 LE PARKING LOT DEMO [PslJCL-uGe0]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/009 - AXIS Q1798 LE PARKING LOT DEMO [PslJCL-uGe0].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 2386,
+            "fps": 29.97002997002997,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "010 - IP camera footage of Carpark [_gAzZuyEB_8]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/010 - IP camera footage of Carpark [_gAzZuyEB_8].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 850,
+            "fps": 30.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "011 - Axis P3367 VE Camera in Action Nighttime Parking Lot [Yb8ixFE8_6I]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/011 - Axis P3367 VE Camera in Action Nighttime Parking Lot [Yb8ixFE8_6I].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 380,
+            "fps": 29.97002997002997,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "012 - Car in Parking Garage - Security Camera [zBBVnq20HFU]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/012 - Car in Parking Garage - Security Camera [zBBVnq20HFU].mp4",
+            "split": "normal",
+            "width": 1910,
+            "height": 1080,
+            "frame_count": 565,
+            "fps": 25.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "013 - Parking Garage Rooftop Security ⧸ Surveillance Camera Footage [u4SzzYX5HoI]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/013 - Parking Garage Rooftop Security ⧸ Surveillance Camera Footage [u4SzzYX5HoI].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 946,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [847, 23, 1072, 107],
+                    "reference_frame": 658
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [937, 189, 1213, 287],
+                    "reference_frame": 658
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "014 - ClearPix Camera Car Dealer Lot [i-sgVJUmqbg]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/014 - ClearPix Camera Car Dealer Lot [i-sgVJUmqbg].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 158,
+            "fps": 10.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "015 - Parking 2 Fisheye Footage for Panoramic Camera [y7PkmX2k9aA]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/015 - Parking 2 Fisheye Footage for Panoramic Camera [y7PkmX2k9aA].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 1220,
+            "fps": 30.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "016 - VIVOTEK IP8151 in a Parking Lot [tM06vcUw7ak]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/016 - VIVOTEK IP8151 in a Parking Lot [tM06vcUw7ak].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 419,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [0, 492, 86, 623],
+                    "reference_frame": 243
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [63, 520, 156, 557],
+                    "reference_frame": 243
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "017 - Dahua 4 Megapixel IP Security Camera - Parking Lot Entrance [URpOjaSKjCc]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/017 - Dahua 4 Megapixel IP Security Camera - Parking Lot Entrance [URpOjaSKjCc].mp4",
+            "split": "normal",
+            "width": 1910,
+            "height": 1080,
+            "frame_count": 468,
+            "fps": 15.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "018 - HD CCTV for parking area [VAQyR_wQoA0]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/018 - HD CCTV for parking area [VAQyR_wQoA0].mp4",
+            "split": "normal",
+            "width": 960,
+            "height": 720,
+            "frame_count": 249,
+            "fps": 12.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [53, 112, 315, 231],
+                    "reference_frame": 97
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [630, 48, 743, 88],
+                    "reference_frame": 97
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "019 - Hikvision 3MP Test Daytime Carpark [8srM-Nf69vo]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/019 - Hikvision 3MP Test Daytime Carpark [8srM-Nf69vo].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 179,
+            "fps": 25.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "019 - Hikvision 3MP Test Daytime Carpark [8srM-Nf69vo]_1",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/019 - Hikvision 3MP Test Daytime Carpark [8srM-Nf69vo]_1.mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 295,
+            "fps": 25.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "020 - StarDot NetCam SC 5mp Parking Lot - MidwestSurveillance-com [JGgzvsmWaVA]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/020 - StarDot NetCam SC 5mp Parking Lot - MidwestSurveillance-com [JGgzvsmWaVA].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 193,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [409, 492, 909, 701],
+                    "reference_frame": 42
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [428, 375, 924, 559],
+                    "reference_frame": 42
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "021 - 4K Carpark [OIuzb48sH70]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/021 - 4K Carpark [OIuzb48sH70].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 377,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [1493, 940, 1804, 1079],
+                    "reference_frame": 3
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [730, 808, 1001, 919],
+                    "reference_frame": 3
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "022 - HD Camera carpark and License plate [JPUp12No6uQ]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/022 - HD Camera carpark and License plate [JPUp12No6uQ].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 66,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [387, 386, 472, 447],
+                    "reference_frame": 56
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [915, 361, 1150, 545],
+                    "reference_frame": 56
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "023 - August 28 Parking Lot Footage [G3WqJgYszdE]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/023 - August 28 Parking Lot Footage [G3WqJgYszdE].mp4",
+            "split": "normal",
+            "width": 768,
+            "height": 480,
+            "frame_count": 1029,
+            "fps": 30.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "025 - Analogue CCTV recording of a typical car park scene - Part 1 SD [1Fk2HjfK5u0]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/025 - Analogue CCTV recording of a typical car park scene - Part 1 SD [1Fk2HjfK5u0].mp4",
+            "split": "normal",
+            "width": 1440,
+            "height": 1080,
+            "frame_count": 575,
+            "fps": 29.97002997002997,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "026 - Parking Lot WV-NP304 [CAfZL6NJkwc]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/026 - Parking Lot WV-NP304 [CAfZL6NJkwc].mp4",
+            "split": "normal",
+            "width": 960,
+            "height": 720,
+            "frame_count": 168,
+            "fps": 10.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "027 - High Definition CCTV recording of a typical car park scene - Part 2 HD [3Rug8tECwZc]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/027 - High Definition CCTV recording of a typical car park scene - Part 2 HD [3Rug8tECwZc].mp4",
+            "split": "normal",
+            "width": 1440,
+            "height": 1080,
+            "frame_count": 832,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [840, 273, 1097, 483],
+                    "reference_frame": 318
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [414, 246, 792, 566],
+                    "reference_frame": 318
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "028 - Mangocam Car park camera by bin store 20170718 0824 to 0848AM [T0RI1xwnJUU]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/028 - Mangocam Car park camera by bin store 20170718 0824 to 0848AM [T0RI1xwnJUU].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 360,
+            "frame_count": 266,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [378, 20, 410, 53],
+                    "reference_frame": 149
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [377, 94, 450, 153],
+                    "reference_frame": 149
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "028 - Mangocam Car park camera by bin store 20170718 0824 to 0848AM [T0RI1xwnJUU]_1",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/028 - Mangocam Car park camera by bin store 20170718 0824 to 0848AM [T0RI1xwnJUU]_1.mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 360,
+            "frame_count": 21,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [379, 20, 411, 53],
+                    "reference_frame": 11
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [422, 107, 569, 230],
+                    "reference_frame": 11
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "028 - Mangocam Car park camera by bin store 20170718 0824 to 0848AM [T0RI1xwnJUU]_2",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/028 - Mangocam Car park camera by bin store 20170718 0824 to 0848AM [T0RI1xwnJUU]_2.mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 360,
+            "frame_count": 66,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [378, 20, 411, 53],
+                    "reference_frame": 26
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [423, 109, 568, 231],
+                    "reference_frame": 26
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "029 - Parking Lot Security Footage 556935 [Ka2C3QN7RX8]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/029 - Parking Lot Security Footage 556935 [Ka2C3QN7RX8].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 360,
+            "frame_count": 719,
+            "fps": 29.97002997002997,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "030 - Heron carpark CCTV [KQCKuaEEJ1A]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/030 - Heron carpark CCTV [KQCKuaEEJ1A].mp4",
+            "split": "normal",
+            "width": 960,
+            "height": 720,
+            "frame_count": 292,
+            "fps": 11.988011988011989,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [167, 240, 450, 386],
+                    "reference_frame": 175
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [856, 179, 960, 277],
+                    "reference_frame": 175
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "030 - Heron carpark CCTV [KQCKuaEEJ1A]_1",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/030 - Heron carpark CCTV [KQCKuaEEJ1A]_1.mp4",
+            "split": "normal",
+            "width": 960,
+            "height": 720,
+            "frame_count": 252,
+            "fps": 11.988011988011989,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [95, 88, 240, 143],
+                    "reference_frame": 180
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [179, 61, 320, 124],
+                    "reference_frame": 180
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "031 - Parking Lot daytime [2Vi_0vLuXLc]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/031 - Parking Lot daytime [2Vi_0vLuXLc].mp4",
+            "split": "normal",
+            "width": 1910,
+            "height": 1080,
+            "frame_count": 120,
+            "fps": 15.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [696, 87, 826, 149],
+                    "reference_frame": 108
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [499, 137, 690, 221],
+                    "reference_frame": 108
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "032 - FS-IP4180 - Parking Lot at Night [3-jdPMZzlIk]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/032 - FS-IP4180 - Parking Lot at Night [3-jdPMZzlIk].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 482,
+            "fps": 15.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [1509, 686, 1784, 907],
+                    "reference_frame": 182
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1242, 698, 1573, 1042],
+                    "reference_frame": 182
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "033 - Out Door Commercial Building - Security Camera [5yW4Lvr8IJE]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/033 - Out Door Commercial Building - Security Camera [5yW4Lvr8IJE].mp4",
+            "split": "normal",
+            "width": 1910,
+            "height": 1080,
+            "frame_count": 271,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [885, 20, 1010, 78],
+                    "reference_frame": 270
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [763, 11, 851, 56],
+                    "reference_frame": 270
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "034 - Inside Parking Garage [6g_0iUUIwWw]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/034 - Inside Parking Garage [6g_0iUUIwWw].mp4",
+            "split": "normal",
+            "width": 1910,
+            "height": 1080,
+            "frame_count": 83,
+            "fps": 25.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "035 - MicroPower Technologies - Commercial Parking Lot (Daytime) [VwKUaBNDzPk]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/035 - MicroPower Technologies - Commercial Parking Lot (Daytime) [VwKUaBNDzPk].mp4",
+            "split": "normal",
+            "width": 852,
+            "height": 480,
+            "frame_count": 271,
+            "fps": 29.97002997002997,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "036 - FullSight 8MP - Parking Lot [WMHLP_EDjRo]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/036 - FullSight 8MP - Parking Lot [WMHLP_EDjRo].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 546,
+            "frame_count": 350,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [1228, 214, 1264, 246],
+                    "reference_frame": 176
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [325, 274, 506, 498],
+                    "reference_frame": 176
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "037 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/037 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 270,
+            "fps": 23.976023976023978,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [792, 71, 850, 109],
+                    "reference_frame": 173
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [531, 58, 647, 116],
+                    "reference_frame": 173
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "037 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0]_1",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/037 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0]_1.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 365,
+            "fps": 23.976023976023978,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "037 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0]_2",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/037 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0]_2.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 118,
+            "fps": 23.976023976023978,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [792, 71, 850, 109],
+                    "reference_frame": 50
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [534, 59, 646, 115],
+                    "reference_frame": 50
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "038 - FullSight 8MP - Auto Shop Parking Lot [kfrkH6A8UEo]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/038 - FullSight 8MP - Auto Shop Parking Lot [kfrkH6A8UEo].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 546,
+            "frame_count": 102,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [290, 321, 639, 543],
+                    "reference_frame": 18
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [112, 294, 423, 541],
+                    "reference_frame": 18
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "039 - FS IP8180 Parking Lot at Night [mQ-lnJnd4vs]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/039 - FS IP8180 Parking Lot at Night [mQ-lnJnd4vs].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 546,
+            "frame_count": 577,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [937, 276, 1120, 436],
+                    "reference_frame": 427
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [769, 285, 971, 514],
+                    "reference_frame": 427
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "040 - D7-180 camera view from roof watching a parking lot [qf9xWdeH-VE]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/040 - D7-180 camera view from roof watching a parking lot [qf9xWdeH-VE].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 192,
+            "fps": 15.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "041 - Parking Lot Camera [w9BND-VnX-A]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/041 - Parking Lot Camera [w9BND-VnX-A].mp4",
+            "split": "normal",
+            "width": 854,
+            "height": 480,
+            "frame_count": 130,
+            "fps": 14.985014985014985,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "042 - Top view footage of the parking lot [FO8IF1Swcv4]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/042 - Top view footage of the parking lot [FO8IF1Swcv4].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 347,
+            "fps": 24.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "043 - Axis P3367 VE Camera in Action Daytime Parking Lot [4aPLTNU0Vzg]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/043 - Axis P3367 VE Camera in Action Daytime Parking Lot [4aPLTNU0Vzg].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 506,
+            "fps": 29.97002997002997,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "043 - Axis P3367 VE Camera in Action Daytime Parking Lot [4aPLTNU0Vzg]_1",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/043 - Axis P3367 VE Camera in Action Daytime Parking Lot [4aPLTNU0Vzg]_1.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 806,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [459, 246, 587, 318],
+                    "reference_frame": 776
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [573, 18, 609, 47],
+                    "reference_frame": 776
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "044 - Nighttime & Early Morning Parking Lot Surveillance [TBlEKO3OgpE]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/044 - Nighttime & Early Morning Parking Lot Surveillance [TBlEKO3OgpE].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 331,
+            "fps": 25.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "045 - CCTV Monitoring - Car Park [VZkihjXZslU]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/045 - CCTV Monitoring - Car Park [VZkihjXZslU].mp4",
+            "split": "normal",
+            "width": 1152,
+            "height": 720,
+            "frame_count": 606,
+            "fps": 25.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "046 - AHD CAR PARK DAY [bjTs7lK1Bfk]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/046 - AHD CAR PARK DAY [bjTs7lK1Bfk].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 413,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [607, 34, 764, 112],
+                    "reference_frame": 358
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [352, 71, 470, 149],
+                    "reference_frame": 358
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "047 - ARECONT AV8185 Parking 180° [1S1Za-zPf6c]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/047 - ARECONT AV8185 Parking 180° [1S1Za-zPf6c].mp4",
+            "split": "normal",
+            "width": 854,
+            "height": 480,
+            "frame_count": 598,
+            "fps": 10.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "048 - InSight 5 Megapixel fixed Surveillance camera 2560x1920 [6fyaPuYepnw]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/048 - InSight 5 Megapixel fixed Surveillance camera 2560x1920 [6fyaPuYepnw].mp4",
+            "split": "normal",
+            "width": 1438,
+            "height": 1080,
+            "frame_count": 107,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [195, 555, 519, 690],
+                    "reference_frame": 104
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [844, 631, 1126, 841],
+                    "reference_frame": 104
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "049 - mobotix parking lot [Z9_B6hRzH1M]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/049 - mobotix parking lot [Z9_B6hRzH1M].mp4",
+            "split": "normal",
+            "width": 960,
+            "height": 720,
+            "frame_count": 400,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [592, 505, 958, 719],
+                    "reference_frame": 93
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [183, 176, 347, 231],
+                    "reference_frame": 93
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 281,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [991, 429, 1113, 494],
+                    "reference_frame": 31
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [743, 437, 853, 511],
+                    "reference_frame": 31
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]_1",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]_1.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 259,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [991, 430, 1117, 494],
+                    "reference_frame": 181
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [825, 417, 939, 502],
+                    "reference_frame": 181
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]_2",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]_2.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 857,
+            "fps": 30.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]_3",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]_3.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 159,
+            "fps": 30.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]_4",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/050 - BLK-HDPTZ12 Security Camera Parkng Lot Surveillance Video [U7HRKjlXK-Y]_4.mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 797,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [96, 462, 269, 616],
+                    "reference_frame": 493
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [129, 328, 237, 402],
+                    "reference_frame": 493
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "051 - Mobotix from Security Perth - 180 Degree Lens [46amZfMV9Ls]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/051 - Mobotix from Security Perth - 180 Degree Lens [46amZfMV9Ls].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 480,
+            "frame_count": 198,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [304, 203, 369, 233],
+                    "reference_frame": 127
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [688, 192, 764, 266],
+                    "reference_frame": 127
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "052 - ACTi E44 1080P IR Bullet - Night Video [E96F9RQal5w]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/052 - ACTi E44 1080P IR Bullet - Night Video [E96F9RQal5w].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 1082,
+            "fps": 30.0,
+            "boxes": [],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "needs_review"
+        },
+        {
+            "video_id": "053 - Rainy Parking Lot - 720P (Optica B102) [NGUqmSrymUc]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/053 - Rainy Parking Lot - 720P (Optica B102) [NGUqmSrymUc].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 214,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [0, 176, 41, 221],
+                    "reference_frame": 25
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [53, 161, 190, 228],
+                    "reference_frame": 25
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "054 - Parking Lot Crash a-k-a- What happens when you leave your truck out of gear and no Parking Brake [G8mv1nRHjJA]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/054 - Parking Lot Crash a-k-a- What happens when you leave your truck out of gear and no Parking Brake [G8mv1nRHjJA].mp4",
+            "split": "normal",
+            "width": 720,
+            "height": 480,
+            "frame_count": 133,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [58, 69, 320, 183],
+                    "reference_frame": 93
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [338, 30, 492, 111],
+                    "reference_frame": 93
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        },
+        {
+            "video_id": "054 - Parking Lot Crash a-k-a- What happens when you leave your truck out of gear and no Parking Brake [G8mv1nRHjJA]_1",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Non-Accident/054 - Parking Lot Crash a-k-a- What happens when you leave your truck out of gear and no Parking Brake [G8mv1nRHjJA]_1.mp4",
+            "split": "normal",
+            "width": 720,
+            "height": 480,
+            "frame_count": 527,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [434, 26, 552, 87],
+                    "reference_frame": 177
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [339, 31, 495, 110],
+                    "reference_frame": 177
+                }
+            ],
+            "events": [],
+            "status": "needs_review",
+            "schema_version": 1,
+            "tag": "normal"
+        }
+    ]
+}

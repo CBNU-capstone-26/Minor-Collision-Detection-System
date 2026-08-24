@@ -46,6 +46,40 @@ python -m src.nonaccident_pipeline detect \
   --model yolo11n.pt
 ```
 
+## JSON 포맷 정리
+
+`drafts.json`을 프로젝트의 `.prettierrc.json` 설정에 맞춰 정리하려면 다음 명령어를 실행한다.
+
+```bash
+npx prettier \
+  --config .prettierrc.json \
+  --write work/drafts.json
+```
+
+검수용 어노테이션 파일도 같은 방식으로 포맷한다.
+
+```bash
+npx prettier \
+  --config .prettierrc.json \
+  --write work/nonaccident_annotations.json
+```
+
+두 JSON 파일을 한 번에 포맷하려면 다음 명령어를 사용한다.
+
+```bash
+npx prettier \
+  --config .prettierrc.json \
+  --write work/drafts.json work/nonaccident_annotations.json
+```
+
+Prettier가 설치되어 있지 않은 경우에는 `npx --yes prettier`를 사용한다.
+
+```bash
+npx --yes prettier \
+  --config .prettierrc.json \
+  --write work/drafts.json
+```
+
 ## GUI 검수
 
 ```bash
@@ -57,6 +91,33 @@ python -m src.app \
 ```
 
 비사고 모드에서는 사고 이벤트와 시작·종료 프레임을 입력하지 않는다. 자동 박스를 수정하고, 기준 차량이 정확히 두 대인지 확인한 뒤 `기준 차량 2대 확정`과 `저장`을 누른다. 이동 차량은 최종 TXT에 포함하지 않는다.
+
+## 박스 상태 태그 분류
+
+`nonaccident_annotations.json`의 각 영상에는 작업 상태인 `status`와 별도로 박스 상태 태그인 `tag`가 기록된다.
+
+- `tag: "normal"`: `car 0`, `car 1` 두 박스가 모두 있고 좌표·프레임·영상 경계 검증을 통과한 상태
+- `tag: "needs_review"`: 박스가 비어 있거나, 두 개가 아니거나, ID·좌표·프레임 검증에 실패한 상태
+
+`normal`은 자동 검증상 형식이 정상이라는 뜻이며, 차량을 실제로 올바르게 둘러쌌다는 사람의 최종 승인과는 다르다. 최종 확정은 GUI에서 영상을 확인한 뒤 `status: "confirmed"`로 저장한다.
+
+이미 생성된 JSON에 태그를 다시 계산하려면 다음 명령어를 실행한다.
+
+```bash
+python -m src.nonaccident_pipeline classify \
+  --annotations work/nonaccident_annotations.json \
+  --output work/nonaccident_annotations.tagged.json
+```
+
+원본 파일을 갱신하려면 출력 경로를 입력 파일과 같게 지정할 수 있다.
+
+```bash
+python -m src.nonaccident_pipeline classify \
+  --annotations work/nonaccident_annotations.json \
+  --output work/nonaccident_annotations.json
+```
+
+분류 결과는 터미널에 `normal`과 `needs_review` 개수로 표시된다. `needs_review` 영상은 GUI에서 박스를 추가·수정한 뒤 저장하고, 다시 `classify`를 실행한다.
 
 ## 최종 내보내기
 

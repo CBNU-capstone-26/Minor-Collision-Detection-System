@@ -57,6 +57,7 @@ class VideoAnnotation:
     events: list[Event] = field(default_factory=list)
     status: str = "not_started"
     schema_version: int = 1
+    tag: str = "needs_review"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "VideoAnnotation":
@@ -72,6 +73,7 @@ class VideoAnnotation:
             events=[Event.from_dict(item) for item in data.get("events", [])],
             status=str(data.get("status", "not_started")),
             schema_version=int(data.get("schema_version", 1)),
+            tag=str(data.get("tag", "needs_review")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -98,8 +100,10 @@ def validate_annotation(annotation: VideoAnnotation) -> list[str]:
         errors.append("video dimensions must be positive")
     if annotation.frame_count <= 0:
         errors.append("frame_count must be positive")
-    if annotation.status not in {"not_started", "in_progress", "confirmed", "excluded"}:
+    if annotation.status not in {"not_started", "in_progress", "needs_review", "confirmed", "excluded"}:
         errors.append(f"invalid video status {annotation.status!r}")
+    if annotation.tag not in {"normal", "needs_review"}:
+        errors.append(f"invalid video tag {annotation.tag!r}")
     ids: set[int] = set()
     for box in annotation.boxes:
         if box.vehicle_id in ids:
