@@ -132,6 +132,21 @@ Pre-Processing/
 
 검수용 MP4는 원본 영상 전체 길이·해상도·FPS·프레임 수를 유지한다. 모든 기준 차량 박스를 표시하고, 사고 차량은 주황색으로 강조하며 현재 프레임 번호와 사고 구간을 표시한다.
 
+## 완료 이벤트 일괄 내보내기
+
+GUI를 열지 않고 `confirmed` 상태인 이벤트만 논문 호환 TXT와 검수용 MP4로 생성할 수 있다. `needs_review`와 `excluded` 이벤트는 건너뛴다.
+
+`Pre-Processing` 폴더에서 실행한다.
+
+```bash
+source ../.venv/bin/activate
+python -m src.export_confirmed \
+  --annotations work/accident_annotations.json \
+  --output-root output
+```
+
+생성 결과는 영상의 split에 따라 `output/learning/txt/`, `output/learning/visualized/`, `output/testing/txt/` 등에 저장된다. 같은 영상의 여러 이벤트는 기존 이벤트 순서를 유지해 첫 이벤트는 영상명, 이후 이벤트는 `__a2`, `__a3` 형식으로 저장된다. `ffmpeg` 경로가 기본 PATH에 없다면 `--ffmpeg` 옵션으로 실행 파일 경로를 지정한다.
+
 ## 테스트
 
 저장소 루트에서 실행한다.
