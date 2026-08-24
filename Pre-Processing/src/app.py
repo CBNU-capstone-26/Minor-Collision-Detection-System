@@ -51,6 +51,7 @@ class AnnotationWindow(QMainWindow):
         self.canvas.box_edit_started.connect(self.record_box_action)
         self.canvas.box_deleted.connect(self.delete_box)
         self.canvas.box_changed.connect(self.update_box)
+        self.canvas.frame_step_requested.connect(self.step_frame)
         self.frame_label = QLabel("frame 0000")
         self.frame_label.setObjectName("frame")
         self.status_label = QLabel("작업할 영상을 선택하세요.")
@@ -101,8 +102,18 @@ class AnnotationWindow(QMainWindow):
 
         left = QVBoxLayout(); left.addWidget(QLabel("영상 목록")); left.addWidget(self.sort_combo); left.addWidget(self.video_list); left.addWidget(self.open_folder_button)
         controls = QHBoxLayout()
-        for label, callback in [("이전", self.previous_frame), ("재생", self.toggle_play), ("다음", self.next_frame)]:
-            button = QPushButton(label); button.clicked.connect(callback); controls.addWidget(button)
+        self.previous_button = QPushButton("이전")
+        self.play_button = QPushButton("재생")
+        self.next_button = QPushButton("다음")
+        self.previous_button.clicked.connect(self.previous_frame)
+        self.play_button.clicked.connect(self.toggle_play)
+        self.next_button.clicked.connect(self.next_frame)
+        for button in (self.previous_button, self.next_button):
+            button.setAutoRepeat(True)
+            button.setAutoRepeatDelay(350)
+            button.setAutoRepeatInterval(60)
+        for button in (self.previous_button, self.play_button, self.next_button):
+            controls.addWidget(button)
         controls.addWidget(self.frame_label); controls.addStretch()
         center = QVBoxLayout(); center.addWidget(self.status_label); center.addWidget(self.canvas, 1); center.addWidget(self.timeline); center.addLayout(controls)
         form = QFormLayout(); form.addRow("영상 현황", self.status_combo); form.addRow("사고 차량 ID", self.vehicle_combo); form.addRow("시작 프레임", self.start_spin); form.addRow("종료 프레임", self.end_spin); form.addRow("이벤트 상태", self.event_status_combo); form.addRow("메모", self.event_note)
@@ -156,6 +167,11 @@ class AnnotationWindow(QMainWindow):
 
     def previous_frame(self) -> None: self.frame_index = max(0, self.frame_index - 1); self.show_frame()
     def next_frame(self) -> None: self.frame_index = min((self.current.frame_count - 1) if self.current else 0, self.frame_index + 1); self.show_frame()
+    def step_frame(self, amount: int) -> None:
+        if amount < 0:
+            self.previous_frame()
+        elif amount > 0:
+            self.next_frame()
     def seek_frame(self, frame: int) -> None:
         if self.current and 0 <= frame < self.current.frame_count and frame != self.frame_index:
             self.frame_index = frame; self.show_frame()

@@ -17,6 +17,7 @@ class VideoCanvas(QWidget):
     box_edit_finished = Signal()
     box_deleted = Signal(int)
     box_changed = Signal(int, QRectF)
+    frame_step_requested = Signal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -194,7 +195,11 @@ class VideoCanvas(QWidget):
         self.update()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API
-        if event.key() == Qt.Key.Key_Escape:
+        if event.key() == Qt.Key.Key_Left:
+            self.frame_step_requested.emit(-1)
+        elif event.key() == Qt.Key.Key_Right:
+            self.frame_step_requested.emit(1)
+        elif event.key() == Qt.Key.Key_Escape:
             self._drag_start = None
             self._drag_current = None
             self._dragging_existing = False
