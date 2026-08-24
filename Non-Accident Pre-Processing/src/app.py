@@ -16,8 +16,7 @@ from .ui_helpers import sort_video_paths
 
 
 class AnnotationWindow(QMainWindow):
-    STATUS_LABELS = {"not_started": "미작성", "in_progress": "작업 중", "needs_review": "검토 필요", "confirmed": "완료", "excluded": "제외"}
-    TAG_LABELS = {"normal": "정상", "needs_review": "검토 필요"}
+    STATUS_LABELS = {"not_started": "미작성", "in_progress": "작업 중", "needs_review": "검토 필요", "normal": "정상", "confirmed": "완료", "excluded": "제외"}
 
     def __init__(self, source_root: Path, annotation_path: Path, output_root: Path, mode: str = "accident") -> None:
         super().__init__()
@@ -182,8 +181,7 @@ class AnnotationWindow(QMainWindow):
         for path in self.videos:
             annotation = self._annotation_for_path(path)
             status = self.STATUS_LABELS.get(annotation.status, "미작성") if annotation is not None else "미작성"
-            tag = self.TAG_LABELS.get(annotation.tag, "검토 필요") if annotation is not None else "검토 필요"
-            self.video_list.addItem(f"{path.stem}  ·  {status}  ·  {tag}")
+            self.video_list.addItem(f"{path.stem}  ·  {status}")
         self.video_list.blockSignals(False)
         if self.videos:
             self.video_list.setCurrentRow(self.videos.index(current_path) if current_path in self.videos else 0)
@@ -470,15 +468,12 @@ class AnnotationWindow(QMainWindow):
             QMessageBox.warning(self, "기준 차량 확인 필요", "비사고 영상은 기준 차량 박스 2개가 필요합니다.")
             return
         self.current.boxes = [Box(index, list(box.bbox), box.reference_frame) for index, box in enumerate(self.current.boxes)]
-        self.current.status = "confirmed"
+        self.current.status = "normal"
         self.set_status_combo(self.current.status)
         self.save_current()
         self.status_label.setText("기준 차량 2대가 확정되었습니다.")
     def save_current(self) -> None:
         if self.current:
-            if self.mode == "non-accident":
-                box_ids = {box.vehicle_id for box in self.current.boxes}
-                self.current.tag = "normal" if len(self.current.boxes) == 2 and box_ids == {0, 1} and not validate_annotation(self.current) else "needs_review"
             self.annotations[self.current.video_id] = self.current; save_annotations(self.annotation_path, self.annotations); self.refresh_video_list(); self.status_label.setText(f"저장됨 · {self.current.video_id}")
     def export_current(self) -> None:
         if not self.current: return

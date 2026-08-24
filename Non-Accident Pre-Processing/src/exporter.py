@@ -13,8 +13,8 @@ def nonaccident_txt(annotation: VideoAnnotation) -> str:
     errors = validate_annotation(annotation)
     if errors:
         raise AnnotationError("; ".join(errors))
-    if annotation.status != "confirmed":
-        raise AnnotationError(f"video {annotation.video_id} is not confirmed")
+    if annotation.status not in {"normal", "confirmed"}:
+        raise AnnotationError(f"video {annotation.video_id} is not normal/confirmed")
     if len(annotation.boxes) != 2 or {box.vehicle_id for box in annotation.boxes} != {0, 1}:
         raise AnnotationError("non-accident output requires exactly car 0 and car 1 boxes")
     return "".join(f"car,{box.vehicle_id},{box.bbox[0]},{box.bbox[1]},{box.bbox[2]},{box.bbox[3]}\n" for box in annotation.boxes)

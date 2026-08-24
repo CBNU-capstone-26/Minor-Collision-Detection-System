@@ -92,21 +92,23 @@ python -m src.app \
 
 비사고 모드에서는 사고 이벤트와 시작·종료 프레임을 입력하지 않는다. 자동 박스를 수정하고, 기준 차량이 정확히 두 대인지 확인한 뒤 `기준 차량 2대 확정`과 `저장`을 누른다. 이동 차량은 최종 TXT에 포함하지 않는다.
 
-## 박스 상태 태그 분류
+## 박스 상태 분류
 
-`nonaccident_annotations.json`의 각 영상에는 작업 상태인 `status`와 별도로 박스 상태 태그인 `tag`가 기록된다.
+`nonaccident_annotations.json`은 별도 태그 없이 `status` 하나로 상태를 기록한다.
 
-- `tag: "normal"`: `car 0`, `car 1` 두 박스가 모두 있고 좌표·프레임·영상 경계 검증을 통과한 상태
-- `tag: "needs_review"`: 박스가 비어 있거나, 두 개가 아니거나, ID·좌표·프레임 검증에 실패한 상태
+- `status: "normal"`: `car 0`, `car 1` 두 박스가 모두 있고 좌표·프레임·영상 경계 검증을 통과한 상태
+- `status: "needs_review"`: 박스가 비어 있거나, 하나만 있거나, ID·좌표·프레임 검증에 실패한 상태
 
-`normal`은 자동 검증상 형식이 정상이라는 뜻이며, 차량을 실제로 올바르게 둘러쌌다는 사람의 최종 승인과는 다르다. 최종 확정은 GUI에서 영상을 확인한 뒤 `status: "confirmed"`로 저장한다.
+`normal`은 박스 형식 검증을 통과했다는 뜻이다. 기존 `confirmed` 값도 호환되지만, 비사고 영상에서는 `normal`을 사용한다.
+
+GUI에서 `영상 현황`을 직접 선택한 뒤 `저장`을 누르면 선택한 `status` 값이 그대로 JSON에 저장된다. 저장 시 박스 개수에 따라 상태를 자동으로 덮어쓰지 않는다.
 
 이미 생성된 JSON에 태그를 다시 계산하려면 다음 명령어를 실행한다.
 
 ```bash
 python -m src.nonaccident_pipeline classify \
   --annotations work/nonaccident_annotations.json \
-  --output work/nonaccident_annotations.tagged.json
+  --output work/nonaccident_annotations.classified.json
 ```
 
 원본 파일을 갱신하려면 출력 경로를 입력 파일과 같게 지정할 수 있다.
@@ -127,7 +129,7 @@ python -m src.nonaccident_pipeline export \
   --output-root output
 ```
 
-`confirmed` 상태인 영상만 처리한다. `needs_review`와 `excluded`는 건너뛴다.
+`normal` 또는 기존 호환 상태인 `confirmed` 영상만 처리한다. `needs_review`와 `excluded`는 건너뛴다.
 
 TXT는 논문 형식에 맞춰 `A` 레코드 없이 두 줄만 생성한다.
 

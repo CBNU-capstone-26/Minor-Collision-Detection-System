@@ -67,6 +67,13 @@ class AppStartupTests(unittest.TestCase):
             window.load_annotation_file(annotations)
             self.assertEqual(window.annotation_path, annotations)
             self.assertIn("001", window.annotations)
+
+            window.mode = "non-accident"
+            window.current.status = "normal"
+            window.set_status_combo("normal")
+            window.save_current()
+            self.assertEqual(window.current.status, "normal")
+            self.assertEqual(window.load_annotation_file(annotations), None)
             window.close()
 
 

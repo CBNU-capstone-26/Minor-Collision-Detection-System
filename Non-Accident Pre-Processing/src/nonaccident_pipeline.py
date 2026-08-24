@@ -86,15 +86,15 @@ def draft_to_annotation(draft: dict) -> VideoAnnotation:
     return VideoAnnotation(draft["video_id"], draft["source_video"], "normal", int(draft["width"]), int(draft["height"]), int(draft["frame_count"]), float(draft["fps"]), boxes=boxes, status="needs_review")
 
 
-def classify_annotation_tag(annotation: VideoAnnotation) -> str:
+def classify_annotation_status(annotation: VideoAnnotation) -> str:
     """Classify box completeness without claiming human visual approval."""
-    errors = validate_annotation_for_tag(annotation)
+    errors = validate_annotation_for_status(annotation)
     if errors:
         return "needs_review"
     return "normal"
 
 
-def validate_annotation_for_tag(annotation: VideoAnnotation) -> list[str]:
+def validate_annotation_for_status(annotation: VideoAnnotation) -> list[str]:
     errors = []
     if len(annotation.boxes) != 2:
         errors.append("requires exactly two boxes")
@@ -127,7 +127,7 @@ def command_prepare(args: argparse.Namespace) -> None:
     annotations = {}
     for draft in payload.get("videos", []):
         annotation = draft_to_annotation(draft)
-        annotation.tag = classify_annotation_tag(annotation)
+        annotation.status = classify_annotation_status(annotation)
         annotations[annotation.video_id] = annotation
     save_annotations(args.output, annotations)
     print(f"wrote {len(annotations)} review annotations to {args.output}")
@@ -137,18 +137,18 @@ def command_classify(args: argparse.Namespace) -> None:
     annotations = load_annotations(args.annotations)
     counts = {"normal": 0, "needs_review": 0}
     for annotation in annotations.values():
-        annotation.tag = classify_annotation_tag(annotation)
-        counts[annotation.tag] += 1
+        annotation.status = classify_annotation_status(annotation)
+        counts[annotation.status] += 1
     save_annotations(args.output, annotations)
     print(f"classified {len(annotations)} video(s): normal={counts['normal']}, needs_review={counts['needs_review']}")
-    print(f"wrote tagged annotations to {args.output}")
+    print(f"wrote classified annotations to {args.output}")
 
 
 def command_export(args: argparse.Namespace) -> None:
     annotations = load_annotations(args.annotations)
     exported = 0
     for annotation in annotations.values():
-        if annotation.status != "confirmed":
+        if annotation.status not in {"normal", "confirmed"}:
             continue
         try:
             paths = export_nonaccident(annotation, args.output_root, args.ffmpeg)
@@ -166,7 +166,7 @@ def main() -> None:
     inventory_parser = sub.add_parser("inventory"); inventory_parser.add_argument("--source-root", type=Path, required=True); inventory_parser.add_argument("--output", type=Path, required=True); inventory_parser.set_defaults(func=command_inventory)
     detect_parser = sub.add_parser("detect"); detect_parser.add_argument("--inventory", type=Path, required=True); detect_parser.add_argument("--output", type=Path, required=True); detect_parser.add_argument("--model", default="yolo11n.pt"); detect_parser.set_defaults(func=command_detect)
     prepare_parser = sub.add_parser("prepare-review"); prepare_parser.add_argument("--drafts", type=Path, required=True); prepare_parser.add_argument("--output", type=Path, required=True); prepare_parser.set_defaults(func=command_prepare)
-    classify_parser = sub.add_parser("classify", help="tag annotations as normal or needs_review based on box validity"); classify_parser.add_argument("--annotations", type=Path, required=True); classify_parser.add_argument("--output", type=Path, required=True); classify_parser.set_defaults(func=command_classify)
+    classify_parser = sub.add_parser("classify", help="classify annotations as normal or needs_review based on box validity"); classify_parser.add_argument("--annotations", type=Path, required=True); classify_parser.add_argument("--output", type=Path, required=True); classify_parser.set_defaults(func=command_classify)
     export_parser = sub.add_parser("export"); export_parser.add_argument("--annotations", type=Path, required=True); export_parser.add_argument("--output-root", type=Path, required=True); export_parser.add_argument("--ffmpeg", default="ffmpeg"); export_parser.set_defaults(func=command_export)
     args = parser.parse_args(); args.func(args)
 
