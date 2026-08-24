@@ -6,12 +6,13 @@ from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
-from .ui_helpers import resize_box
+from .ui_helpers import clamp_box, resize_box
 
 
 class VideoCanvas(QWidget):
     box_created = Signal(QRectF)
     box_selected = Signal(int)
+    box_deselected = Signal()
     box_deleted = Signal(int)
     box_changed = Signal(int, QRectF)
 
@@ -35,7 +36,7 @@ class VideoCanvas(QWidget):
         self.image = image
         self.video_width = max(1, width)
         self.video_height = max(1, height)
-        self.boxes = [(int(vehicle_id), list(bbox)) for vehicle_id, bbox in boxes]
+        self.boxes = [(int(vehicle_id), clamp_box(list(bbox), self.video_width, self.video_height)) for vehicle_id, bbox in boxes]
         self.update()
 
     def _image_rect(self) -> QRectF:
@@ -82,9 +83,11 @@ class VideoCanvas(QWidget):
         }
 
     def _handle_at(self, point: QPoint, bbox: list[int]) -> str | None:
-        radius = 10
+        # The visible handle is small, especially when a large video is fitted
+        # into the canvas. Keep a generous click target around each handle.
+        radius = 14
         for handle, center in self._handle_points(bbox).items():
-            if abs(point.x() - center.x()) <= radius and abs(point.y() - center.y()) <= radius:
+            if (point.x() - center.x()) ** 2 + (point.y() - center.y()) ** 2 <= radius**2:
                 return handle
         return None
 
@@ -117,18 +120,33 @@ class VideoCanvas(QWidget):
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
         if event.button() != Qt.MouseButton.LeftButton or self.image.isNull():
             return
-        hit = self._box_at(event.position().toPoint())
+        point = event.position().toPoint()
+        # Check the selected box's handles first. A handle can overlap another
+        # box or sit just outside its rectangle, so body hit-testing must not
+        # win over an intentional resize click.
+        handle = None
+        hit = None
+        if self.selected_id is not None:
+            selected_box = self._box_for(self.selected_id)
+            if selected_box is not None:
+                handle = self._handle_at(point, selected_box)
+                if handle is not None:
+                    hit = self.selected_id
+        if hit is None:
+            hit = self._box_at(point)
         if hit is not None:
             self.selected_id = hit
-            self.box_selected.emit(hit)
             self._dragging_existing = True
             self._drag_vehicle_id = hit
             self._drag_box = list(self._box_for(hit) or [0, 0, 0, 0])
-            self._drag_mode = self._handle_at(event.position().toPoint(), self._drag_box) or "move"
+            self._drag_mode = handle or self._handle_at(point, self._drag_box) or "move"
+            self.box_selected.emit(hit)
         else:
+            self.selected_id = None
+            self.box_deselected.emit()
             self._dragging_existing = False
             self._drag_mode = "create"
-        self._drag_start = event.position().toPoint()
+        self._drag_start = point
         self._drag_current = self._drag_start
         self.update()
 
@@ -146,6 +164,7 @@ class VideoCanvas(QWidget):
                     x1 = round(max(0, min(self.video_width - width, self._drag_box[0] + dx)))
                     y1 = round(max(0, min(self.video_height - height, self._drag_box[1] + dy)))
                     new_box = [x1, y1, x1 + width, y1 + height]
+                new_box = clamp_box(new_box, self.video_width, self.video_height)
                 self.boxes = [(vehicle_id, new_box if vehicle_id == self._drag_vehicle_id else bbox) for vehicle_id, bbox in self.boxes]
                 self.box_changed.emit(self._drag_vehicle_id, self._rect_from_box(new_box))
             self.update()
@@ -157,8 +176,9 @@ class VideoCanvas(QWidget):
         if not self._dragging_existing:
             x1, y1 = self._to_video(self._drag_start)
             x2, y2 = self._to_video(end)
-            box = [round(max(0, min(x1, x2))), round(max(0, min(y1, y2))), round(min(self.video_width, max(x1, x2))), round(min(self.video_height, max(y1, y2)))]
-            if box[2] - box[0] >= 4 and box[3] - box[1] >= 4:
+            raw_box = [round(min(x1, x2)), round(min(y1, y2)), round(max(x1, x2)), round(max(y1, y2))]
+            if raw_box[2] - raw_box[0] >= 4 and raw_box[3] - raw_box[1] >= 4:
+                box = clamp_box(raw_box, self.video_width, self.video_height)
                 self.box_created.emit(self._rect_from_box(box))
         self._drag_start = None
         self._drag_current = None
@@ -169,7 +189,18 @@ class VideoCanvas(QWidget):
         self.update()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API
-        if event.key() == Qt.Key.Key_Delete and self.selected_id is not None:
+        if event.key() == Qt.Key.Key_Escape:
+            self._drag_start = None
+            self._drag_current = None
+            self._dragging_existing = False
+            self._drag_mode = ""
+            self._drag_vehicle_id = None
+            self._drag_box = None
+            if self.selected_id is not None:
+                self.selected_id = None
+                self.box_deselected.emit()
+            self.update()
+        elif event.key() == Qt.Key.Key_Delete and self.selected_id is not None:
             self.box_deleted.emit(self.selected_id)
             self.selected_id = None
             self.update()

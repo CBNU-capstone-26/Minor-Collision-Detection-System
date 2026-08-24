@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+JSON_INDENT = 4
+
 
 class AnnotationError(ValueError):
     """Raised when an annotation cannot be used for paper-format export."""
@@ -87,7 +89,7 @@ def save_annotations(path: str | Path, annotations: dict[str, VideoAnnotation]) 
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {"schema_version": 1, "videos": [item.to_dict() for item in annotations.values()]}
-    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=JSON_INDENT) + "\n", encoding="utf-8")
 
 
 def validate_annotation(annotation: VideoAnnotation) -> list[str]:

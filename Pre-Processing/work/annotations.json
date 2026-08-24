@@ -1,95 +1,447 @@
 {
-  "schema_version": 1,
-  "videos": [
-    {
-      "video_id": "001 - Damar Security Parking Lot Accident [Y7r2PavFInQ]",
-      "source_video": "../Accident/학습용/001 - Damar Security Parking Lot Accident [Y7r2PavFInQ].mp4",
-      "split": "normal",
-      "width": 640,
-      "height": 480,
-      "frame_count": 301,
-      "fps": 30.0,
-      "boxes": [
+    "schema_version": 1,
+    "videos": [
         {
-          "vehicle_id": 0,
-          "bbox": [178, 21, 606, 185],
-          "reference_frame": 0
+            "video_id": "001 - Damar Security Parking Lot Accident [Y7r2PavFInQ]",
+            "source_video": "../Accident/학습용/001 - Damar Security Parking Lot Accident [Y7r2PavFInQ].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 480,
+            "frame_count": 301,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [178, 21, 606, 185],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [171, 108, 640, 317],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "001 - Damar Security Parking Lot Accident [Y7r2PavFInQ]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 62,
+                    "end_frame": 267,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
         },
         {
-          "vehicle_id": 1,
-          "bbox": [171, 108, 640, 317],
-          "reference_frame": 0
-        }
-      ],
-      "events": [
-        {
-          "event_id": "001 - Damar Security Parking Lot Accident [Y7r2PavFInQ]-a1",
-          "vehicle_id": 0,
-          "start_frame": 62,
-          "end_frame": 267,
-          "status": "confirmed",
-          "note": ""
-        }
-      ],
-      "status": "confirmed",
-      "schema_version": 1
-    },
-    {
-      "video_id": "002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8]",
-      "source_video": "../Accident/학습용/002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8].mp4",
-      "split": "normal",
-      "width": 1280,
-      "height": 700,
-      "frame_count": 325,
-      "fps": 30.0,
-      "boxes": [
-        {
-          "vehicle_id": 0,
-          "bbox": [950, 34, 1123, 149],
-          "reference_frame": 0
+            "video_id": "002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8]",
+            "source_video": "../Accident/학습용/002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 700,
+            "frame_count": 325,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [950, 34, 1123, 149],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1131, 117, 1280, 240],
+                    "reference_frame": 99
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 252,
+                    "end_frame": 252,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
         },
         {
-          "vehicle_id": 1,
-          "bbox": [1131, 117, 1280, 240],
-          "reference_frame": 99
-        }
-      ],
-      "events": [
-        {
-          "event_id": "002 - Security Camera Captures Car Slamming into Another Car While Reversing - 1315759 [U6l092tOWP8]-a1",
-          "vehicle_id": 0,
-          "start_frame": 252,
-          "end_frame": 252,
-          "status": "confirmed",
-          "note": ""
-        }
-      ],
-      "status": "confirmed",
-      "schema_version": 1
-    },
-    {
-      "video_id": "004 - Car Accident in Parking Lot Captured by SentriForce [X4qMykwdxNo]",
-      "source_video": "../Accident/학습용/004 - Car Accident in Parking Lot Captured by SentriForce [X4qMykwdxNo].mp4",
-      "split": "normal",
-      "width": 640,
-      "height": 480,
-      "frame_count": 394,
-      "fps": 29.97002997002997,
-      "boxes": [
-        {
-          "vehicle_id": 0,
-          "bbox": [113, 162, 348, 253],
-          "reference_frame": 141
+            "video_id": "004 - Car Accident in Parking Lot Captured by SentriForce [X4qMykwdxNo]",
+            "source_video": "../Accident/학습용/004 - Car Accident in Parking Lot Captured by SentriForce [X4qMykwdxNo].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 480,
+            "frame_count": 394,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [113, 162, 348, 253],
+                    "reference_frame": 141
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [97, 100, 287, 180],
+                    "reference_frame": 5
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "004 - Car Accident in Parking Lot Captured by SentriForce [X4qMykwdxNo]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 114,
+                    "end_frame": 257,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
         },
         {
-          "vehicle_id": 1,
-          "bbox": [97, 100, 287, 180],
-          "reference_frame": 5
+            "video_id": "006 - Driver Ends up Hitting Another Parked Car While Reversing Out of Parking Spot - 1194768 [XHW3FOcWECs]",
+            "source_video": "../Accident/학습용/006 - Driver Ends up Hitting Another Parked Car While Reversing Out of Parking Spot - 1194768 [XHW3FOcWECs].mp4",
+            "split": "normal",
+            "width": 570,
+            "height": 480,
+            "frame_count": 379,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [196, 127, 346, 194],
+                    "reference_frame": 31
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [11, 137, 157, 214],
+                    "reference_frame": 31
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "006 - Driver Ends up Hitting Another Parked Car While Reversing Out of Parking Spot - 1194768 [XHW3FOcWECs]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 97,
+                    "end_frame": 224,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "007 - Parking lot FAIL--- car accident [bLIweQfPWHA]",
+            "source_video": "../Accident/학습용/007 - Parking lot FAIL--- car accident [bLIweQfPWHA].mp4",
+            "split": "normal",
+            "width": 704,
+            "height": 480,
+            "frame_count": 135,
+            "fps": 10.0,
+            "boxes": [],
+            "events": [],
+            "status": "excluded",
+            "schema_version": 1
+        },
+        {
+            "video_id": "008 - Hit and run caught on surveillance camera [09lX4Ms4v0Q]",
+            "source_video": "../Accident/학습용/008 - Hit and run caught on surveillance camera [09lX4Ms4v0Q].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 304,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [478, 152, 887, 406],
+                    "reference_frame": 82
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [276, 45, 675, 239],
+                    "reference_frame": 82
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "008 - Hit and run caught on surveillance camera [09lX4Ms4v0Q]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 92,
+                    "end_frame": 171,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "009 - Surveillance camera catches a truck backing into a parked car [glQcUnxKQEM]",
+            "source_video": "../Accident/학습용/009 - Surveillance camera catches a truck backing into a parked car [glQcUnxKQEM].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 480,
+            "frame_count": 423,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [280, 167, 331, 198],
+                    "reference_frame": 128
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [447, 183, 553, 231],
+                    "reference_frame": 128
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "009 - Surveillance camera catches a truck backing into a parked car [glQcUnxKQEM]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 152,
+                    "end_frame": 197,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "010 - 2009 Honda Minivan struck by large white sedan in parking lot [mg2Gu7stpv0]",
+            "source_video": "../Accident/학습용/010 - 2009 Honda Minivan struck by large white sedan in parking lot [mg2Gu7stpv0].mp4",
+            "split": "normal",
+            "width": 854,
+            "height": 428,
+            "frame_count": 266,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [492, 14, 569, 40],
+                    "reference_frame": 61
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [588, 42, 647, 71],
+                    "reference_frame": 85
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "010 - 2009 Honda Minivan struck by large white sedan in parking lot [mg2Gu7stpv0]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 74,
+                    "end_frame": 165,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "011 - accident - my 2012 civic getting smashed while parked in a parking lot - Surveillance video [WxXsv9QCeFU]",
+            "source_video": "../Accident/테스트용/011 - accident - my 2012 civic getting smashed while parked in a parking lot - Surveillance video [WxXsv9QCeFU].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 480,
+            "frame_count": 269,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [548, 65, 627, 111],
+                    "reference_frame": 48
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [414, 70, 479, 125],
+                    "reference_frame": 48
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "011 - accident - my 2012 civic getting smashed while parked in a parking lot - Surveillance video [WxXsv9QCeFU]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 57,
+                    "end_frame": 84,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "013 - Parking Lot Accident 7⧸5 [uLXXcgM2Stc]",
+            "source_video": "../Accident/학습용/013 - Parking Lot Accident 7⧸5 [uLXXcgM2Stc].mp4",
+            "split": "normal",
+            "width": 1270,
+            "height": 720,
+            "frame_count": 36,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [23, 169, 132, 251],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [391, 69, 543, 161],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "013 - Parking Lot Accident 7⧸5 [uLXXcgM2Stc]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 11,
+                    "end_frame": 15,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "014 - Parking Lot Security Camera [zH8Q2DGiewI]",
+            "source_video": "../Accident/학습용/014 - Parking Lot Security Camera [zH8Q2DGiewI].mp4",
+            "split": "normal",
+            "width": 320,
+            "height": 240,
+            "frame_count": 92,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [232, 68, 310, 113],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [165, 77, 255, 120],
+                    "reference_frame": 24
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "014 - Parking Lot Security Camera [zH8Q2DGiewI]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 41,
+                    "end_frame": 85,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "015 - Stupid Hit and Run in Parking lot [dJnX3RSnOOc]",
+            "source_video": "../Accident/학습용/015 - Stupid Hit and Run in Parking lot [dJnX3RSnOOc].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 272,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [299, 267, 876, 655],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [2, 414, 589, 820],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "015 - Stupid Hit and Run in Parking lot [dJnX3RSnOOc]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 149,
+                    "end_frame": 197,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "016 - Reliable Parts Burnaby Parking Lot Crash [RzWuD02mkNQ]",
+            "source_video": "../Accident/테스트용/016 - Reliable Parts Burnaby Parking Lot Crash [RzWuD02mkNQ].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 306,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [505, 302, 732, 423],
+                    "reference_frame": 63
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [743, 301, 1032, 457],
+                    "reference_frame": 63
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "016 - Reliable Parts Burnaby Parking Lot Crash [RzWuD02mkNQ]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 68,
+                    "end_frame": 101,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "017 - Parking Lot Accident [OgY71B8xSG4]",
+            "source_video": "../Accident/학습용/017 - Parking Lot Accident [OgY71B8xSG4].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 267,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [762, 226, 1202, 347],
+                    "reference_frame": 144
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [776, 139, 993, 201],
+                    "reference_frame": 144
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "017 - Parking Lot Accident [OgY71B8xSG4]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 201,
+                    "end_frame": 244,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
         }
-      ],
-      "events": [],
-      "status": "in_progress",
-      "schema_version": 1
-    }
-  ]
+    ]
 }

@@ -45,6 +45,7 @@ class AnnotationWindow(QMainWindow):
         self.canvas = VideoCanvas()
         self.canvas.box_created.connect(self.create_box)
         self.canvas.box_selected.connect(self.select_box)
+        self.canvas.box_deselected.connect(self.clear_box_selection)
         self.canvas.box_deleted.connect(self.delete_box)
         self.canvas.box_changed.connect(self.update_box)
         self.frame_label = QLabel("frame 0000")
@@ -208,6 +209,11 @@ class AnnotationWindow(QMainWindow):
         self.current.boxes.append(Box(vehicle_id, [round(rect.left()), round(rect.top()), round(rect.right()), round(rect.bottom())], self.frame_index)); self.current.status = "in_progress"; self.set_status_combo(self.current.status); self.refresh_vehicle_list(); self.show_frame()
     def select_box(self, vehicle_id: int) -> None:
         self.canvas.selected_id = vehicle_id; self.show_frame()
+    def clear_box_selection(self) -> None:
+        self.canvas.selected_id = None
+        with QSignalBlocker(self.vehicle_list):
+            self.vehicle_list.setCurrentRow(-1)
+        self.canvas.update()
     def select_vehicle_row(self, row: int) -> None:
         if self.current and 0 <= row < len(self.current.boxes): self.canvas.selected_id = self.current.boxes[row].vehicle_id; self.show_frame()
     def delete_box(self, vehicle_id: int) -> None:
@@ -288,7 +294,9 @@ class AnnotationWindow(QMainWindow):
         self.status_label.setText("TXT와 검수용 MP4를 생성했습니다.")
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API
-        if event.key() == Qt.Key.Key_Left:
+        if event.key() == Qt.Key.Key_Escape:
+            self.clear_box_selection()
+        elif event.key() == Qt.Key.Key_Left:
             self.previous_frame()
         elif event.key() == Qt.Key.Key_Right:
             self.next_frame()

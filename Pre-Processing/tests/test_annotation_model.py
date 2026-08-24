@@ -41,6 +41,8 @@ class AnnotationModelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "annotations.json"
             save_annotations(path, {annotation.video_id: annotation})
+            lines = path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(lines[2], '    "videos": [')
             restored = load_annotations(path)["demo"]
             self.assertEqual(restored.to_dict(), annotation.to_dict())
 

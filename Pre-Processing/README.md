@@ -34,6 +34,12 @@ python -m pip install -r Pre-Processing/requirements.txt
 brew install ffmpeg
 ```
 
+JSON 포맷터는 `Pre-Processing/.prettierrc.json`에 정의되어 있으며, 들여쓰기 4칸·공백 사용·줄바꿈 LF를 사용한다. 프로그램의 `save_annotations()`도 같은 4칸 들여쓰기 규칙으로 저장한다. Prettier CLI를 설치한 환경에서는 다음 명령으로 기존 JSON을 수동 정리할 수 있다.
+
+```bash
+npx prettier --config .prettierrc.json --write work/annotations.json
+```
+
 ## 실행
 
 `Pre-Processing` 폴더에서 실행한다.
@@ -59,6 +65,7 @@ python -m src.app \
 4. 박스를 클릭하면 선택된다. 박스 안을 드래그하면 이동한다.
 5. 선택된 박스에는 8개의 조절점이 표시된다. 네 변 중앙 점은 한 방향만 조절하고, 네 모서리 점은 원래 가로·세로 비율을 유지하며 크기를 조절한다.
 6. 오른쪽 `기준 차량 박스` 목록에서 입력된 ID와 좌표를 확인한다. `선택 박스 삭제` 버튼 또는 목록 우클릭 메뉴로 박스를 삭제할 수 있다.
+   박스를 새로 만들거나 이동·크기 조절할 때 좌표는 항상 영상 경계 안으로 제한된다.
 7. `영상 현황`에서 `작업 중`, `완료`, `제외` 중 하나를 선택한다.
 8. `사고 차량 ID`를 선택한다.
 9. 시작·종료 프레임을 입력한다.
@@ -82,6 +89,7 @@ python -m src.app \
 - `←` / `→`: 프레임 이동
 - `Space`: 재생·정지
 - `Delete`: 선택한 박스 삭제
+- `ESC`: 박스 선택 해제
 - `S`: 저장
 
 프로그램을 닫았다가 다시 실행해도 `Pre-Processing/work/annotations.json`에서 작업을 복구한다.

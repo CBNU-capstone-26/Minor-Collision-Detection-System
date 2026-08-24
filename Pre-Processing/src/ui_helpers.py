@@ -11,6 +11,26 @@ def natural_video_key(path_or_name: str | Path) -> tuple[object, ...]:
     return tuple(int(part) if part.isdigit() else part for part in re.split(r"(\d+)", name))
 
 
+def clamp_box(box: list[int] | list[float], video_width: int, video_height: int, min_size: int = 4) -> list[int]:
+    """Normalize an xyxy box so every edge stays inside the video."""
+    if video_width <= 0 or video_height <= 0:
+        raise ValueError("video dimensions must be positive")
+    minimum = min(min_size, video_width, video_height)
+    left, right = sorted((round(box[0]), round(box[2])))
+    top, bottom = sorted((round(box[1]), round(box[3])))
+    left = max(0, min(video_width - minimum, left))
+    right = max(left + minimum, min(video_width, right))
+    if right > video_width:
+        right = video_width
+        left = max(0, right - minimum)
+    top = max(0, min(video_height - minimum, top))
+    bottom = max(top + minimum, min(video_height, bottom))
+    if bottom > video_height:
+        bottom = video_height
+        top = max(0, bottom - minimum)
+    return [left, top, right, bottom]
+
+
 def resize_box(box: list[int], handle: str, dx: float, dy: float, video_width: int, video_height: int) -> list[int]:
     """Resize an xyxy box from an edge or corner handle.
 
@@ -56,7 +76,7 @@ def resize_box(box: list[int], handle: str, dx: float, dy: float, video_width: i
             y1 = round(anchor_y - height)
         else:
             y2 = round(anchor_y + height)
-    return [int(x1), int(y1), int(x2), int(y2)]
+    return clamp_box([x1, y1, x2, y2], video_width, video_height, min_size)
 
 
 def sort_video_paths(paths: Iterable[Path], mode: str, annotations: Mapping[str, object]) -> list[Path]:
