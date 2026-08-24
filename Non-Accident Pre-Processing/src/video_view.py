@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from PySide6.QtCore import QPoint, QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -18,6 +18,7 @@ class VideoCanvas(QWidget):
     box_deleted = Signal(int)
     box_changed = Signal(int, QRectF)
     frame_step_requested = Signal(int)
+    zoom_changed = Signal(float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -34,6 +35,11 @@ class VideoCanvas(QWidget):
         self._drag_mode = ""
         self._drag_vehicle_id: int | None = None
         self._drag_box: list[int] | None = None
+        self.zoom_factor = 1.0
+        self.pan_offset = QPointF(0, 0)
+        self._panning = False
+        self._pan_start: QPointF | None = None
+        self._pan_origin = QPointF(0, 0)
 
     def set_frame(self, image: QImage, width: int, height: int, boxes: Iterable[tuple[int, list[int]]]) -> None:
         self.image = image
@@ -42,13 +48,64 @@ class VideoCanvas(QWidget):
         self.boxes = [(int(vehicle_id), clamp_box(list(bbox), self.video_width, self.video_height)) for vehicle_id, bbox in boxes]
         self.update()
 
-    def _image_rect(self) -> QRectF:
+    def zoom_in(self) -> None:
+        self.set_zoom(self.zoom_factor * 1.25, QPointF(self._to_widget(self.video_width / 2, self.video_height / 2)))
+
+    def zoom_out(self) -> None:
+        self.set_zoom(self.zoom_factor / 1.25, QPointF(self._to_widget(self.video_width / 2, self.video_height / 2)))
+
+    def reset_view(self) -> None:
+        self.zoom_factor = 1.0
+        self.pan_offset = QPointF(0, 0)
+        self.zoom_changed.emit(self.zoom_factor)
+        self.update()
+
+    def set_zoom(self, value: float, anchor: QPointF | None = None) -> None:
+        value = max(1.0, min(5.0, float(value)))
+        if anchor is None:
+            anchor = QPointF(self.width() / 2, self.height() / 2)
+        if value == 1.0:
+            self.reset_view()
+            return
+        old_video = self._to_video(anchor.toPoint())
+        base = self._base_image_rect()
+        scale = base.width() / self.video_width * value if not base.isNull() else 1.0
+        self.zoom_factor = value
+        centering_x = (base.width() * (value - 1.0)) / 2
+        centering_y = (base.height() * (value - 1.0)) / 2
+        self.pan_offset = QPointF(
+            anchor.x() - (base.left() + old_video[0] * scale) + centering_x,
+            anchor.y() - (base.top() + old_video[1] * scale) + centering_y,
+        )
+        self.zoom_changed.emit(self.zoom_factor)
+        self.update()
+
+    def pan_by(self, dx: float, dy: float) -> None:
+        self.pan_offset += QPointF(dx, dy)
+        self.update()
+
+    def _base_image_rect(self) -> QRectF:
         if self.image.isNull():
             return QRectF()
         scale = min(self.width() / self.video_width, self.height() / self.video_height)
         width = self.video_width * scale
         height = self.video_height * scale
         return QRectF((self.width() - width) / 2, (self.height() - height) / 2, width, height)
+
+    def _image_rect(self) -> QRectF:
+        if self.image.isNull():
+            return QRectF()
+        base = self._base_image_rect()
+        if base.isNull():
+            return base
+        width = base.width() * self.zoom_factor
+        height = base.height() * self.zoom_factor
+        return QRectF(
+            base.left() + self.pan_offset.x() - (width - base.width()) / 2,
+            base.top() + self.pan_offset.y() - (height - base.height()) / 2,
+            width,
+            height,
+        )
 
     def _to_video(self, point: QPoint) -> tuple[float, float]:
         rect = self._image_rect()
@@ -121,6 +178,13 @@ class VideoCanvas(QWidget):
             painter.drawRect(QRectF(self._drag_start, self._drag_current).normalized())
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if event.button() == Qt.MouseButton.MiddleButton and not self.image.isNull() and self.zoom_factor > 1.0:
+            self._panning = True
+            self._pan_start = event.position()
+            self._pan_origin = QPointF(self.pan_offset)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
         if event.button() != Qt.MouseButton.LeftButton or self.image.isNull():
             return
         point = event.position().toPoint()
@@ -155,6 +219,12 @@ class VideoCanvas(QWidget):
         self.update()
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if self._panning and self._pan_start is not None:
+            delta = event.position() - self._pan_start
+            self.pan_offset = self._pan_origin + delta
+            self.update()
+            event.accept()
+            return
         if self._drag_start:
             self._drag_current = event.position().toPoint()
             if self._dragging_existing and self._drag_vehicle_id is not None and self._drag_box is not None:
@@ -174,6 +244,12 @@ class VideoCanvas(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if event.button() == Qt.MouseButton.MiddleButton and self._panning:
+            self._panning = False
+            self._pan_start = None
+            self.unsetCursor()
+            event.accept()
+            return
         if event.button() != Qt.MouseButton.LeftButton or not self._drag_start:
             return
         end = event.position().toPoint()
@@ -193,6 +269,14 @@ class VideoCanvas(QWidget):
         self._drag_vehicle_id = None
         self._drag_box = None
         self.update()
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if self.image.isNull():
+            return
+        delta = event.angleDelta().y()
+        if delta:
+            self.set_zoom(self.zoom_factor * (1.15 if delta > 0 else 1 / 1.15), event.position())
+            event.accept()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API
         if event.key() == Qt.Key.Key_Left:

@@ -53,6 +53,14 @@ class AnnotationWindow(QMainWindow):
         self.canvas.box_deleted.connect(self.delete_box)
         self.canvas.box_changed.connect(self.update_box)
         self.canvas.frame_step_requested.connect(self.step_frame)
+        self.zoom_out_button = QPushButton("−")
+        self.zoom_reset_button = QPushButton("원래대로")
+        self.zoom_in_button = QPushButton("+")
+        self.zoom_label = QLabel("100%")
+        self.zoom_out_button.clicked.connect(self.canvas.zoom_out)
+        self.zoom_reset_button.clicked.connect(self.canvas.reset_view)
+        self.zoom_in_button.clicked.connect(self.canvas.zoom_in)
+        self.canvas.zoom_changed.connect(lambda value: self.zoom_label.setText(f"{value * 100:.0f}%"))
         self.frame_label = QLabel("frame 0000")
         self.frame_label.setObjectName("frame")
         self.status_label = QLabel("작업할 영상을 선택하세요.")
@@ -121,7 +129,7 @@ class AnnotationWindow(QMainWindow):
             button.setAutoRepeatInterval(60)
         for button in (self.previous_button, self.play_button, self.next_button):
             controls.addWidget(button)
-        controls.addWidget(self.frame_label); controls.addStretch()
+        controls.addWidget(self.zoom_out_button); controls.addWidget(self.zoom_reset_button); controls.addWidget(self.zoom_in_button); controls.addWidget(self.zoom_label); controls.addWidget(self.frame_label); controls.addStretch()
         center = QVBoxLayout(); center.addWidget(self.status_label); center.addWidget(self.canvas, 1); center.addWidget(self.timeline); center.addLayout(controls)
         form = QFormLayout(); form.addRow("영상 현황", self.status_combo)
         if self.mode == "non-accident":
