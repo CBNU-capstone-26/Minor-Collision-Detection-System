@@ -23,7 +23,8 @@ class AnnotationWindow(QMainWindow):
         self.setWindowTitle("FRAME / Manual Collision Annotation")
         self.resize(1440, 900)
         self.source_root, self.annotation_path, self.output_root = source_root, annotation_path, output_root
-        self.annotations = load_annotations(annotation_path) if annotation_path.is_file() else {}
+        # 시작 시에는 사용자가 작업 폴더를 선택할 때까지 영상과 기록을 불러오지 않는다.
+        self.annotations = {}
         self.videos: list[Path] = []
         self.capture: cv2.VideoCapture | None = None
         self.current: VideoAnnotation | None = None
@@ -33,7 +34,7 @@ class AnnotationWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.next_frame)
         self._build_ui()
-        self.load_folder(source_root)
+        self.status_label.setText("폴더 열기를 눌러 작업할 영상 폴더를 선택하세요.")
 
     def _build_ui(self) -> None:
         self.setStyleSheet("QMainWindow, QWidget { background:#101820; color:#F4F0E8; } QListWidget, QSpinBox, QComboBox { background:#18232B; border:1px solid #34434D; padding:6px; } QPushButton { background:#22343D; border:1px solid #48606C; padding:8px 12px; } QPushButton:hover { background:#2D4A55; } QLabel#frame { color:#68D5D0; font-family:monospace; font-size:18px; }")
@@ -88,6 +89,10 @@ class AnnotationWindow(QMainWindow):
         self.export_button.clicked.connect(self.export_current)
         self.open_folder_button = QPushButton("폴더 열기")
         self.open_folder_button.clicked.connect(self.choose_folder)
+        self.new_annotation_button = QPushButton("어노테이션 새로 만들기")
+        self.new_annotation_button.clicked.connect(self.choose_new_annotation_file)
+        self.load_annotation_button = QPushButton("어노테이션 불러오기")
+        self.load_annotation_button.clicked.connect(self.choose_annotation_file)
         self.delete_vehicle_button = QPushButton("선택 박스 삭제")
         self.delete_vehicle_button.clicked.connect(self.delete_selected_vehicle)
         self.timeline = QSlider(Qt.Orientation.Horizontal)
@@ -102,7 +107,7 @@ class AnnotationWindow(QMainWindow):
         self.redo_alt_shortcut = QShortcut(QKeySequence("Ctrl+Y"), self)
         self.redo_alt_shortcut.activated.connect(self.redo_boxes)
 
-        left = QVBoxLayout(); left.addWidget(QLabel("영상 목록")); left.addWidget(self.sort_combo); left.addWidget(self.video_list); left.addWidget(self.open_folder_button)
+        left = QVBoxLayout(); left.addWidget(QLabel("영상 목록")); left.addWidget(self.sort_combo); left.addWidget(self.video_list); left.addWidget(self.open_folder_button); left.addWidget(self.new_annotation_button); left.addWidget(self.load_annotation_button)
         controls = QHBoxLayout()
         self.previous_button = QPushButton("이전")
         self.play_button = QPushButton("재생")
@@ -125,9 +130,28 @@ class AnnotationWindow(QMainWindow):
         root.addWidget(left_widget); root.addWidget(center_widget); root.addWidget(right_scroll); root.setSizes([220, 900, 370]); self.setCentralWidget(root)
 
     def load_folder(self, folder: Path) -> None:
+        if self.capture:
+            self.capture.release()
+            self.capture = None
+        self.current = None
+        self.frame_index = 0
+        self.videos = []
+        self.canvas.set_frame(QImage(), 1, 1, [])
+        self.refresh_vehicle_list()
+        self.refresh_event_list()
         self.videos = list(folder.rglob("*.mp4")) if folder.is_dir() else []
+        saved_annotations = load_annotations(self.annotation_path) if self.annotation_path.is_file() else {}
+        self._replace_annotations(saved_annotations)
         self.refresh_video_list()
-        if self.videos: self.video_list.setCurrentRow(0)
+        if self.videos:
+            self.video_list.setCurrentRow(0)
+        else:
+            self.status_label.setText("선택한 폴더에 MP4 영상이 없습니다.")
+
+    def _replace_annotations(self, saved_annotations) -> None:
+        video_ids = {path.stem for path in self.videos}
+        self.annotations = {video_id: item for video_id, item in saved_annotations.items() if video_id in video_ids}
+        self.refresh_video_list()
 
     def refresh_video_list(self) -> None:
         current_path = self.videos[self.video_list.currentRow()] if 0 <= self.video_list.currentRow() < len(self.videos) else None
@@ -145,6 +169,40 @@ class AnnotationWindow(QMainWindow):
     def choose_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "영상 폴더 선택", str(self.source_root))
         if folder: self.load_folder(Path(folder))
+
+    def choose_new_annotation_file(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "새 어노테이션 JSON 생성", str(self.annotation_path), "JSON 파일 (*.json)")
+        if not path:
+            return
+        target = Path(path).with_suffix(".json")
+        if target.exists():
+            answer = QMessageBox.question(self, "파일 덮어쓰기", f"'{target.name}' 파일을 빈 JSON으로 덮어쓸까요?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.create_annotation_file(target)
+        self.status_label.setText(f"새 어노테이션 파일 생성됨 · {target.name}")
+
+    def choose_annotation_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "어노테이션 JSON 불러오기", str(self.annotation_path.parent), "JSON 파일 (*.json)")
+        if not path:
+            return
+        try:
+            self.load_annotation_file(Path(path))
+        except Exception as exc:
+            QMessageBox.critical(self, "불러오기 실패", str(exc))
+            return
+        self.status_label.setText(f"어노테이션 불러옴 · {Path(path).name}")
+
+    def create_annotation_file(self, path: Path) -> None:
+        self.annotation_path = Path(path)
+        self.annotations = {}
+        save_annotations(self.annotation_path, self.annotations)
+        self._replace_annotations({})
+
+    def load_annotation_file(self, path: Path) -> None:
+        loaded = load_annotations(path)
+        self.annotation_path = Path(path)
+        self._replace_annotations(loaded)
 
     def open_row(self, row: int) -> None:
         if row < 0 or row >= len(self.videos): return
@@ -414,7 +472,7 @@ class AnnotationWindow(QMainWindow):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Paper-compatible manual vehicle annotation GUI")
     parser.add_argument("--source-root", type=Path, default=Path("Accident"))
-    parser.add_argument("--annotations", type=Path, default=Path("Pre-Processing/work/annotations.json"))
+    parser.add_argument("--annotations", type=Path, default=Path("Pre-Processing/work/accident_annotations.json"))
     parser.add_argument("--output-root", type=Path, default=Path("Pre-Processing/output"))
     args = parser.parse_args()
     app = QApplication(sys.argv); window = AnnotationWindow(args.source_root, args.annotations, args.output_root); window.show(); sys.exit(app.exec())

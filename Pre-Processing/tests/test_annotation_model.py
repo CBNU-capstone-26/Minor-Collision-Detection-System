@@ -39,7 +39,7 @@ class AnnotationModelTests(unittest.TestCase):
         annotation = self.make_annotation()
         annotation.status = "in_progress"
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "annotations.json"
+            path = Path(directory) / "accident_annotations.json"
             save_annotations(path, {annotation.video_id: annotation})
             lines = path.read_text(encoding="utf-8").splitlines()
             self.assertEqual(lines[2], '    "videos": [')

@@ -37,7 +37,7 @@ brew install ffmpeg
 JSON 포맷터는 `Pre-Processing/.prettierrc.json`에 정의되어 있으며, 들여쓰기 4칸·공백 사용·줄바꿈 LF를 사용한다. 프로그램의 `save_annotations()`도 같은 4칸 들여쓰기 규칙으로 저장한다. Prettier CLI를 설치한 환경에서는 다음 명령으로 기존 JSON을 수동 정리할 수 있다.
 
 ```bash
-npx prettier --config .prettierrc.json --write work/annotations.json
+npx prettier --config .prettierrc.json --write work/accident_annotations.json
 ```
 
 ## 실행
@@ -49,11 +49,20 @@ cd "/Users/manuelpark/Documents/대학교 프로그래밍/캡스토�
 source ../.venv/bin/activate
 python -m src.app \
   --source-root ../Accident \
-  --annotations work/annotations.json \
+  --annotations work/accident_annotations.json \
   --output-root output
 ```
 
-`src`를 모듈로 실행해야 상대 import가 정상적으로 동작한다. GUI가 열리면 `학습용`과 `테스트용`의 MP4가 왼쪽 목록에 표시된다. `폴더 열기`로 다른 폴더를 선택할 수도 있다.
+`src`를 모듈로 실행해야 상대 import가 정상적으로 동작한다. 프로그램은 처음에 빈 화면으로 시작하며, 영상이나 JSON을 자동으로 불러오지 않는다. `폴더 열기`를 눌러 작업할 영상 폴더를 선택하면 해당 폴더 아래의 MP4만 왼쪽 목록에 표시된다.
+
+폴더를 선택할 때 `--annotations`로 지정한 JSON이 있으면 기존 작업 기록 중 현재 폴더의 영상과 이름이 일치하는 기록을 연결한다. 기록이 없는 영상은 새 작업으로 표시된다. 폴더를 바꾸면 이전 영상 목록은 선택한 폴더의 목록으로 교체된다.
+
+왼쪽 아래의 어노테이션 파일 버튼으로 작업 파일을 바꿀 수 있다.
+
+- `어노테이션 새로 만들기`: 저장할 JSON 경로를 선택하고 빈 어노테이션 파일을 생성한다. 기존 파일을 선택하면 덮어쓰기 확인을 표시한다.
+- `어노테이션 불러오기`: 기존 JSON을 선택해 현재 폴더의 영상과 일치하는 작업 기록을 불러온다.
+
+어노테이션 파일을 바꿔도 원본 영상은 변경되지 않는다. 새 파일을 만든 뒤 영상 폴더를 선택하거나, 영상 폴더를 먼저 선택한 뒤 새 파일을 만들어 작업을 시작할 수 있다.
 
 영상 목록 위의 정렬 메뉴에서 `번호순`, `파일명순`, `검수 상태순`을 선택할 수 있다. 번호순은 파일명의 숫자를 자연스러운 숫자 순서로 정렬하고, 검수 상태순은 `미작성 → 작업 중 → 완료 → 제외` 순서로 배치한다.
 
@@ -100,7 +109,7 @@ python -m src.app \
 
 영상 아래의 `이전`·`다음` 버튼도 길게 누르면 약간의 지연 후 자동 반복되어 프레임이 연속으로 이동한다.
 
-프로그램을 닫았다가 다시 실행해도 `Pre-Processing/work/annotations.json`에서 작업을 복구한다.
+프로그램을 닫았다가 다시 실행한 뒤 작업 폴더를 선택하면 `Pre-Processing/work/accident_annotations.json`에서 해당 영상의 작업 기록을 복구한다.
 
 각 영상의 현황은 JSON의 `status` 필드에 저장된다. 상태를 바꾼 뒤에는 반드시 `저장`을 눌러야 다음 실행 때도 유지된다. 박스를 만들거나 이벤트를 추가하면 자동으로 `작업 중`이 되고, `검수 완료`를 누르면 `완료`가 된다.
 
@@ -110,7 +119,7 @@ python -m src.app \
 
 ```text
 Pre-Processing/
-├── work/annotations.json
+├── work/accident_annotations.json
 └── output/
     ├── learning/txt/
     ├── learning/visualized/
