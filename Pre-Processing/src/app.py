@@ -74,8 +74,10 @@ class AnnotationWindow(QMainWindow):
         self.start_spin = QSpinBox(); self.end_spin = QSpinBox()
         self.confirm_button = QPushButton("검수 완료")
         self.confirm_button.clicked.connect(self.confirm_event)
-        self.event_button = QPushButton("사고 이벤트 추가")
-        self.event_button.clicked.connect(self.add_event)
+        self.start_event_button = QPushButton("시작 시점 기록")
+        self.start_event_button.clicked.connect(self.record_start_frame)
+        self.end_event_button = QPushButton("종료 시점 기록")
+        self.end_event_button.clicked.connect(self.record_end_frame)
         self.save_event_button = QPushButton("선택 이벤트 저장")
         self.save_event_button.clicked.connect(self.save_event)
         self.delete_event_button = QPushButton("선택 이벤트 삭제")
@@ -117,7 +119,7 @@ class AnnotationWindow(QMainWindow):
         controls.addWidget(self.frame_label); controls.addStretch()
         center = QVBoxLayout(); center.addWidget(self.status_label); center.addWidget(self.canvas, 1); center.addWidget(self.timeline); center.addLayout(controls)
         form = QFormLayout(); form.addRow("영상 현황", self.status_combo); form.addRow("사고 차량 ID", self.vehicle_combo); form.addRow("시작 프레임", self.start_spin); form.addRow("종료 프레임", self.end_spin); form.addRow("이벤트 상태", self.event_status_combo); form.addRow("메모", self.event_note)
-        right = QVBoxLayout(); right.setContentsMargins(8, 8, 8, 8); right.addWidget(QLabel("기준 차량 박스")); right.addWidget(self.vehicle_list); right.addWidget(self.delete_vehicle_button); right.addWidget(QLabel("이벤트 목록")); right.addWidget(self.event_list); right.addLayout(form); right.addWidget(self.event_button); right.addWidget(self.save_event_button); right.addWidget(self.delete_event_button); right.addWidget(self.confirm_button); right.addWidget(self.save_button); right.addWidget(self.export_button); right.addStretch()
+        right = QVBoxLayout(); right.setContentsMargins(8, 8, 8, 8); right.addWidget(QLabel("기준 차량 박스")); right.addWidget(self.vehicle_list); right.addWidget(self.delete_vehicle_button); right.addWidget(QLabel("이벤트 목록")); right.addWidget(self.event_list); right.addLayout(form); right.addWidget(self.start_event_button); right.addWidget(self.end_event_button); right.addWidget(self.save_event_button); right.addWidget(self.delete_event_button); right.addWidget(self.confirm_button); right.addWidget(self.save_button); right.addWidget(self.export_button); right.addStretch()
         root = QSplitter(); left_widget = QWidget(); left_widget.setLayout(left); center_widget = QWidget(); center_widget.setLayout(center); right_widget = QWidget(); right_widget.setMinimumWidth(350); right_widget.setLayout(right)
         right_scroll = QScrollArea(); right_scroll.setWidgetResizable(True); right_scroll.setFrameShape(QScrollArea.Shape.NoFrame); right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); right_scroll.setWidget(right_widget)
         root.addWidget(left_widget); root.addWidget(center_widget); root.addWidget(right_scroll); root.setSizes([220, 900, 370]); self.setCentralWidget(root)
@@ -301,8 +303,48 @@ class AnnotationWindow(QMainWindow):
             self.refresh_vehicle_list()
     def add_event(self) -> None:
         if not self.current or not self.current.boxes: return
-        event_id = f"{self.current.video_id}-a{len(self.current.events) + 1}"; vehicle_id = int(self.vehicle_combo.currentData() or self.current.boxes[0].vehicle_id); self.current.events.append(Event(event_id, vehicle_id, self.frame_index, self.frame_index, "needs_review")); self.current.status = "in_progress"; self.set_status_combo(self.current.status); self.start_spin.setValue(self.frame_index); self.end_spin.setValue(self.frame_index)
+        used_ids = {event.event_id for event in self.current.events}
+        event_number = len(self.current.events) + 1
+        event_id = f"{self.current.video_id}-a{event_number}"
+        while event_id in used_ids:
+            event_number += 1
+            event_id = f"{self.current.video_id}-a{event_number}"
+        vehicle_id = int(self.vehicle_combo.currentData() or self.current.boxes[0].vehicle_id)
+        self.current.events.append(Event(event_id, vehicle_id, self.frame_index, self.frame_index, "needs_review")); self.current.status = "in_progress"; self.set_status_combo(self.current.status); self.start_spin.setValue(self.frame_index); self.end_spin.setValue(self.frame_index)
         self.refresh_event_list(len(self.current.events) - 1)
+
+    def record_start_frame(self) -> None:
+        if not self.current or not self.current.boxes:
+            QMessageBox.warning(self, "차량 박스 없음", "먼저 차량 박스를 하나 이상 입력하세요.")
+            return
+        event = self.selected_event()
+        if event is None:
+            self.add_event()
+            event = self.selected_event()
+        if event is None:
+            return
+        event.start_frame = self.frame_index
+        if event.end_frame < event.start_frame:
+            event.end_frame = event.start_frame
+        self.start_spin.setValue(event.start_frame)
+        self.end_spin.setValue(event.end_frame)
+        self.current.status = "in_progress"
+        self.set_status_combo(self.current.status)
+        self.refresh_event_list(self.event_list.currentRow())
+
+    def record_end_frame(self) -> None:
+        event = self.selected_event()
+        if event is None:
+            QMessageBox.warning(self, "이벤트 없음", "먼저 이벤트를 선택하거나 시작 시점 기록을 누르세요.")
+            return
+        if self.frame_index < event.start_frame:
+            QMessageBox.warning(self, "프레임 순서 오류", "종료 시점은 시작 시점 이후 프레임이어야 합니다.")
+            return
+        event.end_frame = self.frame_index
+        self.end_spin.setValue(event.end_frame)
+        self.current.status = "in_progress"
+        self.set_status_combo(self.current.status)
+        self.refresh_event_list(self.event_list.currentRow())
 
     def save_event(self) -> None:
         event = self.selected_event()
