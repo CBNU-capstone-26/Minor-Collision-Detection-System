@@ -3,7 +3,7 @@
     "videos": [
         {
             "video_id": "001 - Damar Security Parking Lot Accident [Y7r2PavFInQ]",
-            "source_video": "../Accident/학습용/001 - Damar Security Parking Lot Accident [Y7r2PavFInQ].mp4",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/001 - Damar Security Parking Lot Accident [Y7r2PavFInQ].mp4",
             "split": "normal",
             "width": 640,
             "height": 480,
@@ -246,39 +246,6 @@
             "schema_version": 1
         },
         {
-            "video_id": "011 - accident - my 2012 civic getting smashed while parked in a parking lot - Surveillance video [WxXsv9QCeFU]",
-            "source_video": "../Accident/테스트용/011 - accident - my 2012 civic getting smashed while parked in a parking lot - Surveillance video [WxXsv9QCeFU].mp4",
-            "split": "normal",
-            "width": 640,
-            "height": 480,
-            "frame_count": 269,
-            "fps": 29.97002997002997,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [548, 65, 627, 111],
-                    "reference_frame": 48
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [414, 70, 479, 125],
-                    "reference_frame": 48
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "011 - accident - my 2012 civic getting smashed while parked in a parking lot - Surveillance video [WxXsv9QCeFU]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 57,
-                    "end_frame": 84,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
             "video_id": "013 - Parking Lot Accident 7⧸5 [uLXXcgM2Stc]",
             "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/013 - Parking Lot Accident 7⧸5 [uLXXcgM2Stc].mp4",
             "split": "normal",
@@ -370,39 +337,6 @@
                     "vehicle_id": 0,
                     "start_frame": 149,
                     "end_frame": 197,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
-            "video_id": "016 - Reliable Parts Burnaby Parking Lot Crash [RzWuD02mkNQ]",
-            "source_video": "../Accident/테스트용/016 - Reliable Parts Burnaby Parking Lot Crash [RzWuD02mkNQ].mp4",
-            "split": "normal",
-            "width": 1920,
-            "height": 1080,
-            "frame_count": 306,
-            "fps": 29.97002997002997,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [505, 302, 732, 423],
-                    "reference_frame": 63
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [743, 301, 1032, 457],
-                    "reference_frame": 63
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "016 - Reliable Parts Burnaby Parking Lot Crash [RzWuD02mkNQ]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 68,
-                    "end_frame": 101,
                     "status": "confirmed",
                     "note": ""
                 }
@@ -688,184 +622,6 @@
             "schema_version": 1
         },
         {
-            "video_id": "024 - Collision with multiple cars in a parking lot [MPR_6BUVR_Y]",
-            "source_video": "../Accident/테스트용/024 - Collision with multiple cars in a parking lot [MPR_6BUVR_Y].mp4",
-            "split": "normal",
-            "width": 1920,
-            "height": 1080,
-            "frame_count": 647,
-            "fps": 29.97002997002997,
-            "boxes": [],
-            "events": [],
-            "status": "excluded",
-            "schema_version": 1
-        },
-        {
-            "video_id": "025 - Auto Lot Cameras Capture Car Carrier Hit [Hh7Hnr0PN2A]",
-            "source_video": "../Accident/테스트용/025 - Auto Lot Cameras Capture Car Carrier Hit [Hh7Hnr0PN2A].mp4",
-            "split": "normal",
-            "width": 1920,
-            "height": 1080,
-            "frame_count": 231,
-            "fps": 29.97002997002997,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [956, 256, 1124, 467],
-                    "reference_frame": 170
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [739, 246, 931, 446],
-                    "reference_frame": 130
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "025 - Auto Lot Cameras Capture Car Carrier Hit [Hh7Hnr0PN2A]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 118,
-                    "end_frame": 170,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
-            "video_id": "027 - car accident cctv footage ｜ Irresponsible driving In basement parking ｜ Hyundai Maruti Accident [trWy7du5GQM]",
-            "source_video": "../Accident/테스트용/027 - car accident cctv footage ｜ Irresponsible driving In basement parking ｜ Hyundai Maruti Accident [trWy7du5GQM].mp4",
-            "split": "normal",
-            "width": 1920,
-            "height": 1080,
-            "frame_count": 221,
-            "fps": 30.0,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [599, 418, 757, 494],
-                    "reference_frame": 72
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [23, 437, 250, 565],
-                    "reference_frame": 72
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "027 - car accident cctv footage ｜ Irresponsible driving In basement parking ｜ Hyundai Maruti Accident [trWy7du5GQM]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 76,
-                    "end_frame": 120,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
-            "video_id": "029 - Elderly Man Smashes Into 10 Parked Cars [cl_-OO8YD24]",
-            "source_video": "../Accident/테스트용/029 - Elderly Man Smashes Into 10 Parked Cars [cl_-OO8YD24].mp4",
-            "split": "normal",
-            "width": 1280,
-            "height": 720,
-            "frame_count": 300,
-            "fps": 25.0,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [823, 54, 1022, 143],
-                    "reference_frame": 75
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [953, 72, 1166, 184],
-                    "reference_frame": 75
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "029 - Elderly Man Smashes Into 10 Parked Cars [cl_-OO8YD24]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 94,
-                    "end_frame": 140,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
-            "video_id": "031 - Accident at parking lot [HKaCAJAIzUk]",
-            "source_video": "../Accident/테스트용/031 - Accident at parking lot [HKaCAJAIzUk].mp4",
-            "split": "normal",
-            "width": 1920,
-            "height": 1080,
-            "frame_count": 180,
-            "fps": 29.97002997002997,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [1087, 347, 1392, 464],
-                    "reference_frame": 0
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [761, 366, 1136, 542],
-                    "reference_frame": 0
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "031 - Accident at parking lot [HKaCAJAIzUk]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 47,
-                    "end_frame": 114,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
-            "video_id": "032 - Car park crash [WHiAQiyFWio]",
-            "source_video": "../Accident/테스트용/032 - Car park crash [WHiAQiyFWio].mp4",
-            "split": "normal",
-            "width": 576,
-            "height": 320,
-            "frame_count": 292,
-            "fps": 29.97002997002997,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [211, 89, 280, 135],
-                    "reference_frame": 114
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [279, 122, 434, 176],
-                    "reference_frame": 114
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "032 - Car park crash [WHiAQiyFWio]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 168,
-                    "end_frame": 264,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
             "video_id": "034 - 7 3 18 Parking lot Accident [Er7lixfx4yo]",
             "source_video": "../Accident/학습용/034 - 7 3 18 Parking lot Accident [Er7lixfx4yo].mp4",
             "split": "normal",
@@ -924,39 +680,6 @@
                     "vehicle_id": 0,
                     "start_frame": 109,
                     "end_frame": 129,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
-            "video_id": "038 - Security Camera Car Crash (12⧸16⧸15) [L37xFCosE5o]",
-            "source_video": "../Accident/테스트용/038 - Security Camera Car Crash (12⧸16⧸15) [L37xFCosE5o].mp4",
-            "split": "normal",
-            "width": 1920,
-            "height": 1080,
-            "frame_count": 195,
-            "fps": 29.97002997002997,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [2, 535, 202, 616],
-                    "reference_frame": 53
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [847, 489, 933, 551],
-                    "reference_frame": 53
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "038 - Security Camera Car Crash (12⧸16⧸15) [L37xFCosE5o]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 80,
-                    "end_frame": 152,
                     "status": "confirmed",
                     "note": ""
                 }
@@ -1031,39 +754,6 @@
             "schema_version": 1
         },
         {
-            "video_id": "043 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0]",
-            "source_video": "../Accident/테스트용/043 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0].mp4",
-            "split": "normal",
-            "width": 1920,
-            "height": 1080,
-            "frame_count": 238,
-            "fps": 23.976023976023978,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [486, 93, 693, 166],
-                    "reference_frame": 157
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [319, 148, 596, 292],
-                    "reference_frame": 237
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "043 - 31-01-2018 Car Park Muswellbrook CCTV Footage (7pm-7-11pm) [ipS3lgLS8q0]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 183,
-                    "end_frame": 237,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
             "video_id": "045 - April 8 Parking Incident [U_YRFGmVr1s]",
             "source_video": "../Accident/학습용/045 - April 8 Parking Incident [U_YRFGmVr1s].mp4",
             "split": "normal",
@@ -1097,39 +787,6 @@
             "schema_version": 1
         },
         {
-            "video_id": "046 - Parking Lot Accident [TnBuefZUQhE]",
-            "source_video": "../Accident/테스트용/046 - Parking Lot Accident [TnBuefZUQhE].mp4",
-            "split": "normal",
-            "width": 352,
-            "height": 240,
-            "frame_count": 159,
-            "fps": 10.0,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [133, 48, 179, 68],
-                    "reference_frame": 41
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [77, 54, 122, 85],
-                    "reference_frame": 0
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "046 - Parking Lot Accident [TnBuefZUQhE]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 53,
-                    "end_frame": 77,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
             "video_id": "047 - Weird Accident in the underground car park [VRCEKheqYYM]",
             "source_video": "../Accident/학습용/047 - Weird Accident in the underground car park [VRCEKheqYYM].mp4",
             "split": "normal",
@@ -1140,105 +797,6 @@
             "boxes": [],
             "events": [],
             "status": "excluded",
-            "schema_version": 1
-        },
-        {
-            "video_id": "048 - SECURITY CAMERA Captures SHOCKING Car Accident! [2INr0y1Pw20]",
-            "source_video": "../Accident/테스트용/048 - SECURITY CAMERA Captures SHOCKING Car Accident! [2INr0y1Pw20].mp4",
-            "split": "normal",
-            "width": 1920,
-            "height": 1080,
-            "frame_count": 226,
-            "fps": 30.0,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [714, 297, 1328, 522],
-                    "reference_frame": 46
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [0, 338, 236, 485],
-                    "reference_frame": 46
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "048 - SECURITY CAMERA Captures SHOCKING Car Accident! [2INr0y1Pw20]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 64,
-                    "end_frame": 129,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
-            "video_id": "049 - Amazing Parallel Parking Car Crash On Surveillance Video [dCqiAsxKK9M]",
-            "source_video": "../Accident/테스트용/049 - Amazing Parallel Parking Car Crash On Surveillance Video [dCqiAsxKK9M].mp4",
-            "split": "normal",
-            "width": 854,
-            "height": 480,
-            "frame_count": 142,
-            "fps": 29.97002997002997,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [264, 340, 428, 389],
-                    "reference_frame": 0
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [485, 335, 665, 385],
-                    "reference_frame": 25
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "049 - Amazing Parallel Parking Car Crash On Surveillance Video [dCqiAsxKK9M]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 54,
-                    "end_frame": 98,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
-            "video_id": "051 - Car Crash in Parking (Accidents Caught Camera) [pvoh82N7_5U]",
-            "source_video": "../Accident/테스트용/051 - Car Crash in Parking (Accidents Caught Camera) [pvoh82N7_5U].mp4",
-            "split": "normal",
-            "width": 480,
-            "height": 360,
-            "frame_count": 78,
-            "fps": 10.0,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [350, 94, 416, 162],
-                    "reference_frame": 18
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [240, 134, 360, 268],
-                    "reference_frame": 18
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "051 - Car Crash in Parking (Accidents Caught Camera) [pvoh82N7_5U]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 18,
-                    "end_frame": 32,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
             "schema_version": 1
         },
         {
@@ -1605,39 +1163,6 @@
             "schema_version": 1
         },
         {
-            "video_id": "068 - Hit and Run Real Video  Ford against VOLKSWAGEN! [Vi6ujEH54tE]",
-            "source_video": "../Accident/테스트용/068 - Hit and Run Real Video  Ford against VOLKSWAGEN! [Vi6ujEH54tE].mp4",
-            "split": "normal",
-            "width": 640,
-            "height": 352,
-            "frame_count": 125,
-            "fps": 14.985014985014985,
-            "boxes": [
-                {
-                    "vehicle_id": 0,
-                    "bbox": [338, 104, 443, 197],
-                    "reference_frame": 33
-                },
-                {
-                    "vehicle_id": 1,
-                    "bbox": [80, 95, 223, 162],
-                    "reference_frame": 0
-                }
-            ],
-            "events": [
-                {
-                    "event_id": "068 - Hit and Run Real Video  Ford against VOLKSWAGEN! [Vi6ujEH54tE]-a1",
-                    "vehicle_id": 0,
-                    "start_frame": 34,
-                    "end_frame": 99,
-                    "status": "confirmed",
-                    "note": ""
-                }
-            ],
-            "status": "confirmed",
-            "schema_version": 1
-        },
-        {
             "video_id": "069 - Hit and Run 2013-03-13 11_47am [9tWPDnN5v5c]",
             "source_video": "../Accident/학습용/069 - Hit and Run 2013-03-13 11_47am [9tWPDnN5v5c].mp4",
             "split": "normal",
@@ -1894,6 +1419,527 @@
                     "vehicle_id": 0,
                     "start_frame": 20,
                     "end_frame": 104,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "077 - Hit And Run [0K0Zi4FG_rI]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/077 - Hit And Run [0K0Zi4FG_rI].mp4",
+            "split": "normal",
+            "width": 352,
+            "height": 288,
+            "frame_count": 196,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [27, 11, 97, 44],
+                    "reference_frame": 63
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [44, 6, 107, 26],
+                    "reference_frame": 63
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "077 - Hit And Run [0K0Zi4FG_rI]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 65,
+                    "end_frame": 122,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "078 - Fender bender [uyINxtjTzzM]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/078 - Fender bender [uyINxtjTzzM].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 160,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [732, 269, 1381, 553],
+                    "reference_frame": 52
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [933, 130, 1516, 362],
+                    "reference_frame": 52
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "078 - Fender bender [uyINxtjTzzM]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 52,
+                    "end_frame": 102,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "082 - Get CCTV----i captured my car being hit 4 x times [lHlaIBWy9Qw]_2",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/082 - Get CCTV----i captured my car being hit 4 x times [lHlaIBWy9Qw]_2.mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 178,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [1139, 387, 1920, 1080],
+                    "reference_frame": 19
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1666, 44, 1920, 443],
+                    "reference_frame": 19
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "082 - Get CCTV----i captured my car being hit 4 x times [lHlaIBWy9Qw]_2-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 54,
+                    "end_frame": 80,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "082 - Get CCTV----i captured my car being hit 4 x times [lHlaIBWy9Qw]_3",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/082 - Get CCTV----i captured my car being hit 4 x times [lHlaIBWy9Qw]_3.mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 137,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [860, 267, 1812, 918],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1480, 101, 1766, 348],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "082 - Get CCTV----i captured my car being hit 4 x times [lHlaIBWy9Qw]_3-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 79,
+                    "end_frame": 114,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "082 - Get CCTV----i captured my car being hit 4 x times [lHlaIBWy9Qw]_4",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/082 - Get CCTV----i captured my car being hit 4 x times [lHlaIBWy9Qw]_4.mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 214,
+            "fps": 29.97002997002997,
+            "boxes": [],
+            "events": [],
+            "status": "excluded",
+            "schema_version": 1
+        },
+        {
+            "video_id": "083 - Hit and Run ｜ Parked Car [82trPxXHeag]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/083 - Hit and Run ｜ Parked Car [82trPxXHeag].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 146,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [578, 299, 771, 392],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [225, 273, 469, 359],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "083 - Hit and Run ｜ Parked Car [82trPxXHeag]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 19,
+                    "end_frame": 48,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "087 - Parking Lot Accident Who's Fault Is It？ [l9KMgfV5BeU]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/087 - Parking Lot Accident Who's Fault Is It？ [l9KMgfV5BeU].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 480,
+            "frame_count": 259,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [433, 126, 564, 213],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [188, 195, 370, 358],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "087 - Parking Lot Accident Who's Fault Is It？ [l9KMgfV5BeU]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 42,
+                    "end_frame": 80,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "088 - learner driver backs into parked car and writes it off after taking wrong turn into cul de sac [18QbGSdj7jU]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/088 - learner driver backs into parked car and writes it off after taking wrong turn into cul de sac [18QbGSdj7jU].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 102,
+            "fps": 18.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [425, 320, 841, 460],
+                    "reference_frame": 30
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1146, 279, 1254, 383],
+                    "reference_frame": 30
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "088 - learner driver backs into parked car and writes it off after taking wrong turn into cul de sac [18QbGSdj7jU]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 45,
+                    "end_frame": 77,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "089 - Hit and Run on my parked car; 08-25-2018 01_17_53PM [3VSZTAaHyS0]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/089 - Hit and Run on my parked car; 08-25-2018 01_17_53PM [3VSZTAaHyS0].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 280,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [744, 66, 1229, 269],
+                    "reference_frame": 75
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [938, 0, 1151, 44],
+                    "reference_frame": 75
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "089 - Hit and Run on my parked car; 08-25-2018 01_17_53PM [3VSZTAaHyS0]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 105,
+                    "end_frame": 142,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "090 - Reversing into a parked car [WxGPX846Dms]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/090 - Reversing into a parked car [WxGPX846Dms].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 259,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [671, 512, 1173, 838],
+                    "reference_frame": 118
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [137, 534, 448, 659],
+                    "reference_frame": 118
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "090 - Reversing into a parked car [WxGPX846Dms]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 128,
+                    "end_frame": 164,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "091 - Hit and Run on a Parked Car [IWiec_EmpiA]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/091 - Hit and Run on a Parked Car [IWiec_EmpiA].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 229,
+            "fps": 14.985014985014985,
+            "boxes": [],
+            "events": [],
+            "status": "excluded",
+            "schema_version": 1
+        },
+        {
+            "video_id": "092 - Parking lot accident [9pt-Vg9-Egc]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/092 - Parking lot accident [9pt-Vg9-Egc].mp4",
+            "split": "normal",
+            "width": 960,
+            "height": 720,
+            "frame_count": 429,
+            "fps": 24.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [499, 140, 566, 225],
+                    "reference_frame": 34
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [268, 149, 349, 230],
+                    "reference_frame": 34
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "092 - Parking lot accident [9pt-Vg9-Egc]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 116,
+                    "end_frame": 145,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "093 - SUV Backs into Parked Car and Leaves the Scene [ZpFxer7EEsU]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/093 - SUV Backs into Parked Car and Leaves the Scene [ZpFxer7EEsU].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 306,
+            "fps": 15.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [434, 21, 571, 96],
+                    "reference_frame": 69
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [273, 178, 952, 467],
+                    "reference_frame": 69
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "093 - SUV Backs into Parked Car and Leaves the Scene [ZpFxer7EEsU]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 98,
+                    "end_frame": 114,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "094 - Truck Backed Into A Parked Car [C351yE28ZR4]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/094 - Truck Backed Into A Parked Car [C351yE28ZR4].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 405,
+            "fps": 59.94005994005994,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [642, 497, 943, 649],
+                    "reference_frame": 113
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1183, 456, 1376, 578],
+                    "reference_frame": 126
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "094 - Truck Backed Into A Parked Car [C351yE28ZR4]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 158,
+                    "end_frame": 230,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "097 - Pickup Truck Reverses Into Parked Car in Lot [QOfqV2AEnJ0]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/097 - Pickup Truck Reverses Into Parked Car in Lot [QOfqV2AEnJ0].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 266,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [66, 355, 590, 737],
+                    "reference_frame": 47
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [936, 0, 1198, 193],
+                    "reference_frame": 47
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "097 - Pickup Truck Reverses Into Parked Car in Lot [QOfqV2AEnJ0]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 107,
+                    "end_frame": 146,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "099 - MOMENT DODGY DRIVER RAMS INTO A PARKED CAR WHILE REVERSING [OLI6BOOFtNs]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/099 - MOMENT DODGY DRIVER RAMS INTO A PARKED CAR WHILE REVERSING [OLI6BOOFtNs].mp4",
+            "split": "normal",
+            "width": 476,
+            "height": 270,
+            "frame_count": 537,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [268, 32, 476, 127],
+                    "reference_frame": 82
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [67, 4, 151, 59],
+                    "reference_frame": 171
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "099 - MOMENT DODGY DRIVER RAMS INTO A PARKED CAR WHILE REVERSING [OLI6BOOFtNs]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 224,
+                    "end_frame": 350,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "100 - My car was hit in a parking lot [qGICtyX6pKI]",
+            "source_video": "/Users/manuelpark/Documents/대학교 프로그래밍/캡스톤디자인/Minor-Collision-Detection-System/Accident/학습용/100 - My car was hit in a parking lot [qGICtyX6pKI].mp4",
+            "split": "normal",
+            "width": 400,
+            "height": 300,
+            "frame_count": 323,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [0, 76, 99, 228],
+                    "reference_frame": 167
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [285, 79, 400, 227],
+                    "reference_frame": 167
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "100 - My car was hit in a parking lot [qGICtyX6pKI]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 178,
+                    "end_frame": 276,
                     "status": "confirmed",
                     "note": ""
                 }
