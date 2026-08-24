@@ -1,10 +1,3 @@
-# Video files
-*.mp4
-
-# Dataset zip files
-Parking Vehicle Hit an Run Dataset.zip
-Road Accidents from CCTV Footages Dataset.zip
-
 # Python virtual environment
 .venv/
 
@@ -16,3 +9,7 @@ Road Accidents from CCTV Footages Dataset.zip
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Manual annotation working data and generated exports
+# Pre-Processing/work/
+# Pre-Processing/output/
