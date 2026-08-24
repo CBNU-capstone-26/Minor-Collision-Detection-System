@@ -6,8 +6,8 @@ from pathlib import Path
 
 import cv2
 from PySide6.QtCore import QSignalBlocker, QTimer, Qt
-from PySide6.QtGui import QImage, QKeySequence
-from PySide6.QtWidgets import QApplication, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QShortcut, QSpinBox, QSplitter, QVBoxLayout, QWidget, QComboBox, QSlider, QMenu
+from PySide6.QtGui import QImage, QKeySequence, QShortcut
+from PySide6.QtWidgets import QApplication, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter, QVBoxLayout, QWidget, QComboBox, QSlider, QMenu
 
 from .annotation_model import Box, Event, VideoAnnotation, load_annotations, save_annotations, validate_annotation
 from .exporter import export_event
