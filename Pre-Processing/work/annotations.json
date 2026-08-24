@@ -1372,6 +1372,534 @@
             ],
             "status": "confirmed",
             "schema_version": 1
+        },
+        {
+            "video_id": "060 - Funny car park crash [TUy8pAKeG7c]",
+            "source_video": "../Accident/학습용/060 - Funny car park crash [TUy8pAKeG7c].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 480,
+            "frame_count": 108,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [203, 152, 300, 193],
+                    "reference_frame": 34
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [202, 137, 288, 164],
+                    "reference_frame": 34
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "060 - Funny car park crash [TUy8pAKeG7c]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 50,
+                    "end_frame": 75,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "061 - Car Crash CCTV again! [SHC6X_fWAMU]",
+            "source_video": "../Accident/학습용/061 - Car Crash CCTV again! [SHC6X_fWAMU].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 720,
+            "frame_count": 238,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [0, 56, 353, 235],
+                    "reference_frame": 41
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1072, 71, 1280, 231],
+                    "reference_frame": 41
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "061 - Car Crash CCTV again! [SHC6X_fWAMU]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 80,
+                    "end_frame": 148,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "063 - Hit and run in TSA parking lot [ffYqtkcXaXo]",
+            "source_video": "../Accident/학습용/063 - Hit and run in TSA parking lot [ffYqtkcXaXo].mp4",
+            "split": "normal",
+            "width": 854,
+            "height": 480,
+            "frame_count": 361,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [647, 196, 702, 226],
+                    "reference_frame": 41
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [410, 248, 741, 480],
+                    "reference_frame": 125
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "063 - Hit and run in TSA parking lot [ffYqtkcXaXo]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 111,
+                    "end_frame": 161,
+                    "status": "confirmed",
+                    "note": "박스 1번 적합성 확인"
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "064 - Security Cam - Hit and Run - Aug- 3rd 2018 [mioc4-nBfNg]",
+            "source_video": "../Accident/학습용/064 - Security Cam - Hit and Run - Aug- 3rd 2018 [mioc4-nBfNg].mp4",
+            "split": "normal",
+            "width": 854,
+            "height": 428,
+            "frame_count": 191,
+            "fps": 15.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [7, 89, 140, 160],
+                    "reference_frame": 22
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [124, 157, 413, 286],
+                    "reference_frame": 22
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "064 - Security Cam - Hit and Run - Aug- 3rd 2018 [mioc4-nBfNg]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 76,
+                    "end_frame": 133,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "065 - Denver parking lot hit and run [8MXHW2rCBds]",
+            "source_video": "../Accident/학습용/065 - Denver parking lot hit and run [8MXHW2rCBds].mp4",
+            "split": "normal",
+            "width": 848,
+            "height": 480,
+            "frame_count": 241,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [497, 16, 616, 69],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [587, 15, 664, 48],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "065 - Denver parking lot hit and run [8MXHW2rCBds]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 90,
+                    "end_frame": 128,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "066 - reverse accident ⧸ hit and run [7CbAJW1fcR4]",
+            "source_video": "../Accident/학습용/066 - reverse accident ⧸ hit and run [7CbAJW1fcR4].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 242,
+            "fps": 18.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [1097, 391, 1411, 552],
+                    "reference_frame": 36
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [1051, 512, 1548, 742],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "066 - reverse accident ⧸ hit and run [7CbAJW1fcR4]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 72,
+                    "end_frame": 150,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "067 - Parking Lot Security Camera [MeewCN-bWao]",
+            "source_video": "../Accident/학습용/067 - Parking Lot Security Camera [MeewCN-bWao].mp4",
+            "split": "normal",
+            "width": 480,
+            "height": 640,
+            "frame_count": 296,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [0, 352, 457, 520],
+                    "reference_frame": 295
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [233, 287, 480, 369],
+                    "reference_frame": 295
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "067 - Parking Lot Security Camera [MeewCN-bWao]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 35,
+                    "end_frame": 82,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "068 - Hit and Run Real Video  Ford against VOLKSWAGEN! [Vi6ujEH54tE]",
+            "source_video": "../Accident/테스트용/068 - Hit and Run Real Video  Ford against VOLKSWAGEN! [Vi6ujEH54tE].mp4",
+            "split": "normal",
+            "width": 640,
+            "height": 352,
+            "frame_count": 125,
+            "fps": 14.985014985014985,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [338, 104, 443, 197],
+                    "reference_frame": 33
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [80, 95, 223, 162],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "068 - Hit and Run Real Video  Ford against VOLKSWAGEN! [Vi6ujEH54tE]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 34,
+                    "end_frame": 99,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "069 - Hit and Run 2013-03-13 11_47am [9tWPDnN5v5c]",
+            "source_video": "../Accident/학습용/069 - Hit and Run 2013-03-13 11_47am [9tWPDnN5v5c].mp4",
+            "split": "normal",
+            "width": 1280,
+            "height": 618,
+            "frame_count": 372,
+            "fps": 30.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [138, 158, 781, 603],
+                    "reference_frame": 40
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [621, 115, 1275, 467],
+                    "reference_frame": 40
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "069 - Hit and Run 2013-03-13 11_47am [9tWPDnN5v5c]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 40,
+                    "end_frame": 113,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "070 - Parking lot fender bender [AYMjxgtgqLg]",
+            "source_video": "../Accident/학습용/070 - Parking lot fender bender [AYMjxgtgqLg].mp4",
+            "split": "normal",
+            "width": 996,
+            "height": 720,
+            "frame_count": 89,
+            "fps": 10.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [351, 427, 796, 602],
+                    "reference_frame": 15
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [264, 285, 496, 429],
+                    "reference_frame": 15
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "070 - Parking lot fender bender [AYMjxgtgqLg]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 22,
+                    "end_frame": 60,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "071 - Hit and Run Video [Svn1IV9w70A]",
+            "source_video": "../Accident/학습용/071 - Hit and Run Video [Svn1IV9w70A].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 183,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [1402, 359, 1798, 471],
+                    "reference_frame": 85
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [95, 308, 390, 400],
+                    "reference_frame": 85
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "071 - Hit and Run Video [Svn1IV9w70A]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 94,
+                    "end_frame": 157,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "071 - Hit and Run Video [Svn1IV9w70A]_1",
+            "source_video": "../Accident/학습용/071 - Hit and Run Video [Svn1IV9w70A]_1.mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 189,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [119, 325, 404, 411],
+                    "reference_frame": 38
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [737, 297, 1053, 373],
+                    "reference_frame": 47
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "071 - Hit and Run Video [Svn1IV9w70A]_1-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 47,
+                    "end_frame": 156,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "072 - Crash at the parking lot [3OnD8jA-YhM]",
+            "source_video": "../Accident/학습용/072 - Crash at the parking lot [3OnD8jA-YhM].mp4",
+            "split": "normal",
+            "width": 600,
+            "height": 480,
+            "frame_count": 94,
+            "fps": 15.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [451, 189, 595, 304],
+                    "reference_frame": 14
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [504, 148, 596, 221],
+                    "reference_frame": 14
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "072 - Crash at the parking lot [3OnD8jA-YhM]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 16,
+                    "end_frame": 30,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "074 - hits a parked car then drives away [RP_J1Z-C1Cg]",
+            "source_video": "../Accident/학습용/074 - hits a parked car then drives away [RP_J1Z-C1Cg].mp4",
+            "split": "normal",
+            "width": 854,
+            "height": 480,
+            "frame_count": 99,
+            "fps": 29.97002997002997,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [497, 54, 699, 173],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [0, 118, 145, 216],
+                    "reference_frame": 0
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "074 - hits a parked car then drives away [RP_J1Z-C1Cg]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 25,
+                    "end_frame": 42,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "075 - Fedex Hit and Run Buffalo [eoEl8zXyFGA]",
+            "source_video": "../Accident/학습용/075 - Fedex Hit and Run Buffalo [eoEl8zXyFGA].mp4",
+            "split": "normal",
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 246,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [878, 168, 1174, 393],
+                    "reference_frame": 72
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [113, 256, 381, 416],
+                    "reference_frame": 72
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "075 - Fedex Hit and Run Buffalo [eoEl8zXyFGA]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 96,
+                    "end_frame": 154,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
+        },
+        {
+            "video_id": "076 - Hit and run ＂He left a note？＂ Really？ Dorchester, Ma- [PD50B_HOGo4]",
+            "source_video": "../Accident/학습용/076 - Hit and run ＂He left a note？＂ Really？ Dorchester, Ma- [PD50B_HOGo4].mp4",
+            "split": "normal",
+            "width": 704,
+            "height": 480,
+            "frame_count": 174,
+            "fps": 25.0,
+            "boxes": [
+                {
+                    "vehicle_id": 0,
+                    "bbox": [85, 67, 529, 271],
+                    "reference_frame": 0
+                },
+                {
+                    "vehicle_id": 1,
+                    "bbox": [222, 21, 506, 109],
+                    "reference_frame": 22
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "076 - Hit and run ＂He left a note？＂ Really？ Dorchester, Ma- [PD50B_HOGo4]-a1",
+                    "vehicle_id": 0,
+                    "start_frame": 20,
+                    "end_frame": 104,
+                    "status": "confirmed",
+                    "note": ""
+                }
+            ],
+            "status": "confirmed",
+            "schema_version": 1
         }
     ]
 }
