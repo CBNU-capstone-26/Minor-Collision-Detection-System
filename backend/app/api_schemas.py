@@ -44,6 +44,20 @@ class EventOut(BaseModel):
     has_clip: bool = False
 
 
+# ---------- 차량 자동 탐지 ----------
+class DetectedVehicleBox(BaseModel):
+    id: int
+    class_name: str
+    confidence: float
+    bbox: list[int]  # [xmin, ymin, xmax, ymax]
+
+
+class VehicleDetectionResponse(BaseModel):
+    video_id: int
+    total_detected: int
+    detected_vehicles: list[DetectedVehicleBox] = []
+
+
 # ---------- 영상 ----------
 class VideoOut(BaseModel):
     id: int
@@ -56,8 +70,10 @@ class VideoOut(BaseModel):
     fps: float
     total_frames: int
     duration_sec: float
+    detected_vehicles: Optional[str] = None
     created_at: datetime
     events: list[EventOut] = []
+
 
 
 # ---------- 분석 ----------
