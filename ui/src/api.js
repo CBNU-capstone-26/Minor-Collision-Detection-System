@@ -95,6 +95,10 @@ export const api = {
   streamUrl: (id) => `/api/videos/${id}/stream`,
   thumbnailUrl: (id) => `/api/videos/${id}/thumbnail`,
   deleteVideo: (id) => request(`/videos/${id}`, { method: "DELETE" }),
+  deleteEvent: (videoId, eventId) =>
+    request(`/videos/${videoId}/events/${eventId}`, { method: "DELETE" }),
+  clearEvents: (videoId) =>
+    request(`/videos/${videoId}/events`, { method: "DELETE" }),
 
   // ---------- 분석 ----------
   detectVehicles: (videoId, timestampSec = 0) =>
@@ -106,4 +110,5 @@ export const api = {
   taskStatus: (taskId) => request(`/tasks/${taskId}`),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,
 };
+
 

@@ -166,6 +166,51 @@ def delete_video(
     return {"deleted": video_id}
 
 
+@router.delete("/{video_id}/events/{event_id}")
+def delete_crash_event(
+    video_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    """특정 사고 감지 이벤트 1건 삭제."""
+    video = _get_owned_video(video_id, db, user)
+    event = db.query(db_models.CrashEvent).filter(
+        db_models.CrashEvent.id == event_id,
+        db_models.CrashEvent.video_id == video.id,
+    ).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
+
+    if event.cam_heatmap_path:
+        settings.abs_path(event.cam_heatmap_path).unlink(missing_ok=True)
+
+    db.delete(event)
+    db.commit()
+    return {"deleted_event_id": event_id}
+
+
+@router.delete("/{video_id}/events")
+def clear_all_crash_events(
+    video_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    """해당 영상의 모든 사고 감지 이벤트 삭제."""
+    video = _get_owned_video(video_id, db, user)
+    events = db.query(db_models.CrashEvent).filter(
+        db_models.CrashEvent.video_id == video.id
+    ).all()
+    count = len(events)
+    for ev in events:
+        if ev.cam_heatmap_path:
+            settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+        db.delete(ev)
+    db.commit()
+    return {"deleted_count": count}
+
+
+
 @router.get("/{video_id}/stream")
 def stream_video(video_id: int, db: Session = Depends(get_db)):
     # <video src> 태그는 커스텀 헤더를 못 보내므로 인증 미적용 (MVP)
