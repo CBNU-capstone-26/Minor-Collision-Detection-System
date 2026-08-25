@@ -4,15 +4,103 @@
 
 body {
   margin: 0;
-  font-family: "Pretendard", "Noto Sans KR", Arial, sans-serif;
-  background: #f5f7fb;
+  font-family: "Plus Jakarta Sans", "Inter", "Pretendard", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f8f9fa;
   color: #1f2937;
+  -webkit-font-smoothing: antialiased;
 }
 
 button {
   cursor: pointer;
   font-family: inherit;
 }
+
+/* ---------------- 스플래시 로딩 화면 ---------------- */
+.app-splash-screen {
+  position: fixed;
+  inset: 0;
+  background: #05070e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  overflow: hidden;
+}
+
+.app-splash-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cosmic-stars {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(1.5px 1.5px at 20px 30px, #ffffff, rgba(0,0,0,0)),
+    radial-gradient(1.5px 1.5px at 40px 70px, rgba(255,255,255,0.7), rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 90px 40px, rgba(255,255,255,0.9), rgba(0,0,0,0)),
+    radial-gradient(1.5px 1.5px at 160px 120px, #ffffff, rgba(0,0,0,0));
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  opacity: 0.6;
+}
+
+.cosmic-glow-limb {
+  position: absolute;
+  bottom: -35vw;
+  right: -25vw;
+  width: 90vw;
+  height: 90vw;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid rgba(56, 189, 248, 0.45);
+  box-shadow: 
+    0 0 160px 50px rgba(56, 189, 248, 0.35),
+    inset 0 0 120px 40px rgba(56, 189, 248, 0.25);
+}
+
+.app-splash-content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.app-splash-title {
+  font-size: 44px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+  text-shadow: 0 0 24px rgba(255, 255, 255, 0.4);
+}
+
+.app-splash-subtitle {
+  font-size: 15px;
+  color: #94a3b8;
+  margin: 0 0 32px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.app-splash-spinner-ring {
+  width: 40px;
+  height: 40px;
+  border: 3.5px solid rgba(255, 255, 255, 0.12);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: splash-spin 0.85s infinite linear;
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+}
+
+@keyframes splash-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 
 /* ---------------- 로그인 ---------------- */
 .login-layout {
@@ -212,13 +300,69 @@ button {
 }
 
 .nav-logo {
-  background-color: #3b82f6;
+  background: linear-gradient(135deg, #1a73e8 0%, #0b57d0 100%);
   color: white;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 6px 16px;
+  border-radius: 9999px;
   font-weight: 800;
-  font-size: 18px;
+  font-size: 16px;
   border: none;
+  letter-spacing: -0.02em;
+  box-shadow: 0 2px 8px rgba(26, 115, 232, 0.3);
+  transition: all 0.2s;
+}
+
+.nav-logo:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
+}
+
+/* 상단 네비게이션 검색바 */
+.nav-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f1f3f4;
+  border: 1px solid #dadce0;
+  border-radius: 9999px;
+  padding: 6px 14px;
+  width: 260px;
+  transition: all 0.2s ease;
+}
+
+.nav-search-bar:focus-within {
+  background: #ffffff;
+  border-color: #1a73e8;
+  box-shadow: 0 1px 6px rgba(26, 115, 232, 0.25);
+  width: 300px;
+}
+
+.search-icon {
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.nav-search-bar input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  width: 100%;
+  color: #1f2937;
+  font-family: inherit;
+}
+
+.search-clear-btn {
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 12px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.search-clear-btn:hover {
+  color: #4b5563;
 }
 
 .nav-title {
@@ -231,7 +375,7 @@ button {
   background: #f8fafc;
   border: none;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: 9999px;
   color: #475569;
   font-weight: 600;
   transition: 0.2s;
@@ -241,12 +385,159 @@ button {
   background: #e2e8f0;
 }
 
+/* ---------------- 홈 뷰 히어로 쇼케이스 카드 ---------------- */
+.home-hero-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #1b1d24 0%, #121419 100%);
+  border: 1px solid #2d3038;
+  border-radius: 20px;
+  padding: 30px 36px;
+  margin-bottom: 28px;
+  color: #ffffff;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+}
+
+.hero-badge {
+  display: inline-block;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hero-card-left h2 {
+  font-size: 24px;
+  font-weight: 800;
+  margin: 0 0 10px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.hero-card-left p {
+  font-size: 14px;
+  color: #94a3b8;
+  margin: 0 0 20px;
+  max-width: 540px;
+  line-height: 1.5;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.hero-primary-btn {
+  background: #1a73e8;
+  color: white;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgba(26, 115, 232, 0.35);
+  transition: all 0.2s ease;
+}
+
+.hero-primary-btn:hover {
+  background: #1557b0;
+  transform: translateY(-1px);
+}
+
+.hero-delete-btn {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  padding: 10px 22px;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.2);
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hero-delete-btn:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45);
+  transform: translateY(-1px);
+}
+
+/* 삭제 모드 시 배너 안 버튼 스타일 고대비 적용 */
+.hero-actions .delete-select-all-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 10px 20px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.hero-actions .delete-select-all-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.hero-actions .delete-cancel-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 10px 20px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.hero-actions .delete-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.hero-actions .delete-confirm-btn {
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+  transition: all 0.2s ease;
+}
+
+.hero-actions .delete-confirm-btn:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.5);
+}
+
+
+
+
 /* ---------------- 홈 뷰 (유튜브 그리드 스타일) ---------------- */
 .home-view {
   padding: 24px;
   max-width: 1600px;
   margin: 0 auto;
 }
+
 
 .calendar-panel {
   background: #ffffff;
@@ -693,6 +984,31 @@ button {
   margin-bottom: 0;
 }
 
+.event-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.event-clear-all-btn {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.event-clear-all-btn:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
 .sidebar-icon-btn {
   width: 32px;
   height: 32px;
@@ -730,6 +1046,14 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.event-empty-hint {
+  padding: 24px 12px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .event-item {
@@ -781,6 +1105,36 @@ button {
   text-align: left;
   margin-left: 8px;
 }
+
+.event-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+
+
+.event-delete-item-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.event-delete-item-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
 
 .event-play-icon-btn {
   width: 24px;
@@ -923,15 +1277,16 @@ button {
   backdrop-filter: blur(8px);
 }
 
-/* 재생바 및 이벤트 마커 */
+/* 재생바 및 이벤트 마커 (비디오 화면 바깥 하단에 배치) */
 .custom-progress-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  width: 100%;
   padding: 14px 18px 16px;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.12), rgba(15, 23, 42, 0.96) 34%);
+  background: #0f172a;
+  border-radius: 0 0 12px 12px;
+  box-sizing: border-box;
 }
+
 
 .progress-track {
   width: 100%;
@@ -1954,9 +2309,23 @@ body.dark-mode .dashboard-layout {
 
 /* 탑 네비게이션 바 */
 body.dark-mode .top-navbar {
-  background: #111827;
-  border-bottom: 1px solid #1f2937;
+  background: #14161a;
+  border-bottom: 1px solid #23262d;
 }
+body.dark-mode .nav-search-bar {
+  background: #202229;
+  border-color: #2e313a;
+  color: #e2e8f0;
+}
+body.dark-mode .nav-search-bar input {
+  color: #f8fafc;
+}
+body.dark-mode .nav-search-bar:focus-within {
+  background: #181a20;
+  border-color: #1a73e8;
+  box-shadow: 0 1px 8px rgba(26, 115, 232, 0.3);
+}
+
 body.dark-mode .nav-title {
   color: #94a3b8;
 }
@@ -2677,26 +3046,56 @@ body.dark-mode .camera-bar-wrapper {
 
 /* ===================== 바운딩박스 지정 모드 ===================== */
 
-/* 사고 차량 지정하기 버튼 */
-/* 사고 차량 지정/사고감지 실행 버튼 공통 스타일 (색상만 회색/빨강으로 분기) */
 .bbox-designate-btn,
-.detect-run-btn {
+.detect-run-btn,
+.auto-detect-btn,
+.mode-exit-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 7px 20px;
-  border-radius: 7px;
-  border: 2px solid transparent;
-  font-size: 16px;
+  min-width: 145px;
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  font-size: 14.5px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+  box-sizing: border-box;
+}
+
+
+/* 🔍 탐지하기 = 파란색 메인 버튼 */
+.auto-detect-btn {
+  border-color: #3b82f6;
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.auto-detect-btn:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+
+.auto-detect-btn.detecting {
+  opacity: 0.8;
+  cursor: wait;
+  animation: pulse-detect-btn 1.5s infinite;
+}
+
+@keyframes pulse-detect-btn {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
 }
 
 /* 사고 차량 지정하기 = 회색 */
 .bbox-designate-btn {
+
   border-color: #cbd5e1;
   background: #f1f5f9;
   color: #334155;
@@ -2761,30 +3160,58 @@ body.dark-mode .camera-bar-wrapper {
   outline-offset: -3px;
 }
 
-/* 바운딩박스 드로잉 안내 문구 */
-.bbox-mode-guide {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
+/* 영상 바깥 상단 안내 바 */
+.bbox-mode-guide-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(239, 68, 68, 0.85);
-  color: #ffffff;
-  padding: 8px 18px;
-  border-radius: 999px;
+  gap: 10px;
+  background: #0f172a;
+  color: #38bdf8;
+  border: 1px solid #334155;
+  padding: 10px 18px;
+  border-radius: 12px 12px 0 0;
   font-size: 14px;
   font-weight: 700;
-  pointer-events: none;
-  backdrop-filter: blur(6px);
-  white-space: nowrap;
-  z-index: 10;
+  margin-bottom: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.delete-select-all-btn {
+  background: #334155;
+  color: #f8fafc;
+  border: 1px solid #475569;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-select-all-btn:hover {
+  background: #475569;
+}
+
+.mode-exit-btn {
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-exit-btn:hover {
+  background: #b91c1c;
 }
 
 .bbox-guide-icon {
   font-size: 16px;
 }
+
 
 /* 그려진 바운딩박스 */
 .bbox-drawn {
@@ -2865,6 +3292,40 @@ body.dark-mode .camera-bar-wrapper {
   letter-spacing: 0.3px;
   box-shadow: 0 2px 6px rgba(245, 158, 11, 0.4);
 }
+
+/* YOLO 탐지 마우스 Hover 미리보기 박스 */
+.bbox-hover-preview {
+  position: absolute;
+  border: 2.5px solid #10b981;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.22);
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.5), inset 0 0 10px rgba(16, 185, 129, 0.3);
+  animation: bbox-hover-pulse 1.2s infinite alternate;
+}
+
+@keyframes bbox-hover-pulse {
+  from { border-color: #10b981; box-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+  to { border-color: #34d399; box-shadow: 0 0 20px rgba(52, 211, 153, 0.8); }
+}
+
+.bbox-hover-label {
+  position: absolute;
+  top: -28px;
+  left: 0;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  letter-spacing: 0.3px;
+}
+
 
 
 /* 바운딩박스 결과 패널 */
@@ -3285,16 +3746,52 @@ body.dark-mode .bbox-copy-btn {
   padding: 24px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
 }
-.upload-modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.upload-modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.upload-submit-btn,
 .upload-cancel-btn {
-  padding: 11px 18px;
-  border: 1px solid #cbd5e1;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 20px;
   border-radius: 10px;
-  background: #fff;
-  color: #334155;
+  font-size: 14.5px;
   font-weight: 700;
   cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
+
+.upload-submit-btn {
+  background: #111827;
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.2);
+}
+
+.upload-submit-btn:hover {
+  background: #1f2937;
+  transform: translateY(-1px);
+}
+
+.upload-cancel-btn {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+.upload-cancel-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
 
 /* ===== 상단 분석 진행 상황 박스 (네비게이션 가운데) ===== */
 .analysis-status-box {

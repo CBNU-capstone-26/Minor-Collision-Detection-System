@@ -1,11 +1,11 @@
-# Python
+# Python / Cache
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.ipynb_checkpoints/
 
 # Virtual environments
 venv/
@@ -25,6 +25,9 @@ data/train/*.mp4
 # Model weights (대용량 바이너리 — git에서 제외)
 weights/
 
+# Model weights (대용량 바이너리 — git에서 제외)
+weights/
+
 # Local notebooks and docs
 *.ipynb
 *.md
@@ -33,4 +36,5 @@ weights/
 .vscode/
 .idea/
 .DS_Store
+._*
 *.local

@@ -174,7 +174,7 @@ def predict_hit_and_run_final(
         out_path = output_dir / f'final_{os.path.basename(video_path)}'
         os.makedirs(out_path.parent, exist_ok=True)
         out_video = cv2.VideoWriter(
-            str(out_path), cv2.VideoWriter_fourcc(*'mp4v'), 30.0, (orig_w, orig_h))
+            str(out_path), cv2.VideoWriter_fourcc(*'avc1'), 30.0, (orig_w, orig_h))
 
         write_queue = queue.Queue(maxsize=64)
         writer_thread = threading.Thread(
@@ -508,8 +508,9 @@ def predict_events_and_clips(
 
                 clip_path = output_dir / f'{base_name}_event{ev_idx}.mp4'
                 writer = cv2.VideoWriter(
-                    str(clip_path), cv2.VideoWriter_fourcc(*'mp4v'),
+                    str(clip_path), cv2.VideoWriter_fourcc(*'avc1'),
                     fps, (orig_w, orig_h))
+
 
                 # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
                 render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
