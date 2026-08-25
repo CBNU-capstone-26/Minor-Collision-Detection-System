@@ -3048,20 +3048,25 @@ body.dark-mode .camera-bar-wrapper {
 
 .bbox-designate-btn,
 .detect-run-btn,
-.auto-detect-btn {
+.auto-detect-btn,
+.mode-exit-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 7px 20px;
-  border-radius: 7px;
-  border: 2px solid transparent;
-  font-size: 16px;
+  min-width: 145px;
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  font-size: 14.5px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+  box-sizing: border-box;
 }
+
 
 /* 🔍 탐지하기 = 파란색 메인 버튼 */
 .auto-detect-btn {
@@ -3741,16 +3746,52 @@ body.dark-mode .bbox-copy-btn {
   padding: 24px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
 }
-.upload-modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.upload-modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.upload-submit-btn,
 .upload-cancel-btn {
-  padding: 11px 18px;
-  border: 1px solid #cbd5e1;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 20px;
   border-radius: 10px;
-  background: #fff;
-  color: #334155;
+  font-size: 14.5px;
   font-weight: 700;
   cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
+
+.upload-submit-btn {
+  background: #111827;
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.2);
+}
+
+.upload-submit-btn:hover {
+  background: #1f2937;
+  transform: translateY(-1px);
+}
+
+.upload-cancel-btn {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+.upload-cancel-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
 
 /* ===== 상단 분석 진행 상황 박스 (네비게이션 가운데) ===== */
 .analysis-status-box {

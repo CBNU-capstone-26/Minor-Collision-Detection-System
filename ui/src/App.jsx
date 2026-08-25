@@ -2324,7 +2324,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
 
         <div className="upload-modal-actions">
           <button
-            className="settings-save-btn"
+            className="upload-submit-btn"
             onClick={handleUpload}
             disabled={uploading}
           >
@@ -2334,6 +2334,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
             취소
           </button>
         </div>
+
       </div>
     </div>
   );
