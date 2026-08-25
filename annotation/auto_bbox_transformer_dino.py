@@ -1,24 +1,23 @@
 """
-YOLO segmentation 기반 차량 bbox 자동 생성 도구.
+Grounding DINO Transformer detector 기반 차량 bbox 자동 생성 도구.
 
 목적:
-  - YOLO-seg로 차량을 찾는다.
-  - detection bbox를 그대로 쓰지 않고 segmentation mask의 실제 외곽을 기준으로
-    상/하/좌/우 좌표를 다시 계산한다.
+  - Grounding DINO로 차량을 찾는다.
+  - segmentation mask/contour 변환 없이 detector가 예측한 bbox를 직접 사용한다.
   - 프로젝트 학습 txt 포맷인 `car,id,x1,y1,x2,y2`로 저장한다.
 
 설치:
-  pip install ultralytics opencv-python
+  pip install transformers pillow opencv-python torch
 
 예시:
-  python model/auto_bbox_yolo_seg.py \
+  python annotation/auto_bbox_transformer_dino.py \
     --source data/real/real01.mp4 \
     --output-image outputs/real01_auto_bbox.jpg \
     --output-txt data/real/real01.txt \
     --frame-index 0
 
-  # YOLO가 부분 차량을 못 잡았을 때: 기존 bbox를 넣고 좌우만 타이트하게 보정
-  python model/auto_bbox_yolo_seg.py \
+  # DINO가 부분 차량을 못 잡았을 때: 기존 bbox를 넣고 좌우만 타이트하게 보정
+  python annotation/auto_bbox_transformer_dino.py \
     --source outputs/sample.jpg \
     --output-image outputs/sample_tight_bbox.jpg \
     --output-txt outputs/sample_tight_bbox.txt \
@@ -30,6 +29,7 @@ YOLO segmentation 기반 차량 bbox 자동 생성 도구.
 from __future__ import annotations
 
 import argparse
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -37,16 +37,9 @@ from typing import Iterable
 import cv2
 import numpy as np
 
-try:
-    from ultralytics import YOLO
-except ImportError as exc:  # pragma: no cover - runtime dependency 안내용
-    raise SystemExit(
-        "ultralytics가 설치되어 있지 않습니다. "
-        "다음 명령으로 설치하세요: pip install ultralytics opencv-python"
-    ) from exc
-
 
 DEFAULT_VEHICLE_CLASSES = ("car", "truck", "bus", "motorcycle")
+DEFAULT_DINO_MODEL = "IDEA-Research/grounding-dino-tiny"
 
 
 @dataclass
@@ -57,30 +50,63 @@ class VehicleDetection:
 
 
 class VehicleBBoxDetector:
-    """YOLO-seg mask 외곽으로 차량 bbox를 타이트하게 재계산한다."""
+    """Grounding DINO가 직접 예측한 차량 bbox를 프로젝트 포맷으로 변환한다."""
 
     def __init__(
         self,
-        model_path: str = "yolov8n-seg.pt",
+        model_path: str = DEFAULT_DINO_MODEL,
         conf: float = 0.35,
         vehicle_classes: Iterable[str] = DEFAULT_VEHICLE_CLASSES,
-        mask_threshold: float = 0.5,
+        text_threshold: float = 0.25,
         min_area: int = 100,
         shrink_x: float = 0.0,
         shrink_left: float | None = None,
         shrink_right: float | None = None,
         nms_iou: float = 0.35,
         contain_threshold: float = 0.85,
+        device: str = "auto",
+        local_files_only: bool = False,
     ):
-        self.model = YOLO(model_path)
+        try:
+            import torch
+            from PIL import Image
+            from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+        except ImportError as exc:  # pragma: no cover - runtime dependency 안내용
+            raise SystemExit(
+                "Grounding DINO 실행 의존성이 설치되어 있지 않습니다. "
+                "다음 명령으로 설치하세요: "
+                "pip install transformers pillow opencv-python torch"
+            ) from exc
+
+        self.torch = torch
+        self.Image = Image
+        self.processor = AutoProcessor.from_pretrained(
+            model_path,
+            local_files_only=local_files_only,
+        )
+        self.device = self._resolve_device(device)
+        self.model = AutoModelForZeroShotObjectDetection.from_pretrained(
+            model_path,
+            local_files_only=local_files_only,
+        )
+        self.model.to(self.device)
+        self.model.eval()
         self.conf = conf
         self.vehicle_classes = set(vehicle_classes)
-        self.mask_threshold = mask_threshold
+        self.text_threshold = text_threshold
         self.min_area = min_area
         self.shrink_left = shrink_x if shrink_left is None else shrink_left
         self.shrink_right = shrink_x if shrink_right is None else shrink_right
         self.nms_iou = nms_iou
         self.contain_threshold = contain_threshold
+        self.text_labels = [[f"a {class_name}" for class_name in self.vehicle_classes]]
+
+    def _resolve_device(self, requested: str) -> str:
+        if requested != "auto":
+            return requested
+        if self.torch.cuda.is_available():
+            return "cuda"
+        return "cpu"
 
     @staticmethod
     def _clip_box(
@@ -185,82 +211,76 @@ class VehicleBBoxDetector:
                 kept.append(det)
         return sorted(kept, key=lambda det: (det.bbox[0], det.bbox[1]))
 
-    def _bbox_from_mask(
-        self,
-        mask: np.ndarray,
-        frame_width: int,
-        frame_height: int,
-    ) -> tuple[int, int, int, int] | None:
-        """Segmentation mask의 실제 양수 픽셀 외곽으로 bbox를 계산한다."""
-        binary = (mask > self.mask_threshold).astype(np.uint8)
-        if binary.shape[:2] != (frame_height, frame_width):
-            binary = cv2.resize(
-                binary,
-                (frame_width, frame_height),
-                interpolation=cv2.INTER_NEAREST,
-            )
-
-        # 작은 구멍이나 끊긴 mask를 약하게 정리한다.
-        kernel = np.ones((3, 3), dtype=np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
-
-        contours, _ = cv2.findContours(
-            binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-        if not contours:
-            return None
-
-        contour = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(contour) < self.min_area:
-            return None
-
-        x, y, w, h = cv2.boundingRect(contour)
-        return self._clip_box(x, y, x + w - 1, y + h - 1, frame_width, frame_height)
+    def _label_to_class(self, label: str) -> str | None:
+        normalized = label.strip().lower()
+        if normalized.startswith("a "):
+            normalized = normalized[2:]
+        if normalized.startswith("an "):
+            normalized = normalized[3:]
+        return normalized if normalized in self.vehicle_classes else None
 
     def detect_frame(self, frame_bgr: np.ndarray) -> list[VehicleDetection]:
         height, width = frame_bgr.shape[:2]
-        result = self.model(frame_bgr, conf=self.conf, verbose=False)[0]
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        image = self.Image.fromarray(frame_rgb)
 
-        if result.boxes is None:
-            return []
+        inputs = self.processor(
+            images=image,
+            text=self.text_labels,
+            return_tensors="pt",
+        ).to(self.device)
 
-        masks = result.masks.data.cpu().numpy() if result.masks is not None else None
+        with self.torch.inference_mode():
+            outputs = self.model(**inputs)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*`labels`.*`text_labels`.*",
+                category=FutureWarning,
+            )
+            results = self.processor.post_process_grounded_object_detection(
+                outputs,
+                inputs.input_ids,
+                threshold=self.conf,
+                text_threshold=self.text_threshold,
+                target_sizes=[(height, width)],
+            )[0]
+
         detections: list[VehicleDetection] = []
-
-        for idx, box in enumerate(result.boxes):
-            class_id = int(box.cls[0])
-            class_name = self.model.names[class_id]
-            if class_name not in self.vehicle_classes:
+        labels = results["text_labels"] if "text_labels" in results else results["labels"]
+        for score, label, box in zip(
+            results["scores"],
+            labels,
+            results["boxes"],
+        ):
+            class_name = self._label_to_class(str(label))
+            if class_name is None:
                 continue
 
-            confidence = float(box.conf[0])
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-
-            tight_bbox = None
-            if masks is not None and idx < len(masks):
-                tight_bbox = self._bbox_from_mask(masks[idx], width, height)
-
-            if tight_bbox is None:
-                tight_bbox = self._clip_box(x1, y1, x2, y2, width, height)
+            x1, y1, x2, y2 = box.detach().cpu().tolist()
+            bbox = self._clip_box(x1, y1, x2, y2, width, height)
+            if self._box_area(bbox) < self.min_area:
+                continue
 
             # 좌우 여백이 크게 잡히는 CCTV/부분 차량 프레임에서만 선택적으로 사용한다.
-            tight_bbox = self._shrink_box_horizontal(
-                tight_bbox,
+            bbox = self._shrink_box_horizontal(
+                bbox,
                 self.shrink_left,
                 self.shrink_right,
                 width,
                 height,
             )
 
-            bx1, by1, bx2, by2 = tight_bbox
+            bx1, by1, bx2, by2 = bbox
             if bx2 <= bx1 or by2 <= by1:
                 continue
 
             detections.append(
                 VehicleDetection(
                     class_name=class_name,
-                    confidence=confidence,
-                    bbox=tight_bbox,
+                    confidence=float(score.detach().cpu()),
+                    bbox=bbox,
                 )
             )
 
@@ -330,7 +350,7 @@ def draw_detections(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="YOLO segmentation mask 기반 차량 bbox 자동 생성"
+        description="Grounding DINO Transformer detector 기반 차량 bbox 자동 생성"
     )
     parser.add_argument("--source", required=True, help="입력 이미지 또는 영상 경로")
     parser.add_argument(
@@ -339,8 +359,29 @@ def parse_args() -> argparse.Namespace:
         help="저장할 txt 경로. 형식: car,id,x1,y1,x2,y2",
     )
     parser.add_argument("--output-image", help="bbox 확인용 이미지 저장 경로")
-    parser.add_argument("--model", default="yolov8n-seg.pt", help="YOLO-seg 모델 경로")
-    parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence")
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_DINO_MODEL,
+        help="Hugging Face Grounding DINO 모델 ID 또는 로컬 모델 경로",
+    )
+    parser.add_argument("--conf", type=float, default=0.35, help="DINO box threshold")
+    parser.add_argument(
+        "--text-threshold",
+        type=float,
+        default=0.25,
+        help="Grounding DINO text threshold",
+    )
+    parser.add_argument(
+        "--device",
+        default="auto",
+        choices=("auto", "cpu", "cuda", "mps"),
+        help="DINO 추론 디바이스",
+    )
+    parser.add_argument(
+        "--local-files-only",
+        action="store_true",
+        help="Hugging Face Hub에 접속하지 않고 로컬 캐시/로컬 모델 경로만 사용",
+    )
     parser.add_argument(
         "--frame-index",
         type=int,
@@ -373,7 +414,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--manual-bbox",
-        help="YOLO 검출 대신 사용할 bbox. 형식: x1,y1,x2,y2",
+        help="DINO 검출 대신 사용할 bbox. 형식: x1,y1,x2,y2",
     )
     parser.add_argument(
         "--nms-iou",
@@ -425,12 +466,15 @@ def main() -> None:
         detector = VehicleBBoxDetector(
             model_path=args.model,
             conf=args.conf,
+            text_threshold=args.text_threshold,
             min_area=args.min_area,
             shrink_x=args.shrink_x,
             shrink_left=args.shrink_left,
             shrink_right=args.shrink_right,
             nms_iou=args.nms_iou,
             contain_threshold=args.contain_threshold,
+            device=args.device,
+            local_files_only=args.local_files_only,
         )
         detections = detector.detect_frame(frame)
     save_training_txt(

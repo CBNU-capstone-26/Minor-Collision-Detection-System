@@ -56,3 +56,4 @@ numpy>=1.24                         # 수치 연산 (Python 3.10 → 2.2.x, 3.11
 opencv-python-headless>=4.8         # cv2: 프레임 디코딩·크롭·CAM 오버레이·클립 렌더링
 pillow>=10.0                        # PIL: 데이터 증강(색상 지터 등) 시 이미지 변환
 tqdm>=4.65                          # 평가 진행률 표시
+transformers>=4.40                  # Grounding DINO bbox detector
