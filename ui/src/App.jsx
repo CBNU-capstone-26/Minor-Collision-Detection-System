@@ -10,7 +10,24 @@ import {
 import { api, saveAuth, clearAuth, getToken } from "./api";
 import "./App.css";
 
+function AppLoadingScreen() {
+  return (
+    <div className="app-splash-screen">
+      <div className="app-splash-bg">
+        <div className="cosmic-stars" />
+        <div className="cosmic-glow-limb" />
+      </div>
+      <div className="app-splash-content">
+        <h1 className="app-splash-title">SIOT</h1>
+        <p className="app-splash-subtitle">주차 사고 이벤트 감지 시스템</p>
+        <div className="app-splash-spinner-ring" />
+      </div>
+    </div>
+  );
+}
+
 function LoginPage({ onLogin }) {
+
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [error, setError] = useState("");
@@ -619,6 +636,8 @@ function Dashboard({ onLogout, view }) {
   // 상태 관리
   const [videos, setVideos] = useState([]); // API에서 로드한 영상 목록
   const [filterDays, setFilterDays] = useState(7); // 기본 1주일
+  const [searchQuery, setSearchQuery] = useState(""); // 상단 검색어
+
   const [selectedVideo, setSelectedVideo] = useState(null); // null이면 홈(그리드) 화면, 값이 있으면 영상 재생 화면
   const [currentEventId, setCurrentEventId] = useState(null); // 현재 선택된 이벤트 마커
   const [isPlaying, setIsPlaying] = useState(false);
@@ -798,14 +817,25 @@ function Dashboard({ onLogout, view }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, videoId]);
 
-  // 날짜 필터링 계산
+  // 날짜 및 검색어 필터링 계산
   const filteredVideos = useMemo(() => {
     const today = new Date();
     const startDate = formatDate(addDays(today, -filterDays));
-    const list =
+    let list =
       filterDays >= 9999
         ? videos
         : videos.filter((video) => video.date >= startDate);
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (v) =>
+          (v.date || "").toLowerCase().includes(q) ||
+          (v.camera || "").toLowerCase().includes(q) ||
+          (v.events && v.events.some((e) => (e.title || "").toLowerCase().includes(q)))
+      );
+    }
+
     // 녹화 일자 최신순 정렬 (같은 날짜는 시작시간 → id 순)
     return [...list].sort((a, b) => {
       if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
@@ -813,7 +843,8 @@ function Dashboard({ onLogout, view }) {
         return (b.startTime || "").localeCompare(a.startTime || "");
       return b.id - a.id;
     });
-  }, [filterDays, videos]);
+  }, [filterDays, videos, searchQuery]);
+
 
   const videosByDate = useMemo(() => {
     return getVideosByDateApi(videos);
@@ -851,6 +882,54 @@ function Dashboard({ onLogout, view }) {
   const handleBackToHome = () => {
     navigate("/videos");
   };
+
+  // 특정 사고 이벤트 1건 삭제
+  const handleDeleteEvent = async (eventId, e) => {
+    if (e) e.stopPropagation();
+    if (!selectedVideo) return;
+    try {
+      await api.deleteEvent(selectedVideo.id, eventId);
+      setSelectedVideo((prev) =>
+        prev
+          ? {
+              ...prev,
+              events: prev.events.filter((ev) => ev.id !== eventId),
+            }
+          : null
+      );
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.id === selectedVideo.id
+            ? { ...v, events: v.events.filter((ev) => ev.id !== eventId) }
+            : v
+        )
+      );
+      if (currentEventId === eventId) {
+        setCurrentEventId(null);
+      }
+      showToast("감지 이벤트가 삭제되었습니다.", "info");
+    } catch (err) {
+      showToast(`이벤트 삭제 실패: ${err.message}`, "error");
+    }
+  };
+
+  // 영상의 모든 사고 이벤트 전체 삭제
+  const handleClearAllEvents = async () => {
+    if (!selectedVideo || selectedVideo.events.length === 0) return;
+    if (!window.confirm("이 영상에서 감지된 모든 사고 이벤트를 삭제하시겠습니까?")) return;
+    try {
+      await api.clearEvents(selectedVideo.id);
+      setSelectedVideo((prev) => (prev ? { ...prev, events: [] } : null));
+      setVideos((prev) =>
+        prev.map((v) => (v.id === selectedVideo.id ? { ...v, events: [] } : v))
+      );
+      setCurrentEventId(null);
+      showToast("모든 감지 이벤트가 삭제되었습니다.", "info");
+    } catch (err) {
+      showToast(`이벤트 전체 삭제 실패: ${err.message}`, "error");
+    }
+  };
+
 
   // 수동 차량 지정 모드 시작
   const handleStartManualDesignate = () => {
@@ -1072,7 +1151,22 @@ function Dashboard({ onLogout, view }) {
       <header className="top-navbar">
         <div className="nav-section nav-left">
           <button className="nav-logo nav-home-btn" onClick={handleBackToHome}>SIOT</button>
+          <div className="nav-search-bar">
+            <span className="search-icon">🔍</span>
+            <input
+              type="text"
+              placeholder="날짜, 카메라, 이벤트 검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="search-clear-btn" onClick={() => setSearchQuery("")}>
+                ✕
+              </button>
+            )}
+          </div>
         </div>
+
         <div className="nav-section nav-center">
           {analyzingJobs.length === 0 ? (
             <div className="analysis-status-box analysis-status-idle">
@@ -1251,7 +1345,53 @@ function Dashboard({ onLogout, view }) {
         />
       ) : !selectedVideo ? (
         <main className="home-view">
-          {/* 기간 필터 + 업로드/삭제 버튼 */}
+          {/* 상단 히어로 쇼케이스 배너 카드 */}
+          <div className="home-hero-card">
+            <div className="hero-card-left">
+              <div className="hero-badge">AI Monitoring Engine</div>
+              <h2>주차 사고 이벤트를 실시간으로 확인하세요</h2>
+              <p>
+                CCTV 녹화 영상에서 차선 및 사고 차량을 지정하여 접촉사고 의심 구간을 인공지능 알고리즘으로 자동 분석합니다.
+              </p>
+              <div className="hero-actions">
+                {deleteMode ? (
+                  <>
+                    <button
+                      className="delete-select-all-btn"
+                      onClick={() => {
+                        if (selectedForDelete.length === filteredVideos.length && filteredVideos.length > 0) {
+                          setSelectedForDelete([]);
+                        } else {
+                          setSelectedForDelete(filteredVideos.map((v) => v.id));
+                        }
+                      }}
+                    >
+                      {selectedForDelete.length === filteredVideos.length && filteredVideos.length > 0
+                        ? "☑ 전체 해제"
+                        : "☐ 전체 선택"}
+                    </button>
+                    <button className="delete-cancel-btn" onClick={exitDeleteMode}>
+                      취소
+                    </button>
+                    <button className="delete-confirm-btn" onClick={handleDeleteSelected}>
+                      🗑 선택 삭제 ({selectedForDelete.length})
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="hero-primary-btn" onClick={() => setShowUpload(true)}>
+                      ⬆ 영상 업로드
+                    </button>
+                    <button className="hero-delete-btn" onClick={() => setDeleteMode(true)}>
+                      🗑 영상 삭제
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 기간 필터 */}
           <div className="home-toolbar">
             <div className="filter-pills">
               <button className={filterDays === 7 ? "active" : ""} onClick={() => setFilterDays(7)}>1주일</button>
@@ -1260,44 +1400,8 @@ function Dashboard({ onLogout, view }) {
               <button className={filterDays === 90 ? "active" : ""} onClick={() => setFilterDays(90)}>3개월</button>
               <button className={filterDays === 9999 ? "active" : ""} onClick={() => setFilterDays(9999)}>전체</button>
             </div>
-
-            <div className="home-toolbar-actions">
-              {deleteMode ? (
-                <>
-                  <button
-                    className="delete-select-all-btn"
-                    onClick={() => {
-                      if (selectedForDelete.length === filteredVideos.length && filteredVideos.length > 0) {
-                        setSelectedForDelete([]);
-                      } else {
-                        setSelectedForDelete(filteredVideos.map((v) => v.id));
-                      }
-                    }}
-                  >
-                    {selectedForDelete.length === filteredVideos.length && filteredVideos.length > 0
-                      ? "☑ 전체 해제"
-                      : "☐ 전체 선택"}
-                  </button>
-                  <button className="delete-cancel-btn" onClick={exitDeleteMode}>
-                    취소
-                  </button>
-                  <button className="delete-confirm-btn" onClick={handleDeleteSelected}>
-                    🗑 선택 삭제 ({selectedForDelete.length})
-                  </button>
-                </>
-              ) : (
-
-                <>
-                  <button className="upload-open-btn" onClick={() => setShowUpload(true)}>
-                    ⬆ 영상 업로드
-                  </button>
-                  <button className="delete-open-btn" onClick={() => setDeleteMode(true)}>
-                    🗑 영상 삭제
-                  </button>
-                </>
-              )}
-            </div>
           </div>
+
 
           {/* 영상 썸네일 그리드 */}
           <div className="video-grid">
@@ -1442,50 +1546,75 @@ function Dashboard({ onLogout, view }) {
                       <h3>감지된 이벤트 목록</h3>
                       <p className="event-summary">총 {selectedVideo.events.length}건의 이벤트가 있습니다.</p>
                     </div>
-                    <button
-                      className="sidebar-icon-btn"
-                      onClick={() => setIsSidebarOpen(false)}
-                      aria-label="이벤트 목록 닫기"
-                    >
-                      ×
-                    </button>
+                    <div className="event-header-actions">
+                      {selectedVideo.events.length > 0 && (
+                        <button
+                          className="event-clear-all-btn"
+                          onClick={handleClearAllEvents}
+                          title="이 영상의 모든 감지 이벤트 삭제"
+                        >
+                          🗑 전체 삭제
+                        </button>
+                      )}
+                      <button
+                        className="sidebar-icon-btn"
+                        onClick={() => setIsSidebarOpen(false)}
+                        aria-label="이벤트 목록 닫기"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
 
                   <div className="event-list">
-                    {selectedVideo.events.map((event) => (
-                      <div
-                        key={event.id}
-                        className={`event-item ${currentEventId === event.id ? "active" : ""}`}
-                        onClick={() => setCurrentEventId(event.id)}
-                      >
-                        <div className="event-item-top">
-                          <span className="event-time-pill">{formatTime(event.timestamp)}</span>
-                          <span className="event-actual-time-text">
-                            {formatActualTime(selectedVideo.date, selectedVideo.startTime, event.timestamp)}
-                          </span>
-                          <button
-                            className="event-play-icon-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCurrentEventId(event.id);
-                              if (event.hasClip) {
-                                setClipEvent(event);
-                              } else {
-                                showToast("이 이벤트의 CAM 클립이 아직 없습니다.", "warning");
-                              }
-                            }}
-                            aria-label={`${formatTime(event.timestamp)} 사고구간 CAM 클립 재생`}
-                            title="사고구간 CAM 클립 보기"
-                          >
-                            ▶
-                          </button>
+                    {selectedVideo.events.length === 0 ? (
+                      <div className="event-empty-hint">감지된 이벤트가 없습니다.</div>
+                    ) : (
+                      selectedVideo.events.map((event) => (
+                        <div
+                          key={event.id}
+                          className={`event-item ${currentEventId === event.id ? "active" : ""}`}
+                          onClick={() => setCurrentEventId(event.id)}
+                        >
+                          <div className="event-item-top">
+                            <span className="event-time-pill">{formatTime(event.timestamp)}</span>
+                            <span className="event-actual-time-text">
+                              {formatActualTime(selectedVideo.date, selectedVideo.startTime, event.timestamp)}
+                            </span>
+                            <div className="event-item-actions">
+                              <button
+                                className="event-play-icon-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCurrentEventId(event.id);
+                                  if (event.hasClip) {
+                                    setClipEvent(event);
+                                  } else {
+                                    showToast("이 이벤트의 CAM 클립이 아직 없습니다.", "warning");
+                                  }
+                                }}
+                                aria-label={`${formatTime(event.timestamp)} 사고구간 CAM 클립 재생`}
+                                title="사고구간 CAM 클립 보기"
+                              >
+                                ▶
+                              </button>
+                              <button
+                                className="event-delete-item-btn"
+                                onClick={(e) => handleDeleteEvent(event.id, e)}
+                                title="이벤트 삭제"
+                              >
+                                🗑
+                              </button>
+                            </div>
+                          </div>
+                          <div className="event-item-bottom">
+                            <h4 className="event-title-text">{event.title}</h4>
+                          </div>
                         </div>
-                        <div className="event-item-bottom">
-                          <h4 className="event-title-text">{event.title}</h4>
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
+
 
                   {/* 달력을 사이드바 이벤트 목록 하단으로 삽입 */}
                   <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #e2e8f0" }}>
@@ -2216,13 +2345,26 @@ function RequireAuth({ children }) {
 
 export default function App() {
   const [user, setUser] = useState(() => !!getToken());
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitializing(false);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleLogout = () => {
     clearAuth();
     setUser(false);
   };
 
+  if (isInitializing) {
+    return <AppLoadingScreen />;
+  }
+
   return (
+
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage onLogin={() => setUser(true)} />} />
