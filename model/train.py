@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -19,12 +21,14 @@ class EarlyStopping:
         self.best_score = None
         self.early_stop = False
         self.val_loss_min = float('inf')
+        # 최종 파일명 규칙에 쓸 값 — best 가중치가 저장된 에포크(1-index)
+        self.best_epoch = None
 
-    def __call__(self, val_loss, model):
+    def __call__(self, val_loss, model, epoch):
         score = -val_loss
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(val_loss, model, epoch)
         elif score < self.best_score + self.delta:
             self.counter += 1
             print(f'조기 종료 카운트: {self.counter} / {self.patience}')
@@ -32,15 +36,16 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(val_loss, model, epoch)
             self.counter = 0
 
-    def save_checkpoint(self, val_loss, model):
+    def save_checkpoint(self, val_loss, model, epoch):
         if val_loss < self.val_loss_min:
             print(
                 f'검증 손실 감소 ({self.val_loss_min:.6f} --> {val_loss:.6f}). 모델 저장 중...')
             torch.save(model.state_dict(), self.path)
             self.val_loss_min = val_loss
+            self.best_epoch = epoch
 
 
 def _make_loader(dataset, batch_size, shuffle, device):
@@ -204,12 +209,28 @@ def train_model(
 
         print(f'Epoch [{epoch+1}/{num_epochs}] Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f} | LR: {current_lr:.2e}')
 
-        early_stopping(avg_val_loss, model)
+        early_stopping(avg_val_loss, model, epoch + 1)
         if early_stopping.early_stop:
             print("조기 종료 조건 충족. 학습을 중단합니다.")
             break
 
-    state_dict = torch.load(save_path, map_location='cpu', weights_only=True)
+    # ── 최종 가중치 파일명 규칙 적용 ───────────────────────────────
+    # hitandrun_[날짜YYMMDD]_[에포크수]ep_[earlyY|earlyN]_[손실율]
+    #   · 날짜   : 학습 종료일 (예: 2026-07-24 → 260724)
+    #   · 에포크 : best 가중치가 저장된 에포크 (예: 50 → 50ep)
+    #   · early  : 조기종료로 멈췄으면 earlyY, 아니면 earlyN
+    #   · 손실율 : 저장 당시 val loss를 소수점 포함해 표기 (예: 1.2345 → 1.2345)
+    date_str = datetime.now().strftime('%y%m%d')
+    epoch_str = f'{early_stopping.best_epoch}ep'
+    early_str = 'earlyY' if early_stopping.early_stop else 'earlyN'
+    loss_str = f'{early_stopping.val_loss_min:.4f}'
+    final_name = f'hitandrun_{date_str}_{epoch_str}_{early_str}_{loss_str}.pth'
+    final_path = Path(save_path).with_name(final_name)
+    # 학습 중엔 save_path(작업용)로 저장해 두고, 종료 시 규칙 파일명으로 이동
+    os.replace(save_path, final_path)
+    print(f'\n최종 가중치 저장: {final_path}')
+
+    state_dict = torch.load(final_path, map_location='cpu', weights_only=True)
     model.load_state_dict(state_dict)
     model.to(device)
     return model

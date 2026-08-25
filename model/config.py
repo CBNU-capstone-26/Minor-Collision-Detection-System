@@ -38,6 +38,9 @@ NORM_MEAN = (0.43216, 0.394666, 0.37645)
 NORM_STD = (0.22803, 0.22145, 0.216989)
 
 # ---------- 학습 전용 ----------
+# 학습 '작업용' 경로. 학습 중 best 가중치를 해당 파일로 갱신 저장했놓고, 학습 종료 시
+# 규칙 파일명: (hitandrun_[YYMMDD]_[N]ep_[earlyY|N]_[손실율]) 으로 rename 된다(train.py).
+# [YYMMDD] : 학습 시작 날짜, [N]ep : 학습 종료 시점 epoch, [earlyY|N] : 조기 종료 여부, [손실율] : 최종 검증 손실율(val loss)
 TRAIN_BEST_MODEL_SAVE_PATH = _ROOT / "weights" / "hitandrun_model_best.pth"
 TRAIN_BATCH_SIZE = 8  # GPU VRAM 상황에 맞게 조절 (예: 16, 32, 64 등)(기본값: 15)
 TRAIN_NUM_EPOCHS = 100
@@ -45,16 +48,20 @@ TRAIN_SPLIT_RATIO = 0.8
 TRAIN_EARLY_STOPPING_PATIENCE = 15 # patience 값 변경 10 -> 15로 변경 (이정주)
 TRAIN_LEARNING_RATE = 0.00003  # S3D 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
 
+# ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
+# 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 S3D 구조(.pth)여야 한다.
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260729_35ep_earlyN_0.0041_augON.pth"
+
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
-PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_model_best.finally.pth"
-PREDICT_VIDEO_PATH = _ROOT / "data" / "real" / "real01.mp4"
-PREDICT_TXT_PATH = _ROOT / "data" / "real" / "real01.txt"
+PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260729_35ep_earlyN_0.0041_augON.pth"
+PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
+PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
-PREDICT_INFER_BATCH_SIZE = 8 # batch size 8로 바꾸었음(이정주)
+PREDICT_INFER_BATCH_SIZE = 2 # batch size 2로 바꾸었음(배기원)
 PREDICT_WINDOW_STRIDE = 15  # CPU 추론 기본: 15 (GPU면 1로 낮춰 정확도↑)
 
 # ---------- 실제영상 정확도 평가 전용 ----------
-EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_model_best.pth"
+EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260729_35ep_earlyN_0.0041_augON.pth"
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 EVAL_NUM_SAMPLES = 10
 EVAL_INFER_BATCH_SIZE = 8 # batch size 8로 바꾸었음(이정주)

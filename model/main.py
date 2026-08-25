@@ -5,6 +5,13 @@ import config
 from device_utils import get_device, is_channels_last_3d_supported
 from hitandrun_model import HitAndRun3DCNN
 
+'''
+학습 시작
+python3 -m model.main --mode train
+
+예측 시작
+python3 -m model.main --mode predict
+'''
 
 def _load_model(weights_path):
     # _load_model은 predict/eval(추론)에서만 사용 → INFER 디바이스 사용
