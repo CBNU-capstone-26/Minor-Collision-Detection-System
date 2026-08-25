@@ -10,6 +10,4 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Manual annotation working data and generated exports
-# Pre-Processing/work/
-# Pre-Processing/output/
+*.mp4
