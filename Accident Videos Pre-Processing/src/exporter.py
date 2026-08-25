@@ -49,8 +49,18 @@ def export_event(annotation: VideoAnnotation, event: Event, output_root: str | P
                 color = (75, 184, 242) if box.vehicle_id == event.vehicle_id else (208, 213, 104)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
                 cv2.putText(frame, f"car {box.vehicle_id}", (x1, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2, cv2.LINE_AA)
-            cv2.rectangle(frame, (20, 20), (500, 92), (8, 11, 13), -1)
-            cv2.putText(frame, f"frame {frame_index:04d}", (36, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (244, 240, 232), 2, cv2.LINE_AA)
+            frame_label = f"frame {frame_index:04d}"
+            label_origin = (36, 52)
+            (text_width, text_height), baseline = cv2.getTextSize(frame_label, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
+            padding = 3
+            cv2.rectangle(
+                frame,
+                (label_origin[0] - padding, label_origin[1] - text_height - padding),
+                (label_origin[0] + text_width + padding, label_origin[1] + baseline + padding),
+                (8, 11, 13),
+                -1,
+            )
+            cv2.putText(frame, frame_label, label_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (244, 240, 232), 2, cv2.LINE_AA)
             if event.start_frame <= frame_index <= event.end_frame:
                 cv2.putText(frame, f"ACCIDENT {event.start_frame}-{event.end_frame}", (36, 82), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (75, 184, 242), 2, cv2.LINE_AA)
             writer.write(frame)
