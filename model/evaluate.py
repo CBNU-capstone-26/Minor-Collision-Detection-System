@@ -87,8 +87,12 @@ def evaluate_folder_accuracy(
             txt_path = os.path.join(folder_path, f"{base_name}.txt")
 
             parts = base_name.split('_')
+            # 클래스 문자는 parts[1]의 '마지막 글자'로 판별한다.
+            #   rc: LA/RA/SA/NA(2글자, 마지막=A) → 충돌, LS/LV/LW 등 → 비충돌
+            #   real: ReA(3글자, 마지막=A) → 충돌, ReS → 비충돌
+            # (TODO: 추후 파일명 대신 txt의 A/S action줄로 읽도록 통일 예정)
             is_accident_gt = len(parts) >= 2 and len(
-                parts[1]) == 2 and parts[1][1] == 'A'
+                parts[1]) >= 2 and parts[1][-1] == 'A'
             gt_label = 1 if is_accident_gt else 0
 
             bboxes = {}
