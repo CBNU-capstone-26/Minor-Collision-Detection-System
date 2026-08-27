@@ -29,9 +29,10 @@ def evaluate_folder_accuracy(
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
 
-    mean = torch.tensor([0.485, 0.456, 0.406],
+    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(S3D Kinetics-400)
+    mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225],
+    std = torch.tensor(config.NORM_STD,
                        dtype=torch.float32).view(3, 1, 1, 1)
 
     def crop_square_and_pad(frame, bbox, r):

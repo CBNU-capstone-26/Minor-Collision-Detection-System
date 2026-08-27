@@ -1,13 +1,42 @@
-Sample/
-node_modules/
-.DS_Store
+# Python / Cache
 __pycache__/
 *.py[cod]
-.venv/
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
 venv/
+.venv/
 venv311/
+
+# Node / frontend build output
+node_modules/
+dist/
+dist-ssr/
+
+# Runtime uploads and generated media
 storage/
-ui/node_modules/
-ui/dist/
-*.pt
-weights/*.pth
+Data/
+Predictions/
+data/train/*.mp4
+
+# Model weights (대용량 바이너리 — git에서 제외)
+weights/
+
+# Local notebooks and docs
+*.ipynb
+
+# Local editor and OS files
+.vscode/
+.idea/
+.DS_Store
+._*
+*.local
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

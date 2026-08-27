@@ -1,6 +1,0 @@
-Device: cuda
-Dataset: C:\Users\admin\Desktop\Minor-Collision-Detection-System\Dataset
-Samples: 832
-Epoch [1/1] Loss: 113.9655 Accuracy: 75.12% Time: 42.63 min
-Model saved: benchmark_epoch1_model.pth
-Total time: 42.63 min

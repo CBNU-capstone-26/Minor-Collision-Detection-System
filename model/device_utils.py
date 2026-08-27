@@ -1,15 +1,15 @@
 import torch
-import config
 
 
-def get_device():
-    """config.DEVICE_TYPE에 따라 적절한 디바이스를 반환합니다.
+def get_device(device_type):
+    """주어진 device_type("cuda"/"cpu")에 따라 적절한 디바이스를 반환합니다.
 
-    NVIDIA CUDA와 AMD ROCm 모두 DEVICE_TYPE = "cuda" 로 설정합니다.
+    학습은 config.TRAIN_DEVICE_TYPE, 추론은 config.INFER_DEVICE_TYPE 값을
+    인자로 전달합니다. NVIDIA CUDA와 AMD ROCm 모두 "cuda"로 설정합니다.
     ROCm PyTorch 빌드에서는 torch.cuda.is_available() 이 True를 반환하므로
     별도 분기 없이 동일하게 동작합니다.
     """
-    if config.DEVICE_TYPE == "cuda":
+    if device_type == "cuda":
         if torch.cuda.is_available():
             return torch.device("cuda")
         print(

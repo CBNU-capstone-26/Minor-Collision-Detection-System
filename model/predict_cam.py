@@ -21,9 +21,10 @@ def get_activation(name):
 
 
 def _frames_to_video_tensor(frames):
-    mean = torch.tensor([0.485, 0.456, 0.406],
+    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(S3D Kinetics-400)
+    mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225],
+    std = torch.tensor(config.NORM_STD,
                        dtype=torch.float32).view(3, 1, 1, 1)
     arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
     tensor = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()
@@ -67,9 +68,91 @@ def _draw_state_label(frame, state):
     label = "A" if state == 1 else "S"
     color = (0, 0, 255) if state == 1 else (0, 255, 0)
     # 배경 사각형으로 가독성 확보
-    cv2.rectangle(frame, (10, 10), (180, 90), (0, 0, 0), -1)
-    cv2.putText(frame, label, (20, 70),
+    cv2.rectangle(frame, (10, 10), (90, 65), (0, 0, 0), -1)
+    cv2.putText(frame, label, (20, 57),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.8, color, 3)
+
+
+def _window_motion_score(frames, start, clip_length):
+    """224x224 crop 윈도우 안의 평균 프레임 변화량을 계산한다."""
+    end = min(len(frames), start + clip_length)
+    if end - start < 2:
+        return 0.0
+
+    diffs = []
+    prev_gray = cv2.cvtColor(frames[start], cv2.COLOR_RGB2GRAY)
+    for frame in frames[start + 1:end]:
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        diffs.append(float(cv2.absdiff(gray, prev_gray).mean()))
+        prev_gray = gray
+    return float(np.mean(diffs)) if diffs else 0.0
+
+
+def _event_representative_prob(probs):
+    """단일 spike 대신 상위 몇 개 평균으로 구간 대표 확률을 안정화한다."""
+    if not probs:
+        return None
+    top_k = min(3, len(probs))
+    return float(np.mean(sorted(probs, reverse=True)[:top_k]))
+
+
+def _build_accident_events(
+    window_records,
+    fps,
+    min_windows,
+    max_gap_windows,
+    min_duration_sec,
+):
+    """확률/움직임을 통과한 윈도우를 연속 구간으로 묶고 짧은 구간을 제거한다."""
+    events = []
+    active = None
+    gap_count = 0
+
+    for record in window_records:
+        if record["is_candidate"]:
+            if active is None:
+                active = {
+                    "start_frame": record["window_idx"],
+                    "end_frame": record["frame_idx"],
+                    "window_count": 1,
+                    "probs": [record["accident_prob"]],
+                    "motion_scores": [record["motion_score"]],
+                }
+            else:
+                active["end_frame"] = record["frame_idx"]
+                active["window_count"] += 1
+                active["probs"].append(record["accident_prob"])
+                active["motion_scores"].append(record["motion_score"])
+            gap_count = 0
+            continue
+
+        if active is None:
+            continue
+
+        gap_count += 1
+        if gap_count <= max_gap_windows:
+            continue
+
+        _append_event_if_valid(events, active, fps, min_windows, min_duration_sec)
+        active = None
+        gap_count = 0
+
+    if active is not None:
+        _append_event_if_valid(events, active, fps, min_windows, min_duration_sec)
+
+    return events
+
+
+def _append_event_if_valid(events, event, fps, min_windows, min_duration_sec):
+    duration_sec = max(0.0, (event["end_frame"] - event["start_frame"] + 1) / fps)
+    if event["window_count"] < min_windows:
+        return
+    if duration_sec < min_duration_sec:
+        return
+
+    event["crash_prob"] = _event_representative_prob(event["probs"])
+    event["motion_score"] = float(np.mean(event["motion_scores"])) if event["motion_scores"] else 0.0
+    events.append(event)
 
 
 def predict_hit_and_run_final(
@@ -173,7 +256,7 @@ def predict_hit_and_run_final(
         out_path = output_dir / f'final_{os.path.basename(video_path)}'
         os.makedirs(out_path.parent, exist_ok=True)
         out_video = cv2.VideoWriter(
-            str(out_path), cv2.VideoWriter_fourcc(*'mp4v'), 30.0, (orig_w, orig_h))
+            str(out_path), cv2.VideoWriter_fourcc(*'avc1'), 30.0, (orig_w, orig_h))
 
         write_queue = queue.Queue(maxsize=64)
         writer_thread = threading.Thread(
@@ -329,3 +412,236 @@ def predict_hit_and_run_final(
             writer_thread.join(timeout=5)
         if out_video is not None:
             out_video.release()
+
+
+def predict_events_and_clips(
+    model,
+    video_path,
+    bbox,
+    output_dir,
+    r_value=config.R_VALUE,
+    resize=config.RESIZE,
+    clip_length=config.CLIP_LENGTH,
+    infer_batch_size=config.PREDICT_INFER_BATCH_SIZE,
+    window_stride=config.PREDICT_WINDOW_STRIDE,
+    clip_pad_frames=15,
+    accident_prob_threshold=config.ACCIDENT_PROB_THRESHOLD,
+    accident_min_windows=config.ACCIDENT_MIN_WINDOWS,
+    accident_max_gap_windows=config.ACCIDENT_MAX_GAP_WINDOWS,
+    accident_min_duration_sec=config.ACCIDENT_MIN_DURATION_SEC,
+    accident_motion_threshold=config.ACCIDENT_MOTION_THRESHOLD,
+):
+    """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
+    각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
+
+    전체 길이 결과 영상을 재생성하지 않으므로 멀티-아워 영상에도 효율적이다.
+
+    Args:
+        model: 로드된 HitAndRun3DCNN
+        video_path (str|Path): 원본 영상 경로
+        bbox (tuple|list): 대상 차량 좌표 (xmin, ymin, xmax, ymax) — 원본 해상도 기준
+        output_dir (str|Path): 클립 저장 폴더
+        clip_pad_frames (int): 구간 앞뒤로 덧붙일 여유 프레임 수
+
+    Returns:
+        list[dict]: 이벤트 목록. 각 항목:
+            {
+                'start_frame', 'end_frame',
+                'start_sec', 'end_sec',
+                'crash_prob',        # 구간 대표 확률 (0~1)
+                'clip_path',         # 생성된 CAM 클립 경로 (Path)
+            }
+    """
+    video_path = str(video_path)
+    output_dir = Path(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    window_stride = max(1, int(window_stride))
+
+    device = next(model.parameters()).device
+    model.eval()
+    if is_cuda_like(device):
+        torch.backends.cudnn.benchmark = True
+
+    target_bbox = [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])]
+
+    handle = model.inception5b.register_forward_hook(
+        get_activation('inception5b'))
+    try:
+        # ── 1패스: 추론용 224×224 프레임만 메모리에 보관 (원본 프레임은 보관 X) ──
+        # 원본 해상도 프레임을 전부 RAM에 들면 영상 길이×해상도에 비례해 메모리가
+        # 폭증하므로, 추론에 필요한 224×224 프레임만 유지한다. 원본 프레임은
+        # 클립 렌더링 단계에서 "사고 구간만" 영상에서 다시 읽는다.
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        processed_frames = []
+
+        ret, first_frame = cap.read()
+        if not ret:
+            cap.release()
+            return []
+        orig_h, orig_w = first_frame.shape[:2]
+        _, (rx1, ry1, rx2, ry2) = _crop_square_and_pad(
+            first_frame, target_bbox, r_value, resize)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            processed, _ = _crop_square_and_pad(
+                frame_rgb, target_bbox, r_value, resize)
+            processed_frames.append(processed)
+        cap.release()
+
+        if not processed_frames:
+            return []
+
+        real_frame_count = len(processed_frames)
+        while len(processed_frames) < clip_length:
+            processed_frames.append(processed_frames[-1])
+
+        full_video_tensor = _frames_to_video_tensor(processed_frames).to(device)
+
+        v_nx1, v_ny1 = max(0, rx1), max(0, ry1)
+        v_nx2, v_ny2 = min(orig_w, rx2), min(orig_h, ry2)
+
+        # ── 추론: 윈도우별 예측 + 사고 후보 프레임의 CAM 히트맵 캐싱 ─────────
+        window_records = []
+        # frame_idx → (heatmap_valid, prob) (후처리를 통과한 사고 후보 프레임만)
+        accident_overlays = {}
+
+        num_windows = full_video_tensor.size(1) - (clip_length - 1)
+        window_starts = list(range(0, max(0, num_windows), window_stride))
+
+        with torch.inference_mode():
+            for batch_start in range(0, len(window_starts), infer_batch_size):
+                batch_window_starts = window_starts[
+                    batch_start:batch_start + infer_batch_size]
+                clips = torch.stack(
+                    [full_video_tensor[:, i:i + clip_length, :, :]
+                     for i in batch_window_starts])
+                if is_channels_last_3d_supported(device):
+                    clips = clips.contiguous(
+                        memory_format=torch.channels_last_3d)
+
+                outputs = model(clips)
+                probs = F.softmax(outputs, dim=1)
+                feat_maps = activation['inception5b']
+
+                for offset, window_idx in enumerate(batch_window_starts):
+                    frame_idx = window_idx + clip_length - 1
+                    accident_prob = float(probs[offset, 1].item())
+                    motion_score = _window_motion_score(
+                        processed_frames,
+                        window_idx,
+                        clip_length,
+                    )
+                    is_candidate = (
+                        accident_prob >= accident_prob_threshold
+                        and motion_score >= accident_motion_threshold
+                    )
+                    window_records.append({
+                        'window_idx': window_idx,
+                        'frame_idx': frame_idx,
+                        'accident_prob': accident_prob,
+                        'motion_score': motion_score,
+                        'is_candidate': is_candidate,
+                    })
+
+                    if is_candidate:
+                        feat_map = feat_maps[offset]
+                        weight = model.head_conv.weight[1]
+                        cam = F.relu(torch.sum(weight * feat_map, dim=0))
+                        cam_2d = torch.mean(cam, dim=0)
+                        cam_min, cam_max = cam_2d.min(), cam_2d.max()
+                        cam_2d = (cam_2d - cam_min) / (cam_max - cam_min + 1e-8)
+                        cam_np = (cam_2d * 255).byte().cpu().numpy()
+                        heatmap = cv2.applyColorMap(cam_np, cv2.COLORMAP_JET)
+                        heatmap = cv2.resize(heatmap, (rx2 - rx1, ry2 - ry1))
+                        heatmap_valid = heatmap[
+                            v_ny1 - ry1:(v_ny1 - ry1) + (v_ny2 - v_ny1),
+                            v_nx1 - rx1:(v_nx1 - rx1) + (v_nx2 - v_nx1),
+                        ]
+                        accident_overlays[frame_idx] = (heatmap_valid, accident_prob)
+
+        events = _build_accident_events(
+            window_records,
+            fps,
+            accident_min_windows,
+            accident_max_gap_windows,
+            accident_min_duration_sec,
+        )
+        if window_records:
+            max_prob = max(record['accident_prob'] for record in window_records)
+            max_motion = max(record['motion_score'] for record in window_records)
+            candidate_count = sum(1 for record in window_records if record['is_candidate'])
+            print(
+                "[predict_events_and_clips] "
+                f"windows={len(window_records)}, candidates={candidate_count}, "
+                f"max_accident_prob={max_prob:.3f}, max_motion={max_motion:.2f}, "
+                f"prob_threshold={accident_prob_threshold:.2f}, "
+                f"motion_threshold={accident_motion_threshold:.2f}"
+            )
+
+        # ── 2패스: 이벤트 구간 프레임만 영상에서 다시 읽어 CAM 클립 렌더링 ──────
+        # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
+        results = []
+        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        render_cap = cv2.VideoCapture(video_path) if events else None
+        try:
+            for ev_idx, ev in enumerate(events, 1):
+                start_f = ev['start_frame']
+                end_f = ev['end_frame']
+                clip_start = max(0, start_f - clip_pad_frames)
+                clip_end = min(real_frame_count - 1, end_f + clip_pad_frames)
+
+                crash_prob = ev.get('crash_prob')
+
+                clip_path = output_dir / f'{base_name}_event{ev_idx}.mp4'
+                writer = cv2.VideoWriter(
+                    str(clip_path), cv2.VideoWriter_fourcc(*'avc1'),
+                    fps, (orig_w, orig_h))
+
+
+                # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
+                render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
+                last_heatmap = None
+                for f in range(clip_start, clip_end + 1):
+                    ret, frame = render_cap.read()  # 이미 BGR
+                    if not ret:
+                        break
+                    if f in accident_overlays:
+                        last_heatmap = accident_overlays[f][0]
+                    in_event = start_f <= f <= end_f
+                    if in_event and last_heatmap is not None:
+                        roi = frame[v_ny1:v_ny2, v_nx1:v_nx2]
+                        frame[v_ny1:v_ny2, v_nx1:v_nx2] = cv2.addWeighted(
+                            roi, 0.6, last_heatmap, 0.4, 0)
+                        cv2.rectangle(frame, (v_nx1, v_ny1),
+                                      (v_nx2, v_ny2), (0, 0, 255), 3)
+                        _draw_state_label(frame, 1)
+                    else:
+                        cv2.rectangle(frame, (v_nx1, v_ny1),
+                                      (v_nx2, v_ny2), (0, 255, 0), 2)
+                        _draw_state_label(frame, 0)
+                    writer.write(frame)
+                writer.release()
+
+                results.append({
+                    'start_frame': start_f,
+                    'end_frame': end_f,
+                    'start_sec': start_f / fps,
+                    'end_sec': end_f / fps,
+                    'crash_prob': crash_prob,
+                    'clip_path': clip_path,
+                })
+        finally:
+            if render_cap is not None:
+                render_cap.release()
+
+        print(f"[predict_events_and_clips] {len(results)}건 사고구간 클립 생성")
+        return results
+
+    finally:
+        handle.remove()

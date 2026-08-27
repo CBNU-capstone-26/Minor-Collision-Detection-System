@@ -5,14 +5,21 @@ import config
 from device_utils import get_device, is_channels_last_3d_supported
 from hitandrun_model import HitAndRun3DCNN
 
+'''
+학습 시작
+python3 -m model.main --mode train
+
+예측 시작
+python3 -m model.main --mode predict
+'''
 
 def _load_model(weights_path):
-    device = get_device()
+    # _load_model은 predict/eval(추론)에서만 사용 → INFER 디바이스 사용
+    device = get_device(config.INFER_DEVICE_TYPE)
     model = HitAndRun3DCNN(num_classes=config.MODEL_NUM_CLASSES).to(device)
     if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
         model = model.to(memory_format=torch.channels_last_3d)
     try:
-        # DirectML은 map_location 직접 지원이 불안정하므로 CPU 경유 로드
         state_dict = torch.load(
             weights_path, map_location='cpu', weights_only=True)
         model.load_state_dict(state_dict)
