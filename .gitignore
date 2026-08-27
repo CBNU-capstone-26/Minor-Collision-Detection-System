@@ -1,3 +1,13 @@
 Sample/
 node_modules/
 .DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+venv311/
+storage/
+ui/node_modules/
+ui/dist/
+*.pt
+weights/*.pth
