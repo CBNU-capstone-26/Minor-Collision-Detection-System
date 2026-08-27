@@ -3083,6 +3083,33 @@ body.dark-mode .camera-bar-wrapper {
   animation: pulse-detect-btn 1.5s infinite;
 }
 
+.detector-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.detector-mode-badge.mode-hybrid {
+  border-color: #0f766e;
+  background: #ccfbf1;
+  color: #115e59;
+}
+
+.detector-mode-badge.mode-yolo_fallback {
+  border-color: #ea580c;
+  background: #ffedd5;
+  color: #9a3412;
+}
+
 @keyframes pulse-detect-btn {
   0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
   50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
@@ -3288,7 +3315,28 @@ body.dark-mode .camera-bar-wrapper {
   box-shadow: 0 2px 6px rgba(245, 158, 11, 0.4);
 }
 
-/* YOLO 탐지 마우스 Hover 미리보기 박스 */
+/* 자동 탐지된 전체 후보 박스 */
+.bbox-auto-outline {
+  position: absolute;
+  border: 1.5px solid #38bdf8;
+  border-radius: 3px;
+  background: rgba(14, 165, 233, 0.08);
+  pointer-events: none;
+  z-index: 7;
+  box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.22);
+}
+
+.bbox-auto-outline.source-yolo {
+  border-color: #fb923c;
+  background: rgba(251, 146, 60, 0.1);
+  box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.24);
+}
+
+.bbox-auto-outline.hovered {
+  opacity: 0;
+}
+
+/* Transformer DINO + YOLO 탐지 마우스 Hover 미리보기 박스 */
 .bbox-hover-preview {
   position: absolute;
   border: 2.5px solid #10b981;
@@ -3860,4 +3908,3 @@ body.dark-mode .analysis-job-name { color: #e2e8f0; }
 .analysis-status-idle { justify-content: center; min-width: 440px; min-height: 36px; }
 .analysis-idle-text { font-size: 15px; color: #94a3b8; font-weight: 600; white-space: nowrap; }
 body.dark-mode .analysis-idle-text { color: #64748b; }
-

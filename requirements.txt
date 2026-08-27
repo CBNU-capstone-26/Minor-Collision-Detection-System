@@ -69,6 +69,7 @@ numpy==2.4.6
 pillow==12.2.0
 tqdm==4.68.1
 transformers>=4.40
+ultralytics>=8.3
 
 # ---- 테스트/스크립트용 ----
 requests==2.34.2

@@ -662,9 +662,10 @@ function Dashboard({ onLogout, view }) {
   const videoElRef = useRef(null); // 실제 <video> 엘리먼트 (원본 해상도 환산용)
   const [showBBoxPanel, setShowBBoxPanel] = useState(false);
 
-  // YOLO 차량 자동 탐지 및 마우스 Hover 관련 상태
+  // Transformer DINO 차량 자동 탐지 및 마우스 Hover 관련 상태
   const [isDetectingVehicles, setIsDetectingVehicles] = useState(false);
-  const [detectedBoxes, setDetectedBoxes] = useState([]); // [{ id, class_name, confidence, bbox: [x1,y1,x2,y2] }]
+  const [detectedBoxes, setDetectedBoxes] = useState([]); // [{ id, class_name, confidence, bbox: [x1,y1,x2,y2], source }]
+  const [detectorMode, setDetectorMode] = useState(null);
   const [hoveredDetectedBox, setHoveredDetectedBox] = useState(null);
 
 
@@ -949,7 +950,13 @@ function Dashboard({ onLogout, view }) {
     setHoveredDetectedBox(null);
   };
 
-  // YOLO 차량 탐지 실행 (영상 pause → 백엔드 탐지 → Hover 선택 활성화)
+  const detectorModeLabel = {
+    dino: "DINO",
+    yolo_fallback: "YOLO 보강",
+    hybrid: "DINO + YOLO",
+  };
+
+  // Transformer DINO 우선 + YOLO fallback 차량 탐지 실행
   const handleAutoDetectVehicles = async () => {
     if (!selectedVideo) return;
     if (videoElRef.current) {
@@ -958,17 +965,21 @@ function Dashboard({ onLogout, view }) {
     }
     setSelectionMode("auto");
     setIsDetectingVehicles(true);
-    showToast("YOLO 모델로 차량을 탐지 중입니다...", "info");
+    setDetectorMode(null);
+    showToast("Transformer DINO 우선 탐지 후 부족하면 YOLO로 보강합니다...", "info");
     try {
       const res = await api.detectVehicles(selectedVideo.id, currentTime);
       const list = res.detected_vehicles || [];
+      const mode = res.detector_mode || "dino";
       setDetectedBoxes(list);
+      setDetectorMode(mode);
       setIsBBoxMode(true);
       setShowBBoxPanel(true);
       if (list.length === 0) {
         showToast("탐지된 차량이 없습니다. 수동 차량 지정을 이용해 주세요.", "warning");
       } else {
-        showToast(`${list.length}대의 차량이 탐지되었습니다! 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`, "success");
+        const modeText = detectorModeLabel[mode] || "자동";
+        showToast(`${modeText} 방식으로 ${list.length}대의 차량이 탐지되었습니다. 마우스를 올리면 표시되며 클릭 시 선택됩니다.`, "success");
       }
     } catch (err) {
       showToast(`차량 탐지 실패: ${err.message}`, "error");
@@ -1106,8 +1117,30 @@ function Dashboard({ onLogout, view }) {
     const v = videoElRef.current;
     if (v) {
       v.currentTime = event.timestamp;
-      v.play();
+      v.play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {
+          setIsPlaying(false);
+          showToast("브라우저가 자동 재생을 막았습니다. 영상의 재생 버튼을 눌러 주세요.", "warning");
+        });
     }
+  };
+
+  const openEventVideo = (event) => {
+    seekToEvent(event);
+    if (!isSidebarOpen) {
+      setIsSidebarOpen(true);
+    }
+  };
+
+  const openEventClip = (event) => {
+    setCurrentEventId(event.id);
+    if (event.hasClip) {
+      setClipEvent(event);
+      return;
+    }
+    seekToEvent(event);
+    showToast("CAM 클립이 없어 원본 영상을 해당 시점으로 이동했습니다.", "info");
   };
 
   // 배속/볼륨을 실제 video에 반영
@@ -1455,14 +1488,19 @@ function Dashboard({ onLogout, view }) {
             <div className="watch-header-right">
             {/* 탐지하기 + 수동 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
             <div className="watch-header-actions">
-            <button
-              className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
-              disabled={isAnalyzing || isDetectingVehicles}
-              onClick={handleAutoDetectVehicles}
-              title="YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"
-            >
-              {isDetectingVehicles ? "차량 탐지 중..." : "🔍 탐지하기"}
-            </button>
+              <button
+                className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
+                disabled={isAnalyzing || isDetectingVehicles}
+                onClick={handleAutoDetectVehicles}
+                title="Transformer DINO로 먼저 탐지하고 부족하면 YOLO fallback으로 보강합니다"
+              >
+                {isDetectingVehicles ? "차량 탐지 중..." : "🔍 탐지하기"}
+              </button>
+              {detectorMode && detectedBoxes.length > 0 && (
+                <span className={`detector-mode-badge mode-${detectorMode}`}>
+                  {detectorModeLabel[detectorMode] || "자동"}
+                </span>
+              )}
 
             <button
               className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
@@ -1574,7 +1612,7 @@ function Dashboard({ onLogout, view }) {
                         <div
                           key={event.id}
                           className={`event-item ${currentEventId === event.id ? "active" : ""}`}
-                          onClick={() => setCurrentEventId(event.id)}
+                          onClick={() => openEventVideo(event)}
                         >
                           <div className="event-item-top">
                             <span className="event-time-pill">{formatTime(event.timestamp)}</span>
@@ -1586,12 +1624,7 @@ function Dashboard({ onLogout, view }) {
                                 className="event-play-icon-btn"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setCurrentEventId(event.id);
-                                  if (event.hasClip) {
-                                    setClipEvent(event);
-                                  } else {
-                                    showToast("이 이벤트의 CAM 클립이 아직 없습니다.", "warning");
-                                  }
+                                  openEventClip(event);
                                 }}
                                 aria-label={`${formatTime(event.timestamp)} 사고구간 CAM 클립 재생`}
                                 title="사고구간 CAM 클립 보기"
@@ -1706,7 +1739,7 @@ function Dashboard({ onLogout, view }) {
                   <span className="bbox-guide-icon">{selectionMode === "auto" ? "🔍" : "🖱️"}</span>
                   <span>
                     {selectionMode === "auto"
-                      ? "YOLO 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다."
+                      ? `${detectorModeLabel[detectorMode] || "DINO + YOLO"} 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`
                       : "수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요."}
                   </span>
                 </div>
@@ -1741,7 +1774,8 @@ function Dashboard({ onLogout, view }) {
                       const dispY2 = Math.round(y2 * scaleY);
 
                       setBboxList([{ id: Date.now(), xmin: dispX1, ymin: dispY1, xmax: dispX2, ymax: dispY2 }]);
-                      showToast(`${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
+                      const sourceText = hoveredDetectedBox.source === "yolo" ? "YOLO" : "DINO";
+                      showToast(`${sourceText} ${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
                       return;
                     }
                     if (selectionMode === "manual") {
@@ -1885,7 +1919,38 @@ function Dashboard({ onLogout, view }) {
                     );
                   })()}
 
-                  {/* YOLO 자동 탐지 모드: 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
+                  {selectionMode === "auto" && detectedBoxes.length > 0 && bboxOverlayRef.current && (() => {
+                    const rect = bboxOverlayRef.current.getBoundingClientRect();
+                    const displayWidth = rect.width;
+                    const displayHeight = rect.height;
+                    const videoWidth = selectedVideo?.width || videoElRef.current?.videoWidth || displayWidth;
+                    const videoHeight = selectedVideo?.height || videoElRef.current?.videoHeight || displayHeight;
+                    const scaleX = displayWidth / videoWidth;
+                    const scaleY = displayHeight / videoHeight;
+
+                    return detectedBoxes.map((box) => {
+                      const [x1, y1, x2, y2] = box.bbox;
+                      const dispX1 = Math.round(x1 * scaleX);
+                      const dispY1 = Math.round(y1 * scaleY);
+                      const dispX2 = Math.round(x2 * scaleX);
+                      const dispY2 = Math.round(y2 * scaleY);
+                      const isHovered = hoveredDetectedBox?.id === box.id;
+                      return (
+                        <div
+                          key={`auto-${box.id}`}
+                          className={`bbox-auto-outline ${box.source === "yolo" ? "source-yolo" : "source-dino"} ${isHovered ? "hovered" : ""}`}
+                          style={{
+                            left: dispX1,
+                            top: dispY1,
+                            width: Math.max(10, dispX2 - dispX1),
+                            height: Math.max(10, dispY2 - dispY1),
+                          }}
+                        />
+                      );
+                    });
+                  })()}
+
+                  {/* Transformer DINO + YOLO fallback 자동 탐지 모드: 마우스 Hover 미리보기 */}
                   {selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && (() => {
                     const rect = bboxOverlayRef.current.getBoundingClientRect();
                     const displayWidth = rect.width;
@@ -1912,7 +1977,7 @@ function Dashboard({ onLogout, view }) {
                         }}
                       >
                         <span className="bbox-hover-label">
-                          🚗 {hoveredDetectedBox.class_name} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
+                          🚗 {hoveredDetectedBox.class_name} · {hoveredDetectedBox.source === "yolo" ? "YOLO" : "DINO"} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
                         </span>
                       </div>
                     );

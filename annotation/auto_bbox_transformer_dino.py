@@ -38,8 +38,21 @@ import cv2
 import numpy as np
 
 
-DEFAULT_VEHICLE_CLASSES = ("car", "truck", "bus", "motorcycle")
-DEFAULT_DINO_MODEL = "IDEA-Research/grounding-dino-tiny"
+DEFAULT_VEHICLE_CLASSES = (
+    "car",
+    "vehicle",
+    "parked car",
+    "parked vehicle",
+    "truck",
+    "bus",
+    "van",
+    "suv",
+    "sedan",
+    "automobile",
+)
+DEFAULT_DINO_MODEL = "IDEA-Research/grounding-dino-base"
+DEFAULT_YOLO_MODEL = "yolov8s.pt"
+YOLO_VEHICLE_CLASS_IDS = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 
 
 @dataclass
@@ -47,6 +60,7 @@ class VehicleDetection:
     class_name: str
     confidence: float
     bbox: tuple[int, int, int, int]
+    source: str = "dino"
 
 
 class VehicleBBoxDetector:
@@ -55,9 +69,9 @@ class VehicleBBoxDetector:
     def __init__(
         self,
         model_path: str = DEFAULT_DINO_MODEL,
-        conf: float = 0.35,
+        conf: float = 0.12,
         vehicle_classes: Iterable[str] = DEFAULT_VEHICLE_CLASSES,
-        text_threshold: float = 0.25,
+        text_threshold: float = 0.10,
         min_area: int = 100,
         shrink_x: float = 0.0,
         shrink_left: float | None = None,
@@ -288,6 +302,109 @@ class VehicleBBoxDetector:
         return sorted(detections, key=lambda det: (det.bbox[0], det.bbox[1]))
 
 
+class YoloFallbackVehicleBBoxDetector:
+    """DINO가 차량을 충분히 못 잡았을 때 보강용으로 쓰는 YOLO detector."""
+
+    def __init__(
+        self,
+        model_path: str = DEFAULT_YOLO_MODEL,
+        conf: float = 0.25,
+        min_area: int = 100,
+        nms_iou: float = 0.45,
+        contain_threshold: float = 0.85,
+    ):
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:  # pragma: no cover - runtime dependency 안내용
+            raise SystemExit(
+                "YOLO fallback 실행 의존성이 설치되어 있지 않습니다. "
+                "다음 명령으로 설치하세요: pip install ultralytics"
+            ) from exc
+
+        self.model = YOLO(model_path)
+        self.conf = conf
+        self.min_area = min_area
+        self.nms_iou = nms_iou
+        self.contain_threshold = contain_threshold
+
+    def detect_frame(self, frame_bgr: np.ndarray) -> list[VehicleDetection]:
+        height, width = frame_bgr.shape[:2]
+        results = self.model.predict(
+            source=frame_bgr,
+            conf=self.conf,
+            classes=sorted(YOLO_VEHICLE_CLASS_IDS),
+            verbose=False,
+        )
+        detections: list[VehicleDetection] = []
+        if not results:
+            return detections
+
+        boxes = results[0].boxes
+        if boxes is None:
+            return detections
+
+        for box in boxes:
+            cls_id = int(box.cls.detach().cpu().item())
+            class_name = YOLO_VEHICLE_CLASS_IDS.get(cls_id)
+            if class_name is None:
+                continue
+            x1, y1, x2, y2 = box.xyxy[0].detach().cpu().tolist()
+            bbox = VehicleBBoxDetector._clip_box(x1, y1, x2, y2, width, height)
+            if VehicleBBoxDetector._box_area(bbox) < self.min_area:
+                continue
+            detections.append(
+                VehicleDetection(
+                    class_name=class_name,
+                    confidence=float(box.conf.detach().cpu().item()),
+                    bbox=bbox,
+                    source="yolo",
+                )
+            )
+
+        return self._deduplicate_detections(detections)
+
+    def _deduplicate_detections(
+        self,
+        detections: list[VehicleDetection],
+    ) -> list[VehicleDetection]:
+        kept: list[VehicleDetection] = []
+        for det in sorted(detections, key=lambda item: item.confidence, reverse=True):
+            duplicate = False
+            for kept_det in kept:
+                iou = VehicleBBoxDetector._iou(det.bbox, kept_det.bbox)
+                contain = VehicleBBoxDetector._contained_ratio(det.bbox, kept_det.bbox)
+                if iou >= self.nms_iou or contain >= self.contain_threshold:
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append(det)
+        return sorted(kept, key=lambda det: (det.bbox[0], det.bbox[1]))
+
+
+def merge_dino_yolo_detections(
+    dino_detections: list[VehicleDetection],
+    yolo_detections: list[VehicleDetection],
+    iou_threshold: float = 0.35,
+    contain_threshold: float = 0.85,
+) -> list[VehicleDetection]:
+    """DINO를 우선 유지하고, 겹치지 않는 YOLO fallback bbox만 추가한다."""
+    merged = list(dino_detections)
+    for yolo_det in yolo_detections:
+        duplicate = False
+        for det in merged:
+            iou = VehicleBBoxDetector._iou(yolo_det.bbox, det.bbox)
+            contain = max(
+                VehicleBBoxDetector._contained_ratio(yolo_det.bbox, det.bbox),
+                VehicleBBoxDetector._contained_ratio(det.bbox, yolo_det.bbox),
+            )
+            if iou >= iou_threshold or contain >= contain_threshold:
+                duplicate = True
+                break
+        if not duplicate:
+            merged.append(yolo_det)
+    return sorted(merged, key=lambda det: (det.bbox[0], det.bbox[1]))
+
+
 def read_source_frame(source: Path, frame_index: int = 0) -> np.ndarray:
     if source.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}:
         frame = cv2.imread(str(source))
@@ -364,11 +481,11 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_DINO_MODEL,
         help="Hugging Face Grounding DINO 모델 ID 또는 로컬 모델 경로",
     )
-    parser.add_argument("--conf", type=float, default=0.35, help="DINO box threshold")
+    parser.add_argument("--conf", type=float, default=0.12, help="DINO box threshold")
     parser.add_argument(
         "--text-threshold",
         type=float,
-        default=0.25,
+        default=0.10,
         help="Grounding DINO text threshold",
     )
     parser.add_argument(

@@ -16,10 +16,15 @@ from app.auth_guard import get_current_user
 from app.settings import settings
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
+_vehicle_bbox_detector = None
+_yolo_fallback_detector = None
 
 
 # ---------- 직렬화 헬퍼 ----------
 def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
+    has_clip = bool(ev.cam_heatmap_path)
+    if has_clip:
+        has_clip = settings.abs_path(ev.cam_heatmap_path).exists()
     return api_schemas.EventOut(
         id=ev.id,
         timestamp_sec=ev.timestamp_sec,
@@ -27,7 +32,7 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_timestamp_sec=ev.end_timestamp_sec,
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
-        has_clip=bool(ev.cam_heatmap_path),
+        has_clip=has_clip,
     )
 
 
@@ -254,9 +259,10 @@ def detect_vehicles_in_video(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
-    """YOLO 모델로 지정 시각 프레임의 차량을 탐지하여 BBOX JSON을 DB에 저장하고 반환합니다."""
+    """Transformer DINO 모델로 지정 시각 프레임의 차량을 탐지하여 BBOX JSON을 DB에 저장하고 반환합니다."""
     import json
     import sys
+    global _vehicle_bbox_detector, _yolo_fallback_detector
 
     video = _get_owned_video(video_id, db, user)
     src_path = settings.abs_path(video.video_path)
@@ -268,7 +274,14 @@ def detect_vehicles_in_video(
         sys.path.insert(0, annotation_dir)
 
     try:
-        from auto_bbox_yolo_seg import VehicleBBoxDetector, read_source_frame
+        from auto_bbox_transformer_dino import (
+            DEFAULT_DINO_MODEL,
+            DEFAULT_YOLO_MODEL,
+            VehicleBBoxDetector,
+            YoloFallbackVehicleBBoxDetector,
+            merge_dino_yolo_detections,
+            read_source_frame,
+        )
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"차량 탐지 모듈 로드 실패: {err}")
 
@@ -280,15 +293,53 @@ def detect_vehicles_in_video(
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
-    model_path = str(settings.BASE_DIR / "yolov8n.pt")
-    if not Path(model_path).exists():
-        model_path = "yolov8n.pt"
+    dino_error = None
+    dino_detections = []
+    yolo_detections = []
+    detector_mode = "dino"
 
     try:
-        detector = VehicleBBoxDetector(model_path=model_path, conf=0.25)
-        detections = detector.detect_frame(frame)
+        if _vehicle_bbox_detector is None:
+            _vehicle_bbox_detector = VehicleBBoxDetector(
+                model_path=DEFAULT_DINO_MODEL,
+                conf=0.12,
+                text_threshold=0.10,
+                device="cpu",
+                local_files_only=True,
+            )
+        dino_detections = _vehicle_bbox_detector.detect_frame(frame)
     except Exception as err:
-        raise HTTPException(status_code=500, detail=f"YOLO 차량 탐지 중 오류: {err}")
+        dino_error = err
+
+    try:
+        yolo_model_path = settings.BASE_DIR / DEFAULT_YOLO_MODEL
+        if _yolo_fallback_detector is None:
+            _yolo_fallback_detector = YoloFallbackVehicleBBoxDetector(
+                model_path=str(yolo_model_path),
+                conf=0.25,
+                min_area=100,
+            )
+        yolo_detections = _yolo_fallback_detector.detect_frame(frame)
+    except Exception as err:
+        if dino_error is not None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Transformer DINO 차량 탐지 실패 후 YOLO fallback도 실패했습니다: {dino_error} / {err}",
+            )
+
+    if dino_detections and yolo_detections:
+        detections = merge_dino_yolo_detections(dino_detections, yolo_detections)
+        detector_mode = "hybrid"
+    elif dino_detections:
+        detections = dino_detections
+        detector_mode = "dino"
+    elif yolo_detections:
+        detections = yolo_detections
+        detector_mode = "yolo_fallback"
+    elif dino_error is not None:
+        raise HTTPException(status_code=500, detail=f"Transformer DINO 차량 탐지 중 오류: {dino_error}")
+    else:
+        detections = []
 
     detected_list = []
     for idx, det in enumerate(detections):
@@ -298,6 +349,7 @@ def detect_vehicles_in_video(
             "class_name": det.class_name,
             "confidence": round(det.confidence, 4),
             "bbox": [x1, y1, x2, y2],
+            "source": det.source,
         })
 
     json_str = json.dumps(detected_list, ensure_ascii=False)
@@ -307,8 +359,8 @@ def detect_vehicles_in_video(
     return api_schemas.VehicleDetectionResponse(
         video_id=video.id,
         total_detected=len(detected_list),
+        detector_mode=detector_mode,
         detected_vehicles=[
             api_schemas.DetectedVehicleBox(**item) for item in detected_list
         ],
     )
-

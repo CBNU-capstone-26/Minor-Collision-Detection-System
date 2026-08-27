@@ -60,6 +60,15 @@ PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
 PREDICT_INFER_BATCH_SIZE = 2 # batch size 2로 바꾸었음(배기원)
 PREDICT_WINDOW_STRIDE = 15  # CPU 추론 기본: 15 (GPU면 1로 낮춰 정확도↑)
 
+# ---------- 웹 사고 이벤트 후처리 ----------
+# 모델이 A 클래스를 조금이라도 높게 본 순간을 모두 이벤트로 만들면 주차 차량,
+# 조명, 그림자에서 오탐이 많아지므로 확률/지속시간/움직임 조건을 함께 본다.
+ACCIDENT_PROB_THRESHOLD = 0.80
+ACCIDENT_MIN_WINDOWS = 2
+ACCIDENT_MAX_GAP_WINDOWS = 1
+ACCIDENT_MIN_DURATION_SEC = 0.8
+ACCIDENT_MOTION_THRESHOLD = 1.5
+
 # ---------- 실제영상 정확도 평가 전용 ----------
 EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260729_35ep_earlyN_0.0041_augON.pth"
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"

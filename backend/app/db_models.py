@@ -42,7 +42,7 @@ class Video(Base):
     height = Column(Integer, nullable=False)
     fps = Column(Float, nullable=False)
     total_frames = Column(Integer, nullable=False)
-    detected_vehicles = Column(Text, nullable=True)  # YOLO 감지 BBOX JSON 매핑 정보
+    detected_vehicles = Column(Text, nullable=True)  # Transformer DINO 감지 BBOX JSON 매핑 정보
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

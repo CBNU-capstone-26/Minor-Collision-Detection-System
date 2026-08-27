@@ -57,3 +57,4 @@ opencv-python-headless>=4.8         # cv2: 프레임 디코딩·크롭·CAM 오�
 pillow>=10.0                        # PIL: 데이터 증강(색상 지터 등) 시 이미지 변환
 tqdm>=4.65                          # 평가 진행률 표시
 transformers>=4.40                  # Grounding DINO bbox detector
+ultralytics>=8.3                    # YOLO fallback vehicle detector
