@@ -31,6 +31,8 @@ weights/
 # Local notebooks and docs
 *.ipynb
 *.md
+# 팀원 온보딩 문서(README)는 저장소에 포함
+!README.md
 
 # Local editor and OS files
 .vscode/

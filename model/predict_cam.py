@@ -1,5 +1,7 @@
 import os
 import queue
+import shutil
+import subprocess
 import threading
 import cv2
 import torch
@@ -10,26 +12,45 @@ from pathlib import Path
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported
 
+# 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
+_FFMPEG = shutil.which("ffmpeg")
+
 
 activation = {}
 
 
-def _open_video_writer(path, fps, size):
-    """avc1(H.264) 우선, 실패하면 mp4v로 폴백해 VideoWriter를 연다.
+def _open_clip_writer(dest_stem, fps, size):
+    """클립을 mp4v 임시본에 렌더할 VideoWriter를 연다. 반환: (writer, rendered_path).
 
-    avc1은 브라우저 재생 호환성이 좋지만 시스템에 H.264 인코더가 없으면
-    VideoWriter가 열리지 않아(0바이트) 클립이 깨진다. 그런 환경에선
-    OpenCV 내장 mp4v로 자동 대체해 어디서나 클립이 생성되게 한다.
+    최종 브라우저 호환 변환(H.264/mp4)은 _finalize_clip이 담당한다.
     """
-    for fourcc in ('avc1', 'mp4v'):
-        writer = cv2.VideoWriter(
-            str(path), cv2.VideoWriter_fourcc(*fourcc), fps, size)
-        if writer.isOpened():
-            return writer
-        writer.release()
-    # 둘 다 실패(사실상 없음) — 마지막으로 mp4v로 한 번 더 반환
-    return cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
+    rendered = f"{dest_stem}.render.mp4"
+    writer = cv2.VideoWriter(rendered, cv2.VideoWriter_fourcc(*"mp4v"), fps, size)
+    return writer, rendered
+
+
+def _finalize_clip(rendered_path, dest_stem):
+    """mp4v 임시본을 H.264/mp4(yuv420p+faststart)로 재인코딩해 최종 경로(str)를 반환.
+
+    시스템 ffmpeg(libx264)가 **필수**다. H.264/mp4로 통일해야 브라우저·OS(크롬·파폭·
+    사파리·iOS)를 가리지 않고 재생되기 때문. ffmpeg가 없으면 명확한 에러를 낸다.
+    """
+    if not _FFMPEG:
+        try:
+            os.remove(rendered_path)
+        except OSError:
+            pass
+        raise RuntimeError(
+            "ffmpeg가 설치되어 있지 않습니다 — 브라우저 호환 클립(H.264) 생성에 필요합니다. "
+            "시스템에 설치하세요: sudo apt install -y ffmpeg (또는 brew install ffmpeg)")
+    final = f"{dest_stem}.mp4"
+    subprocess.run(
+        [_FFMPEG, "-y", "-loglevel", "error", "-i", rendered_path,
+         "-c:v", "libx264", "-pix_fmt", "yuv420p",
+         "-movflags", "+faststart", final],
+        check=True)
+    os.remove(rendered_path)
+    return final
 
 
 def get_activation(name):
@@ -191,7 +212,9 @@ def predict_hit_and_run_final(
         orig_h, orig_w = original_full_frames[0].shape[:2]
         out_path = output_dir / f'final_{os.path.basename(video_path)}'
         os.makedirs(out_path.parent, exist_ok=True)
-        out_video = _open_video_writer(out_path, 30.0, (orig_w, orig_h))
+        out_stem = str(out_path.with_suffix(""))
+        out_video, out_rendered = _open_clip_writer(
+            out_stem, 30.0, (orig_w, orig_h))
 
         write_queue = queue.Queue(maxsize=64)
         writer_thread = threading.Thread(
@@ -329,6 +352,8 @@ def predict_hit_and_run_final(
         writer_thread.join()
         out_video.release()
         out_video = None
+        # 브라우저 호환 최종본(H.264/mp4)으로 변환
+        out_path = _finalize_clip(out_rendered, out_stem)
 
         # 결과 출력
         print(f"\n분석 완료! 결과 파일: {out_path}")
@@ -527,8 +552,9 @@ def predict_events_and_clips(
                                   if start_f <= f <= end_f]
                 crash_prob = max(probs_in_event) if probs_in_event else None
 
-                clip_path = output_dir / f'{base_name}_event{ev_idx}.mp4'
-                writer = _open_video_writer(clip_path, fps, (orig_w, orig_h))
+                clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
+                writer, rendered_path = _open_clip_writer(
+                    clip_stem, fps, (orig_w, orig_h))
 
 
                 # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
@@ -556,6 +582,8 @@ def predict_events_and_clips(
                         _draw_state_label(frame, 0)
                     writer.write(frame)
                 writer.release()
+                # 브라우저 호환 최종본(H.264/mp4)으로 변환
+                clip_path = _finalize_clip(rendered_path, clip_stem)
 
                 results.append({
                     'start_frame': start_f,

@@ -99,4 +99,5 @@ def get_event_clip(event_id: int, db: Session = Depends(get_db)):
     path = settings.abs_path(event.cam_heatmap_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="클립 파일이 없습니다.")
-    return FileResponse(str(path), media_type="video/mp4")
+    media_type = "video/webm" if str(path).endswith(".webm") else "video/mp4"
+    return FileResponse(str(path), media_type=media_type)
