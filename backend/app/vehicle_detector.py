@@ -317,3 +317,26 @@ def read_source_frame(source: Path, frame_index: int = 0) -> np.ndarray:
     if not ok:
         raise RuntimeError(f"{frame_index}번 프레임을 읽지 못했습니다: {source}")
     return frame
+
+
+# 프로세스당 탐지기(YOLO 모델)를 1회만 로드해 재사용 — 매 요청 재로드 오버헤드 제거.
+_detector_cache: dict = {}
+
+
+def get_detector(
+    model_path: str = "yolo11x.pt",
+    conf: float = 0.15,
+    imgsz: int = 1280,
+    enhance_night: bool = True,
+) -> "VehicleBBoxDetector":
+    """설정별로 VehicleBBoxDetector를 캐시해 반환한다(같은 설정이면 재사용).
+
+    YOLO 가중치 로드(≈수 초)를 요청마다 반복하지 않도록 프로세스 전역에 보관한다.
+    """
+    key = (model_path, conf, imgsz, enhance_night)
+    detector = _detector_cache.get(key)
+    if detector is None:
+        detector = VehicleBBoxDetector(
+            model_path=model_path, conf=conf, imgsz=imgsz, enhance_night=enhance_night)
+        _detector_cache[key] = detector
+    return detector

@@ -264,7 +264,7 @@ def detect_vehicles_in_video(
 
     # 차량 탐지 모듈은 지연 임포트 — ultralytics/torch를 웹 프로세스 시작 시 로드하지 않도록.
     try:
-        from app.vehicle_detector import VehicleBBoxDetector, read_source_frame
+        from app.vehicle_detector import get_detector, read_source_frame
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"차량 탐지 모듈 로드 실패: {err}")
 
@@ -277,13 +277,14 @@ def detect_vehicles_in_video(
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
     # YOLO11x + imgsz 1280 + 낮은 conf + 야간 전처리
-    # → 원거리/야간/부분가림 차량 회수율 강화 (프레임 1장이라 CPU에서도 감내 가능)
+    # → 원거리/야간/부분가림 차량 회수율 강화.
+    # 탐지기는 get_detector로 프로세스당 1회만 로드·재사용(매 요청 재로드 오버헤드 제거).
     model_path = str(settings.BASE_DIR / "yolo11x.pt")
     if not Path(model_path).exists():
         model_path = "yolo11x.pt"  # 파일 없으면 ultralytics가 자동 다운로드
 
     try:
-        detector = VehicleBBoxDetector(
+        detector = get_detector(
             model_path=model_path, conf=0.15, imgsz=1280, enhance_night=True)
         detections = detector.detect_frame(frame)
     except Exception as err:
