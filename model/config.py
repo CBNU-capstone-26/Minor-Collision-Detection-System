@@ -50,18 +50,19 @@ TRAIN_LEARNING_RATE = 0.00003  # S3D 미세조정 (헤드 기준; 백본은 trai
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 S3D 구조(.pth)여야 한다.
-SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260729_35ep_earlyN_0.0041_augON.pth"
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260828_32ep_earlyY_0.3807.pth"
 
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
-PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260729_35ep_earlyN_0.0041_augON.pth"
+PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260828_32ep_earlyY_0.3807.pth"
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
 PREDICT_INFER_BATCH_SIZE = 2 # batch size 2로 바꾸었음(배기원)
-PREDICT_WINDOW_STRIDE = 1  # CPU 추론 기본: 15 (GPU면 1로 낮춰 정확도↑)
+PREDICT_WINDOW_STRIDE = 5  # CPU 추론 절충값 (윈도우 83% 중첩 → 정확도 거의 유지 + 속도↑). GPU면 1로 낮춰 정확도↑
+# ⚠️ 이 값을 바꾸면 ui/src/App.jsx 의 예상시간 공식(totalFrames/stride)도 같이 맞춰야 함
 
 # ---------- 실제영상 정확도 평가 전용 ----------
-EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260729_35ep_earlyN_0.0041_augON.pth"
+EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260828_32ep_earlyY_0.3807.pth"
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 EVAL_INFER_BATCH_SIZE = 8 # batch size 8로 바꾸었음(이정주)
 EVAL_WINDOW_STRIDE = 1  # 기본값: 1 (올리면 속도↑ 정확도 소폭↓)

@@ -14,6 +14,24 @@ from device_utils import is_cuda_like, is_channels_last_3d_supported
 activation = {}
 
 
+def _open_video_writer(path, fps, size):
+    """avc1(H.264) 우선, 실패하면 mp4v로 폴백해 VideoWriter를 연다.
+
+    avc1은 브라우저 재생 호환성이 좋지만 시스템에 H.264 인코더가 없으면
+    VideoWriter가 열리지 않아(0바이트) 클립이 깨진다. 그런 환경에선
+    OpenCV 내장 mp4v로 자동 대체해 어디서나 클립이 생성되게 한다.
+    """
+    for fourcc in ('avc1', 'mp4v'):
+        writer = cv2.VideoWriter(
+            str(path), cv2.VideoWriter_fourcc(*fourcc), fps, size)
+        if writer.isOpened():
+            return writer
+        writer.release()
+    # 둘 다 실패(사실상 없음) — 마지막으로 mp4v로 한 번 더 반환
+    return cv2.VideoWriter(
+        str(path), cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
+
+
 def get_activation(name):
     def hook(model, input, output):
         activation[name] = output.detach()
@@ -173,8 +191,7 @@ def predict_hit_and_run_final(
         orig_h, orig_w = original_full_frames[0].shape[:2]
         out_path = output_dir / f'final_{os.path.basename(video_path)}'
         os.makedirs(out_path.parent, exist_ok=True)
-        out_video = cv2.VideoWriter(
-            str(out_path), cv2.VideoWriter_fourcc(*'avc1'), 30.0, (orig_w, orig_h))
+        out_video = _open_video_writer(out_path, 30.0, (orig_w, orig_h))
 
         write_queue = queue.Queue(maxsize=64)
         writer_thread = threading.Thread(
@@ -348,6 +365,7 @@ def predict_events_and_clips(
     infer_batch_size=config.PREDICT_INFER_BATCH_SIZE,
     window_stride=config.PREDICT_WINDOW_STRIDE,
     clip_pad_frames=15,
+    progress_callback=None,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -438,6 +456,9 @@ def predict_events_and_clips(
 
         with torch.inference_mode():
             for batch_start in range(0, len(window_starts), infer_batch_size):
+                # 실제 추론 진행도 보고 (처리한 윈도우 비율, 0.0~1.0)
+                if progress_callback is not None:
+                    progress_callback(batch_start / max(1, len(window_starts)))
                 batch_window_starts = window_starts[
                     batch_start:batch_start + infer_batch_size]
                 clips = torch.stack(
@@ -507,9 +528,7 @@ def predict_events_and_clips(
                 crash_prob = max(probs_in_event) if probs_in_event else None
 
                 clip_path = output_dir / f'{base_name}_event{ev_idx}.mp4'
-                writer = cv2.VideoWriter(
-                    str(clip_path), cv2.VideoWriter_fourcc(*'avc1'),
-                    fps, (orig_w, orig_h))
+                writer = _open_video_writer(clip_path, fps, (orig_w, orig_h))
 
 
                 # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩

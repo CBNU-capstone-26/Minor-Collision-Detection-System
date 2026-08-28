@@ -58,11 +58,22 @@ def run_prediction_task(self, task_id: int):
 
         from predict_cam import predict_events_and_clips
 
+        # 추론 진행도를 Celery 상태(Redis)에 기록 → /tasks 엔드포인트가 읽어 프론트에 전달.
+        # pass-1(윈도우 추론)을 0~95%로 매핑(마지막 5%는 클립 렌더/마무리 몫).
+        _last_pct = {"v": -1}
+
+        def _on_progress(frac):
+            pct = int(frac * 95)
+            if pct != _last_pct["v"]:      # 정수 % 바뀔 때만 기록(과도한 갱신 방지)
+                _last_pct["v"] = pct
+                self.update_state(state="PROGRESS", meta={"percent": pct})
+
         results = predict_events_and_clips(
             model,
             video_path=settings.abs_path(video.video_path),
             bbox=(task.bbox_xmin, task.bbox_ymin, task.bbox_xmax, task.bbox_ymax),
             output_dir=settings.CLIP_DIR,
+            progress_callback=_on_progress,
         )
 
         for r in results:

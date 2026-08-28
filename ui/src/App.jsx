@@ -1012,6 +1012,12 @@ function Dashboard({ onLogout, view }) {
           showToast(`분석 실패: ${status.error_message || "오류"}`, "error");
           return;
         }
+        // 백엔드가 실제 추론 진행도(%)를 주면 해당 job에 반영
+        if (typeof status.progress === "number") {
+          setAnalyzingJobs((prev) =>
+            prev.map((j) =>
+              j.taskId === taskId ? { ...j, progress: status.progress } : j));
+        }
         setTimeout(poll, 2000); // PENDING/PROCESSING → 재시도
       } catch (e) {
         removeJob(taskId);
@@ -1049,9 +1055,10 @@ function Dashboard({ onLogout, view }) {
     setIsDrawing(false);
 
     // 예상 소요시간(초) 추정: 슬라이딩 윈도우 수(총프레임/stride) 기반 (CPU ~1s/윈도우)
+    // ※ 분모는 백엔드 config.PREDICT_WINDOW_STRIDE(현재 5)와 반드시 일치시킬 것
     const totalFrames = Math.round(
       (selectedVideo.duration || 0) * (selectedVideo.fps || 30));
-    const estimatedSec = Math.max(10, Math.round((totalFrames / 15) * 1.1));
+    const estimatedSec = Math.max(10, Math.round((totalFrames / 5) * 1.1));
     const job = {
       taskId: null,
       videoId: analyzedId,
@@ -1140,6 +1147,16 @@ function Dashboard({ onLogout, view }) {
   // 작업별 진행률(%) / 남은 시간(초) 계산 (시간 기반 추정 — 완료 전까지 96%에서 대기)
   const jobProgress = (job) => {
     const elapsed = (now - job.startedAt) / 1000;
+    // 백엔드가 실제 추론 진행도(%)를 보고했으면 그걸 우선 사용
+    if (typeof job.progress === "number") {
+      const pct = Math.min(99, job.progress);
+      // 남은 시간: 현재까지 경과/진행률로 역산 (진행률 데이터 기반)
+      const remain = job.progress > 0
+        ? Math.max(0, Math.ceil((elapsed * (100 - job.progress)) / job.progress))
+        : Math.ceil(job.estimatedSec);
+      return { pct, remain };
+    }
+    // 폴백: 아직 진행도 보고 전(PENDING 등)이면 시간 기반 추정
     const pct = Math.min(96, (elapsed / job.estimatedSec) * 100);
     const remain = Math.max(0, Math.ceil(job.estimatedSec - elapsed));
     return { pct, remain };

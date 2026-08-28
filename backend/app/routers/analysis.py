@@ -58,9 +58,19 @@ def get_task_status(
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.task_id == task.id).all()
+
+    # 처리 중이면 Celery 상태(Redis)에서 실제 추론 진행도(%)를 읽어온다.
+    progress = None
+    if task.status == "PROCESSING" and task.celery_task_id:
+        from app.worker import celery_app
+        res = celery_app.AsyncResult(task.celery_task_id)
+        if res.state == "PROGRESS" and isinstance(res.info, dict):
+            progress = res.info.get("percent")
+
     return api_schemas.TaskStatusOut(
         task_id=task.id,
         status=task.status,
+        progress=progress,
         error_message=task.error_message,
         events=[to_event_out(e) for e in events],
     )
