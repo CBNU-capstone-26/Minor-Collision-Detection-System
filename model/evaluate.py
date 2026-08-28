@@ -2,7 +2,6 @@ import os
 import cv2
 import torch
 import numpy as np
-import random
 from tqdm import tqdm
 
 import config
@@ -16,7 +15,6 @@ def evaluate_folder_accuracy(
     r_value=config.R_VALUE,
     resize=config.RESIZE,
     clip_length=config.CLIP_LENGTH,
-    num_samples=config.EVAL_NUM_SAMPLES,
     infer_batch_size=config.EVAL_INFER_BATCH_SIZE,
     window_stride=config.EVAL_WINDOW_STRIDE,
 ):
@@ -68,16 +66,13 @@ def evaluate_folder_accuracy(
         print("평가할 수 있는 영상-텍스트 짝이 없습니다.")
         return
 
-    if num_samples is not None:
-        actual_samples = min(num_samples, len(valid_pairs))
-        selected_files = random.sample(valid_pairs, actual_samples)
-        print(f"총 {len(valid_pairs)}개의 영상 쌍 중에서 {actual_samples}개를 랜덤으로 추출하여 평가합니다.")
-    else:
-        selected_files = valid_pairs
-        print(f"전체 {len(valid_pairs)}개의 영상 쌍을 모두 평가합니다.")
+    # data/eval의 유효한 영상-txt 짝을 모두 평가 (샘플 개수 제한 없음, 정렬로 순서 고정)
+    selected_files = sorted(valid_pairs)
+    print(f"data/eval 전체 {len(selected_files)}개 영상 쌍을 모두 평가합니다.")
 
     total_videos = 0
     correct_preds = 0
+    tp = tn = fp = fn = 0   # 혼동행렬 (Positive = A/충돌)
     wrong_list = []
 
     with torch.inference_mode():
@@ -148,6 +143,16 @@ def evaluate_folder_accuracy(
                     break
 
             total_videos += 1
+            # 혼동행렬 집계 (Positive = A/충돌)
+            if gt_label == 1 and predicted_label == 1:
+                tp += 1
+            elif gt_label == 0 and predicted_label == 0:
+                tn += 1
+            elif gt_label == 0 and predicted_label == 1:
+                fp += 1
+            else:  # gt_label == 1 and predicted_label == 0
+                fn += 1
+
             if predicted_label == gt_label:
                 correct_preds += 1
             else:
@@ -157,13 +162,30 @@ def evaluate_folder_accuracy(
                     "pred": "Accident(충돌)" if predicted_label == 1 else "Normal(정상)",
                 })
 
-    accuracy = (correct_preds / total_videos) * 100 if total_videos > 0 else 0
+    # ── 논문(Hwang & Lee 2024, Table 6)과 동일한 지표 ──────────────
+    #   Positive = A(충돌).  Recall = TP/(TP+FN), False alarm = FP/(FP+TN),
+    #   Accuracy = (TP+TN)/전체, Precision = TP/(TP+FP), F1 = 2PR/(P+R)
+    def _pct(num, den):
+        return (num / den * 100) if den > 0 else 0.0
+
+    accuracy = _pct(tp + tn, total_videos)
+    recall = _pct(tp, tp + fn)          # 실제 충돌 중 잡은 비율
+    false_alarm = _pct(fp, fp + tn)     # 정상 중 오탐 비율
+    precision = _pct(tp, tp + fp)       # A라 판정한 것 중 실제 A
+    f1 = (2 * precision * recall / (precision + recall)
+          ) if (precision + recall) > 0 else 0.0
+
     print("\n" + "=" * 50)
-    print("[모델 성능 평가 결과]")
+    print("[모델 성능 평가 결과]  (Positive = A/충돌)")
     print("=" * 50)
-    print(f"총 평가 영상 수 : {total_videos} 개")
-    print(f"정답 맞춘 수    : {correct_preds} 개")
-    print(f"최종 Accuracy   : {accuracy:.2f}%")
+    print(f"총 평가 영상 수 : {total_videos} 개  (A {tp + fn} / S {fp + tn})")
+    print(f"혼동행렬        : TP {tp} / FN {fn} / FP {fp} / TN {tn}")
+    print("-" * 50)
+    print(f"Recall(재현율)      : {recall:.2f}%   (실제 충돌 중 잡음)")
+    print(f"False alarm(오탐율) : {false_alarm:.2f}%   (정상 중 오탐)")
+    print(f"Accuracy(정확도)    : {accuracy:.2f}%")
+    print(f"Precision(정밀도)   : {precision:.2f}%")
+    print(f"F1-score            : {f1:.2f}%")
     print("=" * 50)
 
     if wrong_list:

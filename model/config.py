@@ -58,11 +58,10 @@ PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
 PREDICT_INFER_BATCH_SIZE = 2 # batch size 2로 바꾸었음(배기원)
-PREDICT_WINDOW_STRIDE = 15  # CPU 추론 기본: 15 (GPU면 1로 낮춰 정확도↑)
+PREDICT_WINDOW_STRIDE = 1  # CPU 추론 기본: 15 (GPU면 1로 낮춰 정확도↑)
 
 # ---------- 실제영상 정확도 평가 전용 ----------
 EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260729_35ep_earlyN_0.0041_augON.pth"
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
-EVAL_NUM_SAMPLES = 10
 EVAL_INFER_BATCH_SIZE = 8 # batch size 8로 바꾸었음(이정주)
 EVAL_WINDOW_STRIDE = 1  # 기본값: 1 (올리면 속도↑ 정확도 소폭↓)
