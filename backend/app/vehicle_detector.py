@@ -29,7 +29,6 @@ YOLO segmentation 기반 차량 bbox 자동 생성 도구.
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -71,9 +70,13 @@ class VehicleBBoxDetector:
         shrink_right: float | None = None,
         nms_iou: float = 0.35,
         contain_threshold: float = 0.85,
+        imgsz: int = 640,
+        enhance_night: bool = False,
     ):
         self.model = YOLO(model_path)
         self.conf = conf
+        self.imgsz = imgsz              # 추론 입력 해상도 (클수록 원거리 차량 탐지↑)
+        self.enhance_night = enhance_night  # 어두운 프레임 CLAHE/감마 전처리 여부
         self.vehicle_classes = set(vehicle_classes)
         self.mask_threshold = mask_threshold
         self.min_area = min_area
@@ -217,9 +220,34 @@ class VehicleBBoxDetector:
         x, y, w, h = cv2.boundingRect(contour)
         return self._clip_box(x, y, x + w - 1, y + h - 1, frame_width, frame_height)
 
+    @staticmethod
+    def _enhance_low_light(frame_bgr: np.ndarray, brightness_thresh: int = 80) -> np.ndarray:
+        """어두운(야간) 프레임이면 CLAHE(대비 향상)+감마 보정으로 차량 가시성을 높인다.
+
+        밝은 주간 프레임은 원본을 그대로 반환(과보정 방지). 밝기(그레이 평균)가
+        임계값 미만일 때만 보정을 적용한다.
+        """
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        if float(gray.mean()) >= brightness_thresh:
+            return frame_bgr
+        # CLAHE는 LAB의 L(밝기) 채널에만 적용 → 색 왜곡 없이 대비만 향상
+        lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
+        l_ch, a_ch, b_ch = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l_ch = clahe.apply(l_ch)
+        enhanced = cv2.cvtColor(cv2.merge((l_ch, a_ch, b_ch)), cv2.COLOR_LAB2BGR)
+        # 감마 보정(<1) → 어두운 영역을 밝게
+        gamma = 0.7
+        table = np.array([((i / 255.0) ** gamma) * 255
+                          for i in range(256)], dtype=np.uint8)
+        return cv2.LUT(enhanced, table)
+
     def detect_frame(self, frame_bgr: np.ndarray) -> list[VehicleDetection]:
+        if self.enhance_night:
+            frame_bgr = self._enhance_low_light(frame_bgr)
         height, width = frame_bgr.shape[:2]
-        result = self.model(frame_bgr, conf=self.conf, verbose=False)[0]
+        result = self.model(frame_bgr, conf=self.conf,
+                             imgsz=self.imgsz, verbose=False)[0]
 
         if result.boxes is None:
             return []
@@ -289,168 +317,3 @@ def read_source_frame(source: Path, frame_index: int = 0) -> np.ndarray:
     if not ok:
         raise RuntimeError(f"{frame_index}번 프레임을 읽지 못했습니다: {source}")
     return frame
-
-
-def save_training_txt(
-    detections: list[VehicleDetection],
-    output_txt: Path,
-    label_class: str | None = None,
-    target_id: int = 0,
-    start_frame: int = 0,
-) -> None:
-    output_txt.parent.mkdir(parents=True, exist_ok=True)
-    with output_txt.open("w", encoding="utf-8") as file:
-        for idx, det in enumerate(detections):
-            x1, y1, x2, y2 = det.bbox
-            file.write(f"car,{idx},{x1},{y1},{x2},{y2}\n")
-        if label_class is not None:
-            file.write(f"{label_class},{target_id},{start_frame}\n")
-
-
-def draw_detections(
-    frame_bgr: np.ndarray,
-    detections: list[VehicleDetection],
-) -> np.ndarray:
-    output = frame_bgr.copy()
-    for idx, det in enumerate(detections):
-        x1, y1, x2, y2 = det.bbox
-        cv2.rectangle(output, (x1, y1), (x2, y2), (0, 220, 0), 2)
-        cv2.putText(
-            output,
-            str(idx),
-            (x1, max(y1 - 8, 20)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (0, 220, 0),
-            2,
-            cv2.LINE_AA,
-        )
-    return output
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="YOLO segmentation mask 기반 차량 bbox 자동 생성"
-    )
-    parser.add_argument("--source", required=True, help="입력 이미지 또는 영상 경로")
-    parser.add_argument(
-        "--output-txt",
-        required=True,
-        help="저장할 txt 경로. 형식: car,id,x1,y1,x2,y2",
-    )
-    parser.add_argument("--output-image", help="bbox 확인용 이미지 저장 경로")
-    parser.add_argument("--model", default="yolov8n-seg.pt", help="YOLO-seg 모델 경로")
-    parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence")
-    parser.add_argument(
-        "--frame-index",
-        type=int,
-        default=0,
-        help="영상 입력일 때 bbox를 생성할 프레임 인덱스",
-    )
-    parser.add_argument(
-        "--label-class",
-        choices=("A", "S"),
-        help="선택 시 txt 마지막 줄에 A/S 이벤트 라벨도 함께 저장",
-    )
-    parser.add_argument("--target-id", type=int, default=0)
-    parser.add_argument("--start-frame", type=int, default=0)
-    parser.add_argument("--min-area", type=int, default=100)
-    parser.add_argument(
-        "--shrink-x",
-        type=float,
-        default=0.0,
-        help="bbox 좌우를 각각 bbox 너비의 해당 비율만큼 줄임. 예: 0.08",
-    )
-    parser.add_argument(
-        "--shrink-left",
-        type=float,
-        help="bbox 왼쪽만 bbox 너비의 해당 비율만큼 줄임. 예: 0.02",
-    )
-    parser.add_argument(
-        "--shrink-right",
-        type=float,
-        help="bbox 오른쪽만 bbox 너비의 해당 비율만큼 줄임. 예: 0.12",
-    )
-    parser.add_argument(
-        "--manual-bbox",
-        help="YOLO 검출 대신 사용할 bbox. 형식: x1,y1,x2,y2",
-    )
-    parser.add_argument(
-        "--nms-iou",
-        type=float,
-        default=0.35,
-        help="중복 bbox 제거 IoU 기준. 낮을수록 더 많이 제거함.",
-    )
-    parser.add_argument(
-        "--contain-threshold",
-        type=float,
-        default=0.85,
-        help="작은 bbox가 큰 bbox 안에 이 비율 이상 들어가면 중복으로 제거",
-    )
-    return parser.parse_args()
-
-
-def parse_manual_bbox(value: str) -> tuple[int, int, int, int]:
-    try:
-        parts = [int(part.strip()) for part in value.split(",")]
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(
-            "--manual-bbox는 x1,y1,x2,y2 숫자 형식이어야 합니다."
-        ) from exc
-    if len(parts) != 4:
-        raise argparse.ArgumentTypeError(
-            "--manual-bbox는 x1,y1,x2,y2 네 개 좌표가 필요합니다."
-        )
-    return parts[0], parts[1], parts[2], parts[3]
-
-
-def main() -> None:
-    args = parse_args()
-    source = Path(args.source)
-    output_txt = Path(args.output_txt)
-
-    frame = read_source_frame(source, frame_index=args.frame_index)
-    if args.manual_bbox:
-        height, width = frame.shape[:2]
-        bbox = VehicleBBoxDetector._clip_box(*parse_manual_bbox(args.manual_bbox), width, height)
-        bbox = VehicleBBoxDetector._shrink_box_horizontal(
-            bbox,
-            args.shrink_x if args.shrink_left is None else args.shrink_left,
-            args.shrink_x if args.shrink_right is None else args.shrink_right,
-            width,
-            height,
-        )
-        detections = [VehicleDetection(class_name="car", confidence=1.0, bbox=bbox)]
-    else:
-        detector = VehicleBBoxDetector(
-            model_path=args.model,
-            conf=args.conf,
-            min_area=args.min_area,
-            shrink_x=args.shrink_x,
-            shrink_left=args.shrink_left,
-            shrink_right=args.shrink_right,
-            nms_iou=args.nms_iou,
-            contain_threshold=args.contain_threshold,
-        )
-        detections = detector.detect_frame(frame)
-    save_training_txt(
-        detections,
-        output_txt,
-        label_class=args.label_class,
-        target_id=args.target_id,
-        start_frame=args.start_frame,
-    )
-
-    if args.output_image:
-        output_image = Path(args.output_image)
-        output_image.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(output_image), draw_detections(frame, detections))
-
-    print(f"detected vehicles: {len(detections)}")
-    print(f"saved txt: {output_txt}")
-    if args.output_image:
-        print(f"saved image: {args.output_image}")
-
-
-if __name__ == "__main__":
-    main()

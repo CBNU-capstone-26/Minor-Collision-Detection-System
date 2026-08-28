@@ -69,5 +69,9 @@ numpy==2.4.6
 pillow==12.2.0
 tqdm==4.68.1
 
+# ---- 차량 자동탐지 (라이브 서비스 /detect-vehicles; YOLO11) ----
+# ※ torch/torchvision 은 위 '별도 스텝'으로 이미 설치됨. YOLO11x 가중치는 첫 실행 시 자동 다운로드.
+ultralytics>=8.3.0  # YOLO11 지원(8.3.0+). matplotlib·pyyaml·scipy 등 의존성 함께 설치됨
+
 # ---- 테스트/스크립트용 ----
 requests==2.34.2

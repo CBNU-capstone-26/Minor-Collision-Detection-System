@@ -256,19 +256,15 @@ def detect_vehicles_in_video(
 ):
     """YOLO 모델로 지정 시각 프레임의 차량을 탐지하여 BBOX JSON을 DB에 저장하고 반환합니다."""
     import json
-    import sys
 
     video = _get_owned_video(video_id, db, user)
     src_path = settings.abs_path(video.video_path)
     if not src_path.exists():
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
 
-    annotation_dir = str(settings.BASE_DIR / "annotation")
-    if annotation_dir not in sys.path:
-        sys.path.insert(0, annotation_dir)
-
+    # 차량 탐지 모듈은 지연 임포트 — ultralytics/torch를 웹 프로세스 시작 시 로드하지 않도록.
     try:
-        from auto_bbox_yolo_seg import VehicleBBoxDetector, read_source_frame
+        from app.vehicle_detector import VehicleBBoxDetector, read_source_frame
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"차량 탐지 모듈 로드 실패: {err}")
 
@@ -280,12 +276,15 @@ def detect_vehicles_in_video(
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
-    model_path = str(settings.BASE_DIR / "yolov8n.pt")
+    # YOLO11x + imgsz 1280 + 낮은 conf + 야간 전처리
+    # → 원거리/야간/부분가림 차량 회수율 강화 (프레임 1장이라 CPU에서도 감내 가능)
+    model_path = str(settings.BASE_DIR / "yolo11x.pt")
     if not Path(model_path).exists():
-        model_path = "yolov8n.pt"
+        model_path = "yolo11x.pt"  # 파일 없으면 ultralytics가 자동 다운로드
 
     try:
-        detector = VehicleBBoxDetector(model_path=model_path, conf=0.25)
+        detector = VehicleBBoxDetector(
+            model_path=model_path, conf=0.15, imgsz=1280, enhance_night=True)
         detections = detector.detect_frame(frame)
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"YOLO 차량 탐지 중 오류: {err}")
