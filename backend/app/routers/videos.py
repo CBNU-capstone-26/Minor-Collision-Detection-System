@@ -276,8 +276,10 @@ def detect_vehicles_in_video(
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
-    # YOLO11x + imgsz 1280 + 낮은 conf + 야간 전처리
-    # → 원거리/야간/부분가림 차량 회수율 강화.
+    # YOLO11x(detection) + 동적 imgsz(상한 1536) + 낮은 conf + 야간 전처리
+    # → 원거리/야간/부분가림 회수율 강화. detection 모델이라 마스크 없이
+    #   YOLO detection bbox를 그대로 사용한다. 동적 imgsz는 프레임 해상도에
+    #   맞춰 입력 크기를 정해 고해상도 정보손실/저해상도 낭비를 함께 줄인다.
     # 탐지기는 get_detector로 프로세스당 1회만 로드·재사용(매 요청 재로드 오버헤드 제거).
     model_path = str(settings.BASE_DIR / "yolo11x.pt")
     if not Path(model_path).exists():
@@ -285,7 +287,8 @@ def detect_vehicles_in_video(
 
     try:
         detector = get_detector(
-            model_path=model_path, conf=0.15, imgsz=1280, enhance_night=True)
+            model_path=model_path, conf=0.15, imgsz=1536,
+            enhance_night=True, dynamic_imgsz=True, imgsz_min=640)
         detections = detector.detect_frame(frame)
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"YOLO 차량 탐지 중 오류: {err}")
@@ -299,6 +302,26 @@ def detect_vehicles_in_video(
             "confidence": round(det.confidence, 4),
             "bbox": [x1, y1, x2, y2],
         })
+
+    # [디버그] 서비스가 실제로 탐지한 결과를 이미지로 저장 (outputs/) — 눈으로 확인용.
+    #   탐지에 쓴 원본 프레임에 bbox(#번호·클래스·신뢰도)를 그려 저장한다.
+    try:
+        import cv2
+        dbg = frame.copy()
+        for item in detected_list:
+            x1, y1, x2, y2 = item["bbox"]
+            cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            label = f'#{item["id"] + 1} {item["class_name"]} {round(item["confidence"] * 100)}%'
+            cv2.putText(dbg, label, (x1, max(y1 - 4, 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        out_dir = settings.BASE_DIR / "outputs"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        base = Path(video.video_name).stem
+        out_img = out_dir / f"detect_{base}_f{frame_index}.jpg"
+        cv2.imwrite(str(out_img), dbg)
+        print(f"[detect] 결과 이미지 저장: {out_img}  (탐지 {len(detected_list)}대, 프레임 {frame.shape[1]}x{frame.shape[0]})")
+    except Exception as _dbg_err:  # 디버그 저장 실패는 탐지 응답에 영향 없음
+        print(f"[detect] 결과 이미지 저장 실패(무시): {_dbg_err}")
 
     json_str = json.dumps(detected_list, ensure_ascii=False)
     video.detected_vehicles = json_str

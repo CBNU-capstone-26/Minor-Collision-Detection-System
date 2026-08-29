@@ -1267,6 +1267,17 @@ button {
   position: relative;
 }
 
+/* 실제 <video>는 오버레이 div를 정확히 채우고, 콘텐츠는 비율 유지(contain)로
+   레터박스. bbox 좌표 계산(getVideoGeom)이 이 레터박스를 반영해 정렬한다. */
+.real-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 .video-state-label {
   color: rgba(255, 255, 255, 0.86);
   font-size: 13px;

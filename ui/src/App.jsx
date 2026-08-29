@@ -1034,18 +1034,17 @@ function Dashboard({ onLogout, view }) {
     if (!box) return;
 
     // 화면(오버레이) 좌표 → 원본 영상 해상도 픽셀 좌표 환산
-    const videoEl = videoElRef.current;
-    let scaleX = 1;
-    let scaleY = 1;
-    if (videoEl && videoEl.videoWidth && videoEl.clientWidth) {
-      scaleX = videoEl.videoWidth / videoEl.clientWidth;
-      scaleY = videoEl.videoHeight / videoEl.clientHeight;
-    }
+    // bboxList의 좌표는 오버레이 div 기준(레터박스 여백 포함)이므로,
+    // 그리기/선택과 동일한 레터박스 지오메트리로 되돌린다.
+    const geom = getVideoGeom();
+    const scale = geom ? geom.scale : 1;
+    const offX = geom ? geom.offsetX : 0;
+    const offY = geom ? geom.offsetY : 0;
     const bbox = {
-      bbox_xmin: Math.round(box.xmin * scaleX),
-      bbox_ymin: Math.round(box.ymin * scaleY),
-      bbox_xmax: Math.round(box.xmax * scaleX),
-      bbox_ymax: Math.round(box.ymax * scaleY),
+      bbox_xmin: Math.round((box.xmin - offX) / scale),
+      bbox_ymin: Math.round((box.ymin - offY) / scale),
+      bbox_xmax: Math.round((box.xmax - offX) / scale),
+      bbox_ymax: Math.round((box.ymax - offY) / scale),
     };
 
     // 분석 시작: 지정 모드를 끄고 해당 영상을 '분석 중'으로 표시
@@ -1160,6 +1159,24 @@ function Dashboard({ onLogout, view }) {
     const pct = Math.min(96, (elapsed / job.estimatedSec) * 100);
     const remain = Math.max(0, Math.ceil(job.estimatedSec - elapsed));
     return { pct, remain };
+  };
+
+  // 오버레이 div 안에서 실제 영상 콘텐츠가 차지하는 영역(object-fit:contain 레터박스)과
+  // 원본해상도→화면 스케일을 반환. bbox 그리기/클릭 좌표 환산을 이걸로 통일한다.
+  const getVideoGeom = () => {
+    const el = bboxOverlayRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const vid = videoElRef.current;
+    const vw = (vid && vid.videoWidth) || selectedVideo?.width || rect.width;
+    const vh = (vid && vid.videoHeight) || selectedVideo?.height || rect.height;
+    const scale = Math.min(rect.width / vw, rect.height / vh); // contain
+    return {
+      rect,
+      scale,
+      offsetX: (rect.width - vw * scale) / 2, // 좌우 레터박스 여백
+      offsetY: (rect.height - vh * scale) / 2, // 상하 레터박스 여백
+    };
   };
 
   return (
@@ -1742,20 +1759,13 @@ function Dashboard({ onLogout, view }) {
                   }}
                   onMouseDown={(e) => {
                     if (!isBBoxMode) return;
-                    if (selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && videoElRef.current) {
-                      const rect = bboxOverlayRef.current.getBoundingClientRect();
-                      const displayWidth = rect.width;
-                      const displayHeight = rect.height;
-                      const videoWidth = selectedVideo?.width || videoElRef.current.videoWidth || displayWidth;
-                      const videoHeight = selectedVideo?.height || videoElRef.current.videoHeight || displayHeight;
-                      const scaleX = displayWidth / videoWidth;
-                      const scaleY = displayHeight / videoHeight;
-
+                    if (selectionMode === "auto" && hoveredDetectedBox && getVideoGeom()) {
+                      const { scale, offsetX, offsetY } = getVideoGeom();
                       const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
-                      const dispX1 = Math.round(x1 * scaleX);
-                      const dispY1 = Math.round(y1 * scaleY);
-                      const dispX2 = Math.round(x2 * scaleX);
-                      const dispY2 = Math.round(y2 * scaleY);
+                      const dispX1 = Math.round(offsetX + x1 * scale);
+                      const dispY1 = Math.round(offsetY + y1 * scale);
+                      const dispX2 = Math.round(offsetX + x2 * scale);
+                      const dispY2 = Math.round(offsetY + y2 * scale);
 
                       setBboxList([{ id: Date.now(), xmin: dispX1, ymin: dispY1, xmax: dispX2, ymax: dispY2 }]);
                       showToast(`${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
@@ -1780,20 +1790,11 @@ function Dashboard({ onLogout, view }) {
                       return;
                     }
 
-                    if (selectionMode === "auto" && detectedBoxes.length > 0 && videoElRef.current) {
-                      const displayWidth = rect.width;
-                      const displayHeight = rect.height;
-                      const videoWidth = selectedVideo?.width || videoElRef.current.videoWidth || displayWidth;
-                      const videoHeight = selectedVideo?.height || videoElRef.current.videoHeight || displayHeight;
-
-                      const mouseXInDisplay = e.clientX - rect.left;
-                      const mouseYInDisplay = e.clientY - rect.top;
-
-                      const scaleX = videoWidth / displayWidth;
-                      const scaleY = videoHeight / displayHeight;
-
-                      const realX = mouseXInDisplay * scaleX;
-                      const realY = mouseYInDisplay * scaleY;
+                    if (selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom()) {
+                      const { scale, offsetX, offsetY } = getVideoGeom();
+                      // 화면(오버레이) 좌표 → 레터박스 여백 제거 → 원본 해상도 좌표
+                      const realX = (e.clientX - rect.left - offsetX) / scale;
+                      const realY = (e.clientY - rect.top - offsetY) / scale;
 
                       const hit = detectedBoxes.find((box) => {
                         const [x1, y1, x2, y2] = box.bbox;
@@ -1902,21 +1903,60 @@ function Dashboard({ onLogout, view }) {
                     );
                   })()}
 
-                  {/* YOLO 자동 탐지 모드: 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
-                  {selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && (() => {
-                    const rect = bboxOverlayRef.current.getBoundingClientRect();
-                    const displayWidth = rect.width;
-                    const displayHeight = rect.height;
-                    const videoWidth = selectedVideo?.width || videoElRef.current?.videoWidth || displayWidth;
-                    const videoHeight = selectedVideo?.height || videoElRef.current?.videoHeight || displayHeight;
-                    const scaleX = displayWidth / videoWidth;
-                    const scaleY = displayHeight / videoHeight;
+                  {/* YOLO 자동 탐지 모드: 탐지된 모든 bbox를 항상 표시 (진단용 #번호·클래스·신뢰도) */}
+                  {selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom() && (() => {
+                    const { scale, offsetX, offsetY } = getVideoGeom();
+                    return detectedBoxes.map((box) => {
+                      const [x1, y1, x2, y2] = box.bbox;
+                      const dispX1 = Math.round(offsetX + x1 * scale);
+                      const dispY1 = Math.round(offsetY + y1 * scale);
+                      const dispX2 = Math.round(offsetX + x2 * scale);
+                      const dispY2 = Math.round(offsetY + y2 * scale);
+                      const isHovered = hoveredDetectedBox && hoveredDetectedBox.id === box.id;
+                      return (
+                        <div
+                          key={box.id}
+                          style={{
+                            position: "absolute",
+                            left: dispX1,
+                            top: dispY1,
+                            width: Math.max(4, dispX2 - dispX1),
+                            height: Math.max(4, dispY2 - dispY1),
+                            border: `2px solid ${isHovered ? "#16a34a" : "rgba(34,197,94,0.7)"}`,
+                            boxSizing: "border-box",
+                            borderRadius: 2,
+                            pointerEvents: "none",
+                          }}
+                        >
+                          <span
+                            style={{
+                              position: "absolute",
+                              top: -17,
+                              left: -1,
+                              background: "rgba(22,163,74,0.9)",
+                              color: "#fff",
+                              fontSize: 11,
+                              lineHeight: "15px",
+                              padding: "0 4px",
+                              borderRadius: 3,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            #{box.id + 1} {box.class_name} {Math.round((box.confidence || 0) * 100)}%
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
 
+                  {/* YOLO 자동 탐지 모드: 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
+                  {selectionMode === "auto" && hoveredDetectedBox && getVideoGeom() && (() => {
+                    const { scale, offsetX, offsetY } = getVideoGeom();
                     const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
-                    const dispX1 = Math.round(x1 * scaleX);
-                    const dispY1 = Math.round(y1 * scaleY);
-                    const dispX2 = Math.round(x2 * scaleX);
-                    const dispY2 = Math.round(y2 * scaleY);
+                    const dispX1 = Math.round(offsetX + x1 * scale);
+                    const dispY1 = Math.round(offsetY + y1 * scale);
+                    const dispX2 = Math.round(offsetX + x2 * scale);
+                    const dispY2 = Math.round(offsetY + y2 * scale);
 
                     return (
                       <div

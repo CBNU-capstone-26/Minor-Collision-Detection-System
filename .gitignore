@@ -22,6 +22,9 @@ storage/
 data/
 data/train/*.mp4
 
+# 진단·디버그 산출물(탐지 결과 이미지 등)
+outputs/
+
 # Model weights (대용량 바이너리 — git에서 제외)
 weights/
 
