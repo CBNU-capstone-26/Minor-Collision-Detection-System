@@ -37,7 +37,7 @@ def _get_model():
     model.load_state_dict(state_dict)
     model.eval()
     _model = model
-    print(f"[worker] 모델 로드 완료 (device={device})")
+    print(f"[worker] 모델 로드 완료 (device={device}, weights={model_config.SERVICE_WEIGHTS_PATH})")
     return _model
 
 

@@ -25,6 +25,7 @@ data/train/*.mp4
 
 # Model weights (대용량 바이너리 — git에서 제외)
 weights/
+*.pt
 
 # Local notebooks and docs
 *.ipynb

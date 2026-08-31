@@ -18,6 +18,7 @@ from app.settings import settings
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 _vehicle_bbox_detector = None
 _yolo_fallback_detector = None
+_yolo_seg_bbox_refiner = None
 
 
 # ---------- 직렬화 헬퍼 ----------
@@ -259,10 +260,10 @@ def detect_vehicles_in_video(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
-    """Transformer DINO 모델로 지정 시각 프레임의 차량을 탐지하여 BBOX JSON을 DB에 저장하고 반환합니다."""
+    """RT-DETR 모델로 지정 시각 프레임의 차량을 탐지하여 BBOX JSON을 DB에 저장하고 반환합니다."""
     import json
     import sys
-    global _vehicle_bbox_detector, _yolo_fallback_detector
+    global _vehicle_bbox_detector, _yolo_fallback_detector, _yolo_seg_bbox_refiner
 
     video = _get_owned_video(video_id, db, user)
     src_path = settings.abs_path(video.video_path)
@@ -275,10 +276,17 @@ def detect_vehicles_in_video(
 
     try:
         from auto_bbox_transformer_dino import (
-            DEFAULT_DINO_MODEL,
+            DEFAULT_RTDETR_MODEL,
+            DEFAULT_TRANSFORMER_MAX_ASPECT_RATIO,
+            DEFAULT_TRANSFORMER_MIN_AREA_RATIO,
+            DEFAULT_TRANSFORMER_MIN_ASPECT_RATIO,
+            DEFAULT_TRANSFORMER_MIN_HEIGHT,
+            DEFAULT_TRANSFORMER_MIN_WIDTH,
+            DEFAULT_YOLO_SEG_MODEL,
             DEFAULT_YOLO_MODEL,
-            VehicleBBoxDetector,
+            RTDETRVehicleBBoxDetector,
             YoloFallbackVehicleBBoxDetector,
+            YoloSegBBoxRefiner,
             merge_dino_yolo_detections,
             read_source_frame,
         )
@@ -293,23 +301,27 @@ def detect_vehicles_in_video(
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
-    dino_error = None
-    dino_detections = []
+    transformer_error = None
+    transformer_detections = []
     yolo_detections = []
-    detector_mode = "dino"
+    detector_mode = "rtdetr"
 
     try:
         if _vehicle_bbox_detector is None:
-            _vehicle_bbox_detector = VehicleBBoxDetector(
-                model_path=DEFAULT_DINO_MODEL,
-                conf=0.12,
-                text_threshold=0.10,
+            rtdetr_model_path = settings.BASE_DIR / DEFAULT_RTDETR_MODEL
+            _vehicle_bbox_detector = RTDETRVehicleBBoxDetector(
+                model_path=str(rtdetr_model_path),
+                conf=0.20,
+                min_area_ratio=DEFAULT_TRANSFORMER_MIN_AREA_RATIO,
+                min_width=DEFAULT_TRANSFORMER_MIN_WIDTH,
+                min_height=DEFAULT_TRANSFORMER_MIN_HEIGHT,
+                min_aspect_ratio=DEFAULT_TRANSFORMER_MIN_ASPECT_RATIO,
+                max_aspect_ratio=DEFAULT_TRANSFORMER_MAX_ASPECT_RATIO,
                 device="cpu",
-                local_files_only=True,
             )
-        dino_detections = _vehicle_bbox_detector.detect_frame(frame)
+        transformer_detections = _vehicle_bbox_detector.detect_frame(frame)
     except Exception as err:
-        dino_error = err
+        transformer_error = err
 
     try:
         yolo_model_path = settings.BASE_DIR / DEFAULT_YOLO_MODEL
@@ -321,25 +333,39 @@ def detect_vehicles_in_video(
             )
         yolo_detections = _yolo_fallback_detector.detect_frame(frame)
     except Exception as err:
-        if dino_error is not None:
+        if transformer_error is not None:
             raise HTTPException(
                 status_code=500,
-                detail=f"Transformer DINO 차량 탐지 실패 후 YOLO fallback도 실패했습니다: {dino_error} / {err}",
+                detail=f"RT-DETR 차량 탐지 실패 후 YOLO fallback도 실패했습니다: {transformer_error} / {err}",
             )
 
-    if dino_detections and yolo_detections:
-        detections = merge_dino_yolo_detections(dino_detections, yolo_detections)
+    if transformer_detections and yolo_detections:
+        detections = merge_dino_yolo_detections(transformer_detections, yolo_detections)
         detector_mode = "hybrid"
-    elif dino_detections:
-        detections = dino_detections
-        detector_mode = "dino"
+    elif transformer_detections:
+        detections = transformer_detections
+        detector_mode = "rtdetr"
     elif yolo_detections:
         detections = yolo_detections
         detector_mode = "yolo_fallback"
-    elif dino_error is not None:
-        raise HTTPException(status_code=500, detail=f"Transformer DINO 차량 탐지 중 오류: {dino_error}")
+    elif transformer_error is not None:
+        raise HTTPException(status_code=500, detail=f"RT-DETR 차량 탐지 중 오류: {transformer_error}")
     else:
         detections = []
+
+    if detections:
+        try:
+            if _yolo_seg_bbox_refiner is None:
+                yolo_seg_model_path = settings.BASE_DIR / DEFAULT_YOLO_SEG_MODEL
+                _yolo_seg_bbox_refiner = YoloSegBBoxRefiner(
+                    model_path=str(yolo_seg_model_path),
+                    conf=0.25,
+                    min_area=100,
+                )
+            detections = _yolo_seg_bbox_refiner.refine_frame(frame, detections)
+            detector_mode = f"{detector_mode}_seg"
+        except Exception as err:
+            print(f"[detect_vehicles_in_video] YOLO-seg bbox refinement skipped: {err}")
 
     detected_list = []
     for idx, det in enumerate(detections):

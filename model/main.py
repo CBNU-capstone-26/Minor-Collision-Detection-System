@@ -1,9 +1,6 @@
 import argparse
-import torch
 
 import config
-from device_utils import get_device, is_channels_last_3d_supported
-from hitandrun_model import HitAndRun3DCNN
 
 '''
 학습 시작
@@ -14,6 +11,10 @@ python3 -m model.main --mode predict
 '''
 
 def _load_model(weights_path):
+    import torch
+    from device_utils import get_device, is_channels_last_3d_supported
+    from hitandrun_model import HitAndRun3DCNN
+
     # _load_model은 predict/eval(추론)에서만 사용 → INFER 디바이스 사용
     device = get_device(config.INFER_DEVICE_TYPE)
     model = HitAndRun3DCNN(num_classes=config.MODEL_NUM_CLASSES).to(device)
@@ -31,11 +32,27 @@ def _load_model(weights_path):
 
 
 def run_train():
-    from train import train_model
-    if not config.DATA_DIR.exists():
-        print(f"에러: 데이터 폴더를 찾을 수 없습니다 -> {config.DATA_DIR}")
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    mp4_files = sorted(config.DATA_DIR.glob("*.mp4"))
+    if not mp4_files:
+        print(f"학습 데이터 폴더를 준비했습니다 -> {config.DATA_DIR}")
+        print("학습할 mp4 파일이 아직 없습니다.")
+        print("data/train 안에 같은 이름의 영상과 라벨 txt를 넣어주세요. 예: sample01.mp4, sample01.txt")
         return
+
+    missing_txt = [path.name for path in mp4_files if not path.with_suffix(".txt").exists()]
+    if missing_txt:
+        print(f"에러: mp4와 같은 이름의 bbox/action txt 라벨이 필요합니다 -> {config.DATA_DIR}")
+        print("라벨이 없는 영상:")
+        for name in missing_txt[:10]:
+            print(f"  - {name}")
+        if len(missing_txt) > 10:
+            print(f"  ... 외 {len(missing_txt) - 10}개")
+        return
+
     print(f"데이터 디렉토리 확인 완료: {config.DATA_DIR}. 학습을 시작합니다!")
+    from train import train_model
     train_model()
 
 

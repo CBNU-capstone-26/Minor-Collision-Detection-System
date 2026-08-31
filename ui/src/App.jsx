@@ -662,11 +662,98 @@ function Dashboard({ onLogout, view }) {
   const videoElRef = useRef(null); // 실제 <video> 엘리먼트 (원본 해상도 환산용)
   const [showBBoxPanel, setShowBBoxPanel] = useState(false);
 
-  // Transformer DINO 차량 자동 탐지 및 마우스 Hover 관련 상태
+  // RT-DETR 차량 자동 탐지 및 마우스 Hover 관련 상태
   const [isDetectingVehicles, setIsDetectingVehicles] = useState(false);
   const [detectedBoxes, setDetectedBoxes] = useState([]); // [{ id, class_name, confidence, bbox: [x1,y1,x2,y2], source }]
   const [detectorMode, setDetectorMode] = useState(null);
   const [hoveredDetectedBox, setHoveredDetectedBox] = useState(null);
+
+  const getRenderedVideoLayout = () => {
+    const overlayEl = bboxOverlayRef.current;
+    const videoEl = videoElRef.current;
+    if (!overlayEl) return null;
+
+    const rect = overlayEl.getBoundingClientRect();
+    const videoWidth = selectedVideo?.width || videoEl?.videoWidth || rect.width;
+    const videoHeight = selectedVideo?.height || videoEl?.videoHeight || rect.height;
+    if (!videoWidth || !videoHeight || !rect.width || !rect.height) return null;
+
+    const containerAspect = rect.width / rect.height;
+    const videoAspect = videoWidth / videoHeight;
+    let renderWidth = rect.width;
+    let renderHeight = rect.height;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (videoAspect > containerAspect) {
+      renderHeight = renderWidth / videoAspect;
+      offsetY = (rect.height - renderHeight) / 2;
+    } else {
+      renderWidth = renderHeight * videoAspect;
+      offsetX = (rect.width - renderWidth) / 2;
+    }
+
+    return { rect, videoWidth, videoHeight, renderWidth, renderHeight, offsetX, offsetY };
+  };
+
+  const videoBoxToDisplayBox = (bbox) => {
+    const layout = getRenderedVideoLayout();
+    if (!layout) return null;
+    const [x1, y1, x2, y2] = bbox;
+    const scaleX = layout.renderWidth / layout.videoWidth;
+    const scaleY = layout.renderHeight / layout.videoHeight;
+    return {
+      xmin: Math.round(layout.offsetX + x1 * scaleX),
+      ymin: Math.round(layout.offsetY + y1 * scaleY),
+      xmax: Math.round(layout.offsetX + x2 * scaleX),
+      ymax: Math.round(layout.offsetY + y2 * scaleY),
+    };
+  };
+
+  const displayPointToVideoPoint = (clientX, clientY) => {
+    const layout = getRenderedVideoLayout();
+    if (!layout) return null;
+    const displayX = clientX - layout.rect.left;
+    const displayY = clientY - layout.rect.top;
+    if (
+      displayX < layout.offsetX ||
+      displayX > layout.offsetX + layout.renderWidth ||
+      displayY < layout.offsetY ||
+      displayY > layout.offsetY + layout.renderHeight
+    ) {
+      return null;
+    }
+    return {
+      x: ((displayX - layout.offsetX) * layout.videoWidth) / layout.renderWidth,
+      y: ((displayY - layout.offsetY) * layout.videoHeight) / layout.renderHeight,
+    };
+  };
+
+  const clampDisplayPointToVideoArea = (clientX, clientY) => {
+    const layout = getRenderedVideoLayout();
+    if (!layout) return null;
+    const displayX = clientX - layout.rect.left;
+    const displayY = clientY - layout.rect.top;
+    return {
+      x: Math.round(Math.max(layout.offsetX, Math.min(displayX, layout.offsetX + layout.renderWidth))),
+      y: Math.round(Math.max(layout.offsetY, Math.min(displayY, layout.offsetY + layout.renderHeight))),
+    };
+  };
+
+  const displayBoxToVideoBox = (box) => {
+    const layout = getRenderedVideoLayout();
+    if (!layout) return null;
+    const xmin = Math.max(layout.offsetX, Math.min(box.xmin, layout.offsetX + layout.renderWidth));
+    const ymin = Math.max(layout.offsetY, Math.min(box.ymin, layout.offsetY + layout.renderHeight));
+    const xmax = Math.max(layout.offsetX, Math.min(box.xmax, layout.offsetX + layout.renderWidth));
+    const ymax = Math.max(layout.offsetY, Math.min(box.ymax, layout.offsetY + layout.renderHeight));
+    return {
+      bbox_xmin: Math.round(((xmin - layout.offsetX) * layout.videoWidth) / layout.renderWidth),
+      bbox_ymin: Math.round(((ymin - layout.offsetY) * layout.videoHeight) / layout.renderHeight),
+      bbox_xmax: Math.round(((xmax - layout.offsetX) * layout.videoWidth) / layout.renderWidth),
+      bbox_ymax: Math.round(((ymax - layout.offsetY) * layout.videoHeight) / layout.renderHeight),
+    };
+  };
 
 
   // 사고감지 실행 / 분석 관련 상태
@@ -952,11 +1039,23 @@ function Dashboard({ onLogout, view }) {
 
   const detectorModeLabel = {
     dino: "DINO",
+    rtdetr: "RT-DETR",
     yolo_fallback: "YOLO 보강",
-    hybrid: "DINO + YOLO",
+    hybrid: "RT-DETR + YOLO",
+    rtdetr_seg: "RT-DETR + Seg",
+    yolo_fallback_seg: "YOLO + Seg",
+    hybrid_seg: "RT-DETR + YOLO + Seg",
   };
 
-  // Transformer DINO 우선 + YOLO fallback 차량 탐지 실행
+  const detectorSourceLabel = (source) => {
+    if (source === "yolo_seg") return "YOLO + Seg";
+    if (source === "rtdetr_seg") return "RT-DETR + Seg";
+    if (source === "yolo") return "YOLO";
+    if (source === "rtdetr") return "RT-DETR";
+    return "DINO";
+  };
+
+  // RT-DETR 우선 + YOLO fallback 차량 탐지 실행
   const handleAutoDetectVehicles = async () => {
     if (!selectedVideo) return;
     if (videoElRef.current) {
@@ -966,11 +1065,11 @@ function Dashboard({ onLogout, view }) {
     setSelectionMode("auto");
     setIsDetectingVehicles(true);
     setDetectorMode(null);
-    showToast("Transformer DINO 우선 탐지 후 부족하면 YOLO로 보강합니다...", "info");
+    showToast("RT-DETR 우선 탐지 후 부족하면 YOLO로 보강합니다...", "info");
     try {
       const res = await api.detectVehicles(selectedVideo.id, currentTime);
       const list = res.detected_vehicles || [];
-      const mode = res.detector_mode || "dino";
+      const mode = res.detector_mode || "rtdetr";
       setDetectedBoxes(list);
       setDetectorMode(mode);
       setIsBBoxMode(true);
@@ -1038,20 +1137,11 @@ function Dashboard({ onLogout, view }) {
     const box = bboxList[0];
     if (!box) return;
 
-    // 화면(오버레이) 좌표 → 원본 영상 해상도 픽셀 좌표 환산
-    const videoEl = videoElRef.current;
-    let scaleX = 1;
-    let scaleY = 1;
-    if (videoEl && videoEl.videoWidth && videoEl.clientWidth) {
-      scaleX = videoEl.videoWidth / videoEl.clientWidth;
-      scaleY = videoEl.videoHeight / videoEl.clientHeight;
+    const bbox = displayBoxToVideoBox(box);
+    if (!bbox) {
+      showToast("영상 영역 좌표를 계산할 수 없습니다. 다시 시도해 주세요.", "error");
+      return;
     }
-    const bbox = {
-      bbox_xmin: Math.round(box.xmin * scaleX),
-      bbox_ymin: Math.round(box.ymin * scaleY),
-      bbox_xmax: Math.round(box.xmax * scaleX),
-      bbox_ymax: Math.round(box.ymax * scaleY),
-    };
 
     // 분석 시작: 지정 모드를 끄고 해당 영상을 '분석 중'으로 표시
     const analyzedId = selectedVideo.id;
@@ -1492,7 +1582,7 @@ function Dashboard({ onLogout, view }) {
                 className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
                 disabled={isAnalyzing || isDetectingVehicles}
                 onClick={handleAutoDetectVehicles}
-                title="Transformer DINO로 먼저 탐지하고 부족하면 YOLO fallback으로 보강합니다"
+                title="RT-DETR로 먼저 탐지하고 부족하면 YOLO fallback으로 보강합니다"
               >
                 {isDetectingVehicles ? "차량 탐지 중..." : "🔍 탐지하기"}
               </button>
@@ -1739,7 +1829,7 @@ function Dashboard({ onLogout, view }) {
                   <span className="bbox-guide-icon">{selectionMode === "auto" ? "🔍" : "🖱️"}</span>
                   <span>
                     {selectionMode === "auto"
-                      ? `${detectorModeLabel[detectorMode] || "DINO + YOLO"} 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`
+                      ? `${detectorModeLabel[detectorMode] || "RT-DETR + YOLO"} 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`
                       : "수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요."}
                   </span>
                 </div>
@@ -1759,63 +1849,49 @@ function Dashboard({ onLogout, view }) {
                   onMouseDown={(e) => {
                     if (!isBBoxMode) return;
                     if (selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && videoElRef.current) {
-                      const rect = bboxOverlayRef.current.getBoundingClientRect();
-                      const displayWidth = rect.width;
-                      const displayHeight = rect.height;
-                      const videoWidth = selectedVideo?.width || videoElRef.current.videoWidth || displayWidth;
-                      const videoHeight = selectedVideo?.height || videoElRef.current.videoHeight || displayHeight;
-                      const scaleX = displayWidth / videoWidth;
-                      const scaleY = displayHeight / videoHeight;
-
-                      const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
-                      const dispX1 = Math.round(x1 * scaleX);
-                      const dispY1 = Math.round(y1 * scaleY);
-                      const dispX2 = Math.round(x2 * scaleX);
-                      const dispY2 = Math.round(y2 * scaleY);
-
-                      setBboxList([{ id: Date.now(), xmin: dispX1, ymin: dispY1, xmax: dispX2, ymax: dispY2 }]);
-                      const sourceText = hoveredDetectedBox.source === "yolo" ? "YOLO" : "DINO";
+                      const displayBox = videoBoxToDisplayBox(hoveredDetectedBox.bbox);
+                      if (!displayBox) return;
+                      setBboxList([{ id: Date.now(), ...displayBox }]);
+                      const sourceText = detectorSourceLabel(hoveredDetectedBox.source);
                       showToast(`${sourceText} ${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
                       return;
                     }
                     if (selectionMode === "manual") {
-                      const rect = bboxOverlayRef.current.getBoundingClientRect();
-                      const x = Math.round(e.clientX - rect.left);
-                      const y = Math.round(e.clientY - rect.top);
+                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
+                      if (!point) return;
                       setIsDrawing(true);
-                      setCurrentDraw({ startX: x, startY: y, endX: x, endY: y });
+                      setCurrentDraw({ startX: point.x, startY: point.y, endX: point.x, endY: point.y });
                     }
                   }}
                   onMouseMove={(e) => {
                     if (!isBBoxMode) return;
-                    const rect = bboxOverlayRef.current.getBoundingClientRect();
 
                     if (selectionMode === "manual" && isDrawing) {
-                      const x = Math.round(e.clientX - rect.left);
-                      const y = Math.round(e.clientY - rect.top);
-                      setCurrentDraw((prev) => (prev ? { ...prev, endX: x, endY: y } : null));
+                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
+                      if (!point) return;
+                      setCurrentDraw((prev) => (prev ? { ...prev, endX: point.x, endY: point.y } : null));
                       return;
                     }
 
                     if (selectionMode === "auto" && detectedBoxes.length > 0 && videoElRef.current) {
-                      const displayWidth = rect.width;
-                      const displayHeight = rect.height;
-                      const videoWidth = selectedVideo?.width || videoElRef.current.videoWidth || displayWidth;
-                      const videoHeight = selectedVideo?.height || videoElRef.current.videoHeight || displayHeight;
+                      const videoPoint = displayPointToVideoPoint(e.clientX, e.clientY);
+                      if (!videoPoint) {
+                        setHoveredDetectedBox(null);
+                        return;
+                      }
 
-                      const mouseXInDisplay = e.clientX - rect.left;
-                      const mouseYInDisplay = e.clientY - rect.top;
-
-                      const scaleX = videoWidth / displayWidth;
-                      const scaleY = videoHeight / displayHeight;
-
-                      const realX = mouseXInDisplay * scaleX;
-                      const realY = mouseYInDisplay * scaleY;
-
-                      const hit = detectedBoxes.find((box) => {
-                        const [x1, y1, x2, y2] = box.bbox;
-                        return realX >= x1 && realX <= x2 && realY >= y1 && realY <= y2;
-                      });
+                      const hit = detectedBoxes
+                        .filter((box) => {
+                          const [x1, y1, x2, y2] = box.bbox;
+                          return videoPoint.x >= x1 && videoPoint.x <= x2 && videoPoint.y >= y1 && videoPoint.y <= y2;
+                        })
+                        .sort((a, b) => {
+                          const [ax1, ay1, ax2, ay2] = a.bbox;
+                          const [bx1, by1, bx2, by2] = b.bbox;
+                          const areaA = Math.max(0, ax2 - ax1) * Math.max(0, ay2 - ay1);
+                          const areaB = Math.max(0, bx2 - bx1) * Math.max(0, by2 - by1);
+                          return areaA - areaB || b.confidence - a.confidence;
+                        })[0];
 
                       setHoveredDetectedBox(hit || null);
                     } else if (selectionMode !== "auto") {
@@ -1824,15 +1900,15 @@ function Dashboard({ onLogout, view }) {
                   }}
                   onMouseUp={(e) => {
                     if (selectionMode === "manual" && isDrawing && currentDraw) {
-                      const rect = bboxOverlayRef.current.getBoundingClientRect();
-                      const x = Math.round(e.clientX - rect.left);
-                      const y = Math.round(e.clientY - rect.top);
-                      const xmin = Math.min(currentDraw.startX, x);
-                      const ymin = Math.min(currentDraw.startY, y);
-                      const xmax = Math.max(currentDraw.startX, x);
-                      const ymax = Math.max(currentDraw.startY, y);
-                      if (xmax - xmin > 5 && ymax - ymin > 5) {
-                        setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
+                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
+                      if (point) {
+                        const xmin = Math.min(currentDraw.startX, point.x);
+                        const ymin = Math.min(currentDraw.startY, point.y);
+                        const xmax = Math.max(currentDraw.startX, point.x);
+                        const ymax = Math.max(currentDraw.startY, point.y);
+                        if (xmax - xmin > 5 && ymax - ymin > 5) {
+                          setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
+                        }
                       }
                       setCurrentDraw(null);
                       setIsDrawing(false);
@@ -1919,65 +1995,23 @@ function Dashboard({ onLogout, view }) {
                     );
                   })()}
 
-                  {selectionMode === "auto" && detectedBoxes.length > 0 && bboxOverlayRef.current && (() => {
-                    const rect = bboxOverlayRef.current.getBoundingClientRect();
-                    const displayWidth = rect.width;
-                    const displayHeight = rect.height;
-                    const videoWidth = selectedVideo?.width || videoElRef.current?.videoWidth || displayWidth;
-                    const videoHeight = selectedVideo?.height || videoElRef.current?.videoHeight || displayHeight;
-                    const scaleX = displayWidth / videoWidth;
-                    const scaleY = displayHeight / videoHeight;
-
-                    return detectedBoxes.map((box) => {
-                      const [x1, y1, x2, y2] = box.bbox;
-                      const dispX1 = Math.round(x1 * scaleX);
-                      const dispY1 = Math.round(y1 * scaleY);
-                      const dispX2 = Math.round(x2 * scaleX);
-                      const dispY2 = Math.round(y2 * scaleY);
-                      const isHovered = hoveredDetectedBox?.id === box.id;
-                      return (
-                        <div
-                          key={`auto-${box.id}`}
-                          className={`bbox-auto-outline ${box.source === "yolo" ? "source-yolo" : "source-dino"} ${isHovered ? "hovered" : ""}`}
-                          style={{
-                            left: dispX1,
-                            top: dispY1,
-                            width: Math.max(10, dispX2 - dispX1),
-                            height: Math.max(10, dispY2 - dispY1),
-                          }}
-                        />
-                      );
-                    });
-                  })()}
-
-                  {/* Transformer DINO + YOLO fallback 자동 탐지 모드: 마우스 Hover 미리보기 */}
+                  {/* RT-DETR + YOLO fallback 자동 탐지 모드: 마우스 Hover 미리보기 */}
                   {selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && (() => {
-                    const rect = bboxOverlayRef.current.getBoundingClientRect();
-                    const displayWidth = rect.width;
-                    const displayHeight = rect.height;
-                    const videoWidth = selectedVideo?.width || videoElRef.current?.videoWidth || displayWidth;
-                    const videoHeight = selectedVideo?.height || videoElRef.current?.videoHeight || displayHeight;
-                    const scaleX = displayWidth / videoWidth;
-                    const scaleY = displayHeight / videoHeight;
-
-                    const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
-                    const dispX1 = Math.round(x1 * scaleX);
-                    const dispY1 = Math.round(y1 * scaleY);
-                    const dispX2 = Math.round(x2 * scaleX);
-                    const dispY2 = Math.round(y2 * scaleY);
+                    const displayBox = videoBoxToDisplayBox(hoveredDetectedBox.bbox);
+                    if (!displayBox) return null;
 
                     return (
                       <div
                         className="bbox-hover-preview"
                         style={{
-                          left: dispX1,
-                          top: dispY1,
-                          width: Math.max(10, dispX2 - dispX1),
-                          height: Math.max(10, dispY2 - dispY1),
+                          left: displayBox.xmin,
+                          top: displayBox.ymin,
+                          width: Math.max(10, displayBox.xmax - displayBox.xmin),
+                          height: Math.max(10, displayBox.ymax - displayBox.ymin),
                         }}
                       >
                         <span className="bbox-hover-label">
-                          🚗 {hoveredDetectedBox.class_name} · {hoveredDetectedBox.source === "yolo" ? "YOLO" : "DINO"} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
+                          🚗 {hoveredDetectedBox.class_name} · {detectorSourceLabel(hoveredDetectedBox.source)} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
                         </span>
                       </div>
                     );

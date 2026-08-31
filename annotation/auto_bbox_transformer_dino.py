@@ -1,8 +1,8 @@
 """
-Grounding DINO Transformer detector 기반 차량 bbox 자동 생성 도구.
+RT-DETR Transformer detector 기반 차량 bbox 자동 생성 도구.
 
 목적:
-  - Grounding DINO로 차량을 찾는다.
+  - RT-DETR로 차량을 찾는다.
   - segmentation mask/contour 변환 없이 detector가 예측한 bbox를 직접 사용한다.
   - 프로젝트 학습 txt 포맷인 `car,id,x1,y1,x2,y2`로 저장한다.
 
@@ -16,7 +16,7 @@ Grounding DINO Transformer detector 기반 차량 bbox 자동 생성 도구.
     --output-txt data/real/real01.txt \
     --frame-index 0
 
-  # DINO가 부분 차량을 못 잡았을 때: 기존 bbox를 넣고 좌우만 타이트하게 보정
+  # Transformer detector가 부분 차량을 못 잡았을 때: 기존 bbox를 넣고 좌우만 타이트하게 보정
   python annotation/auto_bbox_transformer_dino.py \
     --source outputs/sample.jpg \
     --output-image outputs/sample_tight_bbox.jpg \
@@ -40,9 +40,7 @@ import numpy as np
 
 DEFAULT_VEHICLE_CLASSES = (
     "car",
-    "vehicle",
     "parked car",
-    "parked vehicle",
     "truck",
     "bus",
     "van",
@@ -51,8 +49,34 @@ DEFAULT_VEHICLE_CLASSES = (
     "automobile",
 )
 DEFAULT_DINO_MODEL = "IDEA-Research/grounding-dino-base"
-DEFAULT_YOLO_MODEL = "yolov8s.pt"
+DEFAULT_RTDETR_MODEL = "rtdetr-x.pt"
+DEFAULT_YOLO_MODEL = "yolo11x.pt"
+DEFAULT_YOLO_SEG_MODEL = "yolov8m-seg.pt"
+DEFAULT_DETECTOR_IMAGE_SIZE = 1280
 YOLO_VEHICLE_CLASS_IDS = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+DEFAULT_TRANSFORMER_MIN_AREA_RATIO = 0.01
+DEFAULT_TRANSFORMER_MAX_AREA_RATIO = 0.80
+DEFAULT_TRANSFORMER_MIN_WIDTH = 50
+DEFAULT_TRANSFORMER_MIN_HEIGHT = 35
+DEFAULT_TRANSFORMER_MIN_ASPECT_RATIO = 1.0
+DEFAULT_TRANSFORMER_MAX_ASPECT_RATIO = 5.5
+DEFAULT_EDGE_MARGIN_RATIO = 0.04
+DEFAULT_EDGE_MIN_AREA_RATIO = 0.0025
+DEFAULT_EDGE_MIN_WIDTH = 20
+DEFAULT_EDGE_MIN_HEIGHT = 20
+DEFAULT_EDGE_MIN_ASPECT_RATIO = 0.25
+DEFAULT_EDGE_MAX_ASPECT_RATIO = 8.0
+DEFAULT_RTDETR_EDGE_CONF = 0.12
+DEFAULT_YOLO_EDGE_CONF = 0.18
+DEFAULT_MAX_DARK_PIXEL_RATIO = 0.85
+DEFAULT_MIN_MEAN_LUMA = 35.0
+DEFAULT_SEG_MIN_REFINED_AREA_RATIO = 0.20
+DEFAULT_DINO_MIN_AREA_RATIO = DEFAULT_TRANSFORMER_MIN_AREA_RATIO
+DEFAULT_DINO_MAX_AREA_RATIO = DEFAULT_TRANSFORMER_MAX_AREA_RATIO
+DEFAULT_DINO_MIN_WIDTH = DEFAULT_TRANSFORMER_MIN_WIDTH
+DEFAULT_DINO_MIN_HEIGHT = DEFAULT_TRANSFORMER_MIN_HEIGHT
+DEFAULT_DINO_MIN_ASPECT_RATIO = DEFAULT_TRANSFORMER_MIN_ASPECT_RATIO
+DEFAULT_DINO_MAX_ASPECT_RATIO = DEFAULT_TRANSFORMER_MAX_ASPECT_RATIO
 
 
 @dataclass
@@ -73,6 +97,14 @@ class VehicleBBoxDetector:
         vehicle_classes: Iterable[str] = DEFAULT_VEHICLE_CLASSES,
         text_threshold: float = 0.10,
         min_area: int = 100,
+        min_area_ratio: float = DEFAULT_DINO_MIN_AREA_RATIO,
+        max_area_ratio: float = DEFAULT_DINO_MAX_AREA_RATIO,
+        min_width: int = DEFAULT_DINO_MIN_WIDTH,
+        min_height: int = DEFAULT_DINO_MIN_HEIGHT,
+        min_aspect_ratio: float = DEFAULT_DINO_MIN_ASPECT_RATIO,
+        max_aspect_ratio: float = DEFAULT_DINO_MAX_ASPECT_RATIO,
+        max_dark_pixel_ratio: float = DEFAULT_MAX_DARK_PIXEL_RATIO,
+        min_mean_luma: float = DEFAULT_MIN_MEAN_LUMA,
         shrink_x: float = 0.0,
         shrink_left: float | None = None,
         shrink_right: float | None = None,
@@ -106,9 +138,18 @@ class VehicleBBoxDetector:
         self.model.to(self.device)
         self.model.eval()
         self.conf = conf
-        self.vehicle_classes = set(vehicle_classes)
+        self.vehicle_classes = tuple(dict.fromkeys(vehicle_classes))
+        self.vehicle_class_set = set(self.vehicle_classes)
         self.text_threshold = text_threshold
         self.min_area = min_area
+        self.min_area_ratio = min_area_ratio
+        self.max_area_ratio = max_area_ratio
+        self.min_width = min_width
+        self.min_height = min_height
+        self.min_aspect_ratio = min_aspect_ratio
+        self.max_aspect_ratio = max_aspect_ratio
+        self.max_dark_pixel_ratio = max_dark_pixel_ratio
+        self.min_mean_luma = min_mean_luma
         self.shrink_left = shrink_x if shrink_left is None else shrink_left
         self.shrink_right = shrink_x if shrink_right is None else shrink_right
         self.nms_iou = nms_iou
@@ -172,6 +213,70 @@ class VehicleBBoxDetector:
         x1, y1, x2, y2 = bbox
         return max(0, x2 - x1) * max(0, y2 - y1)
 
+    @staticmethod
+    def _box_width_height(bbox: tuple[int, int, int, int]) -> tuple[int, int]:
+        x1, y1, x2, y2 = bbox
+        return max(0, x2 - x1), max(0, y2 - y1)
+
+    @classmethod
+    def _box_area_ratio(
+        cls,
+        bbox: tuple[int, int, int, int],
+        frame_width: int,
+        frame_height: int,
+    ) -> float:
+        frame_area = max(1, frame_width * frame_height)
+        return cls._box_area(bbox) / frame_area
+
+    @classmethod
+    def _aspect_ratio(cls, bbox: tuple[int, int, int, int]) -> float:
+        box_width, box_height = cls._box_width_height(bbox)
+        return box_width / box_height if box_height > 0 else 0.0
+
+    @staticmethod
+    def _touches_frame_edge(
+        bbox: tuple[int, int, int, int],
+        frame_width: int,
+        frame_height: int,
+        margin_ratio: float = DEFAULT_EDGE_MARGIN_RATIO,
+    ) -> bool:
+        x1, y1, x2, y2 = bbox
+        margin_x = max(1, int(frame_width * margin_ratio))
+        margin_y = max(1, int(frame_height * margin_ratio))
+        return x1 <= margin_x or y1 <= margin_y or x2 >= frame_width - margin_x or y2 >= frame_height - margin_y
+
+    @staticmethod
+    def _is_mostly_black_region(
+        frame_bgr: np.ndarray,
+        bbox: tuple[int, int, int, int],
+        max_dark_pixel_ratio: float = DEFAULT_MAX_DARK_PIXEL_RATIO,
+        min_mean_luma: float = DEFAULT_MIN_MEAN_LUMA,
+    ) -> bool:
+        x1, y1, x2, y2 = bbox
+        roi = frame_bgr[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
+        if roi.size == 0:
+            return True
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        dark_ratio = float((gray <= 20).mean())
+        mean_luma = float(gray.mean())
+        return dark_ratio >= max_dark_pixel_ratio and mean_luma <= min_mean_luma
+
+    def _passes_dino_vehicle_shape_filter(
+        self,
+        bbox: tuple[int, int, int, int],
+        frame_width: int,
+        frame_height: int,
+    ) -> bool:
+        box_width, box_height = self._box_width_height(bbox)
+        if box_width < self.min_width or box_height < self.min_height:
+            return False
+        if self._box_area_ratio(bbox, frame_width, frame_height) < self.min_area_ratio:
+            return False
+        if self._box_area_ratio(bbox, frame_width, frame_height) > self.max_area_ratio:
+            return False
+        aspect_ratio = self._aspect_ratio(bbox)
+        return self.min_aspect_ratio <= aspect_ratio <= self.max_aspect_ratio
+
     @classmethod
     def _intersection_area(
         cls,
@@ -231,7 +336,7 @@ class VehicleBBoxDetector:
             normalized = normalized[2:]
         if normalized.startswith("an "):
             normalized = normalized[3:]
-        return normalized if normalized in self.vehicle_classes else None
+        return normalized if normalized in self.vehicle_class_set else None
 
     def detect_frame(self, frame_bgr: np.ndarray) -> list[VehicleDetection]:
         height, width = frame_bgr.shape[:2]
@@ -289,6 +394,15 @@ class VehicleBBoxDetector:
             bx1, by1, bx2, by2 = bbox
             if bx2 <= bx1 or by2 <= by1:
                 continue
+            if not self._passes_dino_vehicle_shape_filter(bbox, width, height):
+                continue
+            if self._is_mostly_black_region(
+                frame_bgr,
+                bbox,
+                self.max_dark_pixel_ratio,
+                self.min_mean_luma,
+            ):
+                continue
 
             detections.append(
                 VehicleDetection(
@@ -302,14 +416,187 @@ class VehicleBBoxDetector:
         return sorted(detections, key=lambda det: (det.bbox[0], det.bbox[1]))
 
 
+class RTDETRVehicleBBoxDetector:
+    """RT-DETR가 직접 예측한 차량 bbox를 프로젝트 포맷으로 변환한다."""
+
+    def __init__(
+        self,
+        model_path: str = DEFAULT_RTDETR_MODEL,
+        conf: float = 0.20,
+        min_area: int = 100,
+        min_area_ratio: float = DEFAULT_TRANSFORMER_MIN_AREA_RATIO,
+        max_area_ratio: float = DEFAULT_TRANSFORMER_MAX_AREA_RATIO,
+        min_width: int = DEFAULT_TRANSFORMER_MIN_WIDTH,
+        min_height: int = DEFAULT_TRANSFORMER_MIN_HEIGHT,
+        min_aspect_ratio: float = DEFAULT_TRANSFORMER_MIN_ASPECT_RATIO,
+        max_aspect_ratio: float = DEFAULT_TRANSFORMER_MAX_ASPECT_RATIO,
+        edge_conf: float = DEFAULT_RTDETR_EDGE_CONF,
+        edge_margin_ratio: float = DEFAULT_EDGE_MARGIN_RATIO,
+        edge_min_area_ratio: float = DEFAULT_EDGE_MIN_AREA_RATIO,
+        edge_min_width: int = DEFAULT_EDGE_MIN_WIDTH,
+        edge_min_height: int = DEFAULT_EDGE_MIN_HEIGHT,
+        edge_min_aspect_ratio: float = DEFAULT_EDGE_MIN_ASPECT_RATIO,
+        edge_max_aspect_ratio: float = DEFAULT_EDGE_MAX_ASPECT_RATIO,
+        max_dark_pixel_ratio: float = DEFAULT_MAX_DARK_PIXEL_RATIO,
+        min_mean_luma: float = DEFAULT_MIN_MEAN_LUMA,
+        nms_iou: float = 0.45,
+        contain_threshold: float = 0.85,
+        device: str = "auto",
+    ):
+        try:
+            from ultralytics import RTDETR
+        except ImportError as exc:  # pragma: no cover - runtime dependency 안내용
+            raise SystemExit(
+                "RT-DETR 실행 의존성이 설치되어 있지 않습니다. "
+                "다음 명령으로 설치하세요: pip install ultralytics"
+            ) from exc
+
+        self.model = RTDETR(model_path)
+        self.conf = conf
+        self.min_area = min_area
+        self.min_area_ratio = min_area_ratio
+        self.max_area_ratio = max_area_ratio
+        self.min_width = min_width
+        self.min_height = min_height
+        self.min_aspect_ratio = min_aspect_ratio
+        self.max_aspect_ratio = max_aspect_ratio
+        self.edge_conf = edge_conf
+        self.edge_margin_ratio = edge_margin_ratio
+        self.edge_min_area_ratio = edge_min_area_ratio
+        self.edge_min_width = edge_min_width
+        self.edge_min_height = edge_min_height
+        self.edge_min_aspect_ratio = edge_min_aspect_ratio
+        self.edge_max_aspect_ratio = edge_max_aspect_ratio
+        self.max_dark_pixel_ratio = max_dark_pixel_ratio
+        self.min_mean_luma = min_mean_luma
+        self.nms_iou = nms_iou
+        self.contain_threshold = contain_threshold
+        self.device = None if device == "auto" else device
+
+    def detect_frame(self, frame_bgr: np.ndarray) -> list[VehicleDetection]:
+        detections = self._detect_frame_with_conf(frame_bgr, self.conf, edge_only=False)
+        if self.edge_conf < self.conf:
+            detections.extend(self._detect_frame_with_conf(frame_bgr, self.edge_conf, edge_only=True))
+        return self._deduplicate_detections(detections)
+
+    def _detect_frame_with_conf(
+        self,
+        frame_bgr: np.ndarray,
+        conf: float,
+        edge_only: bool,
+    ) -> list[VehicleDetection]:
+        height, width = frame_bgr.shape[:2]
+        results = self.model.predict(
+            source=frame_bgr,
+            imgsz=DEFAULT_DETECTOR_IMAGE_SIZE,
+            conf=conf,
+            classes=sorted(YOLO_VEHICLE_CLASS_IDS),
+            device=self.device,
+            verbose=False,
+        )
+        detections: list[VehicleDetection] = []
+        if not results:
+            return detections
+
+        boxes = results[0].boxes
+        if boxes is None:
+            return detections
+
+        for box in boxes:
+            cls_id = int(box.cls.detach().cpu().item())
+            class_name = YOLO_VEHICLE_CLASS_IDS.get(cls_id)
+            if class_name is None:
+                continue
+            x1, y1, x2, y2 = box.xyxy[0].detach().cpu().tolist()
+            bbox = VehicleBBoxDetector._clip_box(x1, y1, x2, y2, width, height)
+            if VehicleBBoxDetector._box_area(bbox) < self.min_area:
+                continue
+            is_edge_candidate = VehicleBBoxDetector._touches_frame_edge(
+                bbox,
+                width,
+                height,
+                self.edge_margin_ratio,
+            )
+            if edge_only and not is_edge_candidate:
+                continue
+            if not self._passes_vehicle_shape_filter(bbox, width, height, is_edge_candidate):
+                continue
+            if VehicleBBoxDetector._is_mostly_black_region(
+                frame_bgr,
+                bbox,
+                self.max_dark_pixel_ratio,
+                self.min_mean_luma,
+            ):
+                continue
+            detections.append(
+                VehicleDetection(
+                    class_name=class_name,
+                    confidence=float(box.conf.detach().cpu().item()),
+                    bbox=bbox,
+                    source="rtdetr",
+                )
+            )
+
+        return detections
+
+    def _passes_vehicle_shape_filter(
+        self,
+        bbox: tuple[int, int, int, int],
+        frame_width: int,
+        frame_height: int,
+        is_edge_candidate: bool = False,
+    ) -> bool:
+        box_width, box_height = VehicleBBoxDetector._box_width_height(bbox)
+        min_width = self.edge_min_width if is_edge_candidate else self.min_width
+        min_height = self.edge_min_height if is_edge_candidate else self.min_height
+        min_area_ratio = self.edge_min_area_ratio if is_edge_candidate else self.min_area_ratio
+        min_aspect_ratio = self.edge_min_aspect_ratio if is_edge_candidate else self.min_aspect_ratio
+        max_aspect_ratio = self.edge_max_aspect_ratio if is_edge_candidate else self.max_aspect_ratio
+        if box_width < min_width or box_height < min_height:
+            return False
+        area_ratio = VehicleBBoxDetector._box_area_ratio(bbox, frame_width, frame_height)
+        if area_ratio < min_area_ratio:
+            return False
+        if area_ratio > self.max_area_ratio:
+            return False
+        aspect_ratio = VehicleBBoxDetector._aspect_ratio(bbox)
+        return min_aspect_ratio <= aspect_ratio <= max_aspect_ratio
+
+    def _deduplicate_detections(
+        self,
+        detections: list[VehicleDetection],
+    ) -> list[VehicleDetection]:
+        kept: list[VehicleDetection] = []
+        for det in sorted(detections, key=lambda item: item.confidence, reverse=True):
+            duplicate = False
+            for kept_det in kept:
+                iou = VehicleBBoxDetector._iou(det.bbox, kept_det.bbox)
+                contain = VehicleBBoxDetector._contained_ratio(det.bbox, kept_det.bbox)
+                if iou >= self.nms_iou or contain >= self.contain_threshold:
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append(det)
+        return sorted(kept, key=lambda det: (det.bbox[0], det.bbox[1]))
+
+
 class YoloFallbackVehicleBBoxDetector:
-    """DINO가 차량을 충분히 못 잡았을 때 보강용으로 쓰는 YOLO detector."""
+    """Transformer detector가 차량을 충분히 못 잡았을 때 보강용으로 쓰는 YOLO detector."""
 
     def __init__(
         self,
         model_path: str = DEFAULT_YOLO_MODEL,
         conf: float = 0.25,
         min_area: int = 100,
+        edge_conf: float = DEFAULT_YOLO_EDGE_CONF,
+        edge_margin_ratio: float = DEFAULT_EDGE_MARGIN_RATIO,
+        edge_min_area_ratio: float = DEFAULT_EDGE_MIN_AREA_RATIO,
+        edge_min_width: int = DEFAULT_EDGE_MIN_WIDTH,
+        edge_min_height: int = DEFAULT_EDGE_MIN_HEIGHT,
+        edge_min_aspect_ratio: float = DEFAULT_EDGE_MIN_ASPECT_RATIO,
+        edge_max_aspect_ratio: float = DEFAULT_EDGE_MAX_ASPECT_RATIO,
+        max_dark_pixel_ratio: float = DEFAULT_MAX_DARK_PIXEL_RATIO,
+        min_mean_luma: float = DEFAULT_MIN_MEAN_LUMA,
         nms_iou: float = 0.45,
         contain_threshold: float = 0.85,
     ):
@@ -324,14 +611,35 @@ class YoloFallbackVehicleBBoxDetector:
         self.model = YOLO(model_path)
         self.conf = conf
         self.min_area = min_area
+        self.edge_conf = edge_conf
+        self.edge_margin_ratio = edge_margin_ratio
+        self.edge_min_area_ratio = edge_min_area_ratio
+        self.edge_min_width = edge_min_width
+        self.edge_min_height = edge_min_height
+        self.edge_min_aspect_ratio = edge_min_aspect_ratio
+        self.edge_max_aspect_ratio = edge_max_aspect_ratio
+        self.max_dark_pixel_ratio = max_dark_pixel_ratio
+        self.min_mean_luma = min_mean_luma
         self.nms_iou = nms_iou
         self.contain_threshold = contain_threshold
 
     def detect_frame(self, frame_bgr: np.ndarray) -> list[VehicleDetection]:
+        detections = self._detect_frame_with_conf(frame_bgr, self.conf, edge_only=False)
+        if self.edge_conf < self.conf:
+            detections.extend(self._detect_frame_with_conf(frame_bgr, self.edge_conf, edge_only=True))
+        return self._deduplicate_detections(detections)
+
+    def _detect_frame_with_conf(
+        self,
+        frame_bgr: np.ndarray,
+        conf: float,
+        edge_only: bool,
+    ) -> list[VehicleDetection]:
         height, width = frame_bgr.shape[:2]
         results = self.model.predict(
             source=frame_bgr,
-            conf=self.conf,
+            imgsz=DEFAULT_DETECTOR_IMAGE_SIZE,
+            conf=conf,
             classes=sorted(YOLO_VEHICLE_CLASS_IDS),
             verbose=False,
         )
@@ -352,6 +660,23 @@ class YoloFallbackVehicleBBoxDetector:
             bbox = VehicleBBoxDetector._clip_box(x1, y1, x2, y2, width, height)
             if VehicleBBoxDetector._box_area(bbox) < self.min_area:
                 continue
+            is_edge_candidate = VehicleBBoxDetector._touches_frame_edge(
+                bbox,
+                width,
+                height,
+                self.edge_margin_ratio,
+            )
+            if edge_only and not is_edge_candidate:
+                continue
+            if not self._passes_edge_shape_filter(bbox, width, height, is_edge_candidate):
+                continue
+            if VehicleBBoxDetector._is_mostly_black_region(
+                frame_bgr,
+                bbox,
+                self.max_dark_pixel_ratio,
+                self.min_mean_luma,
+            ):
+                continue
             detections.append(
                 VehicleDetection(
                     class_name=class_name,
@@ -361,7 +686,27 @@ class YoloFallbackVehicleBBoxDetector:
                 )
             )
 
-        return self._deduplicate_detections(detections)
+        return detections
+
+    def _passes_edge_shape_filter(
+        self,
+        bbox: tuple[int, int, int, int],
+        frame_width: int,
+        frame_height: int,
+        is_edge_candidate: bool,
+    ) -> bool:
+        if not is_edge_candidate:
+            return True
+        box_width, box_height = VehicleBBoxDetector._box_width_height(bbox)
+        if box_width < self.edge_min_width or box_height < self.edge_min_height:
+            return False
+        area_ratio = VehicleBBoxDetector._box_area_ratio(bbox, frame_width, frame_height)
+        if area_ratio < self.edge_min_area_ratio:
+            return False
+        if area_ratio > DEFAULT_TRANSFORMER_MAX_AREA_RATIO:
+            return False
+        aspect_ratio = VehicleBBoxDetector._aspect_ratio(bbox)
+        return self.edge_min_aspect_ratio <= aspect_ratio <= self.edge_max_aspect_ratio
 
     def _deduplicate_detections(
         self,
@@ -379,6 +724,210 @@ class YoloFallbackVehicleBBoxDetector:
             if not duplicate:
                 kept.append(det)
         return sorted(kept, key=lambda det: (det.bbox[0], det.bbox[1]))
+
+
+class YoloSegBBoxRefiner:
+    """탐지 후보 bbox를 YOLOv8-seg mask 외곽 bbox로 타이트하게 보정한다."""
+
+    def __init__(
+        self,
+        model_path: str = DEFAULT_YOLO_SEG_MODEL,
+        conf: float = 0.25,
+        mask_threshold: float = 0.5,
+        min_area: int = 100,
+        min_area_ratio: float = DEFAULT_TRANSFORMER_MIN_AREA_RATIO,
+        max_area_ratio: float = DEFAULT_TRANSFORMER_MAX_AREA_RATIO,
+        min_width: int = DEFAULT_TRANSFORMER_MIN_WIDTH,
+        min_height: int = DEFAULT_TRANSFORMER_MIN_HEIGHT,
+        min_aspect_ratio: float = DEFAULT_TRANSFORMER_MIN_ASPECT_RATIO,
+        max_aspect_ratio: float = DEFAULT_TRANSFORMER_MAX_ASPECT_RATIO,
+        min_refined_area_ratio: float = DEFAULT_SEG_MIN_REFINED_AREA_RATIO,
+        match_iou: float = 0.20,
+        match_contain_threshold: float = 0.45,
+        max_dark_pixel_ratio: float = DEFAULT_MAX_DARK_PIXEL_RATIO,
+        min_mean_luma: float = DEFAULT_MIN_MEAN_LUMA,
+    ):
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:  # pragma: no cover - runtime dependency 안내용
+            raise SystemExit(
+                "YOLO segmentation 실행 의존성이 설치되어 있지 않습니다. "
+                "다음 명령으로 설치하세요: pip install ultralytics"
+            ) from exc
+
+        self.model = YOLO(model_path)
+        self.conf = conf
+        self.mask_threshold = mask_threshold
+        self.min_area = min_area
+        self.min_area_ratio = min_area_ratio
+        self.max_area_ratio = max_area_ratio
+        self.min_width = min_width
+        self.min_height = min_height
+        self.min_aspect_ratio = min_aspect_ratio
+        self.max_aspect_ratio = max_aspect_ratio
+        self.min_refined_area_ratio = min_refined_area_ratio
+        self.match_iou = match_iou
+        self.match_contain_threshold = match_contain_threshold
+        self.max_dark_pixel_ratio = max_dark_pixel_ratio
+        self.min_mean_luma = min_mean_luma
+
+    def refine_frame(
+        self,
+        frame_bgr: np.ndarray,
+        detections: list[VehicleDetection],
+    ) -> list[VehicleDetection]:
+        if not detections:
+            return detections
+
+        height, width = frame_bgr.shape[:2]
+        seg_detections = self._segment_vehicle_boxes(frame_bgr, width, height)
+        if not seg_detections:
+            return detections
+
+        refined: list[VehicleDetection] = []
+        used_seg_indexes: set[int] = set()
+        for det in detections:
+            best_idx = None
+            best_score = 0.0
+            for idx, seg_det in enumerate(seg_detections):
+                if idx in used_seg_indexes:
+                    continue
+                iou = VehicleBBoxDetector._iou(det.bbox, seg_det.bbox)
+                seg_inside_candidate = VehicleBBoxDetector._contained_ratio(seg_det.bbox, det.bbox)
+                candidate_inside_seg = VehicleBBoxDetector._contained_ratio(det.bbox, seg_det.bbox)
+                match_score = max(iou, seg_inside_candidate * 0.8, candidate_inside_seg * 0.8)
+                is_match = (
+                    iou >= self.match_iou
+                    or seg_inside_candidate >= self.match_contain_threshold
+                    or candidate_inside_seg >= self.match_contain_threshold
+                )
+                if is_match and match_score > best_score:
+                    best_idx = idx
+                    best_score = match_score
+
+            if best_idx is None:
+                refined.append(det)
+                continue
+
+            seg_det = seg_detections[best_idx]
+            candidate_area = max(1, VehicleBBoxDetector._box_area(det.bbox))
+            refined_area = VehicleBBoxDetector._box_area(seg_det.bbox)
+            if refined_area / candidate_area < self.min_refined_area_ratio:
+                refined.append(det)
+                continue
+
+            used_seg_indexes.add(best_idx)
+            source = f"{det.source}_seg" if det.source else "seg"
+            refined.append(
+                VehicleDetection(
+                    class_name=det.class_name,
+                    confidence=max(det.confidence, seg_det.confidence),
+                    bbox=seg_det.bbox,
+                    source=source,
+                )
+            )
+
+        return sorted(refined, key=lambda item: (item.bbox[0], item.bbox[1]))
+
+    def _segment_vehicle_boxes(
+        self,
+        frame_bgr: np.ndarray,
+        frame_width: int,
+        frame_height: int,
+    ) -> list[VehicleDetection]:
+        result = self.model.predict(
+            source=frame_bgr,
+            imgsz=DEFAULT_DETECTOR_IMAGE_SIZE,
+            conf=self.conf,
+            classes=sorted(YOLO_VEHICLE_CLASS_IDS),
+            verbose=False,
+        )[0]
+        if result.boxes is None:
+            return []
+
+        masks = result.masks.data.cpu().numpy() if result.masks is not None else None
+        detections: list[VehicleDetection] = []
+        for idx, box in enumerate(result.boxes):
+            class_id = int(box.cls.detach().cpu().item())
+            class_name = YOLO_VEHICLE_CLASS_IDS.get(class_id)
+            if class_name is None:
+                continue
+
+            x1, y1, x2, y2 = box.xyxy[0].detach().cpu().tolist()
+            bbox = VehicleBBoxDetector._clip_box(x1, y1, x2, y2, frame_width, frame_height)
+            if masks is not None and idx < len(masks):
+                mask_bbox = self._bbox_from_mask(masks[idx], frame_width, frame_height)
+                if mask_bbox is not None:
+                    bbox = mask_bbox
+
+            if VehicleBBoxDetector._box_area(bbox) < self.min_area:
+                continue
+            if not self._passes_vehicle_shape_filter(bbox, frame_width, frame_height):
+                continue
+            if VehicleBBoxDetector._is_mostly_black_region(
+                frame_bgr,
+                bbox,
+                self.max_dark_pixel_ratio,
+                self.min_mean_luma,
+            ):
+                continue
+            detections.append(
+                VehicleDetection(
+                    class_name=class_name,
+                    confidence=float(box.conf.detach().cpu().item()),
+                    bbox=bbox,
+                    source="seg",
+                )
+            )
+
+        return detections
+
+    def _passes_vehicle_shape_filter(
+        self,
+        bbox: tuple[int, int, int, int],
+        frame_width: int,
+        frame_height: int,
+    ) -> bool:
+        box_width, box_height = VehicleBBoxDetector._box_width_height(bbox)
+        if box_width < self.min_width or box_height < self.min_height:
+            return False
+        if VehicleBBoxDetector._box_area_ratio(bbox, frame_width, frame_height) < self.min_area_ratio:
+            return False
+        if VehicleBBoxDetector._box_area_ratio(bbox, frame_width, frame_height) > self.max_area_ratio:
+            return False
+        aspect_ratio = VehicleBBoxDetector._aspect_ratio(bbox)
+        return self.min_aspect_ratio <= aspect_ratio <= self.max_aspect_ratio
+
+    def _bbox_from_mask(
+        self,
+        mask: np.ndarray,
+        frame_width: int,
+        frame_height: int,
+    ) -> tuple[int, int, int, int] | None:
+        binary = (mask > self.mask_threshold).astype(np.uint8)
+        if binary.shape[:2] != (frame_height, frame_width):
+            binary = cv2.resize(
+                binary,
+                (frame_width, frame_height),
+                interpolation=cv2.INTER_NEAREST,
+            )
+
+        kernel = np.ones((3, 3), dtype=np.uint8)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+        contours, _ = cv2.findContours(
+            binary,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        if not contours:
+            return None
+
+        contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(contour) < self.min_area:
+            return None
+
+        x, y, w, h = cv2.boundingRect(contour)
+        return VehicleBBoxDetector._clip_box(x, y, x + w - 1, y + h - 1, frame_width, frame_height)
 
 
 def merge_dino_yolo_detections(
@@ -467,7 +1016,7 @@ def draw_detections(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Grounding DINO Transformer detector 기반 차량 bbox 자동 생성"
+        description="RT-DETR Transformer detector 기반 차량 bbox 자동 생성"
     )
     parser.add_argument("--source", required=True, help="입력 이미지 또는 영상 경로")
     parser.add_argument(
@@ -478,26 +1027,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-image", help="bbox 확인용 이미지 저장 경로")
     parser.add_argument(
         "--model",
-        default=DEFAULT_DINO_MODEL,
-        help="Hugging Face Grounding DINO 모델 ID 또는 로컬 모델 경로",
+        default=DEFAULT_RTDETR_MODEL,
+        help="RT-DETR 모델 파일 경로. 예: rtdetr-l.pt 또는 rtdetr-x.pt",
     )
-    parser.add_argument("--conf", type=float, default=0.12, help="DINO box threshold")
+    parser.add_argument("--conf", type=float, default=0.20, help="RT-DETR confidence threshold")
     parser.add_argument(
         "--text-threshold",
         type=float,
         default=0.10,
-        help="Grounding DINO text threshold",
+        help="Grounding DINO 사용 시 text threshold",
     )
     parser.add_argument(
         "--device",
         default="auto",
         choices=("auto", "cpu", "cuda", "mps"),
-        help="DINO 추론 디바이스",
+        help="Transformer 추론 디바이스",
     )
     parser.add_argument(
         "--local-files-only",
         action="store_true",
-        help="Hugging Face Hub에 접속하지 않고 로컬 캐시/로컬 모델 경로만 사용",
+        help="Grounding DINO 사용 시 Hugging Face Hub에 접속하지 않고 로컬 캐시/로컬 모델 경로만 사용",
     )
     parser.add_argument(
         "--frame-index",
@@ -513,6 +1062,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-id", type=int, default=0)
     parser.add_argument("--start-frame", type=int, default=0)
     parser.add_argument("--min-area", type=int, default=100)
+    parser.add_argument(
+        "--min-area-ratio",
+        type=float,
+        default=DEFAULT_DINO_MIN_AREA_RATIO,
+        help="Transformer bbox 최소 프레임 면적 비율. 너무 작은 부품 탐지를 제거함.",
+    )
+    parser.add_argument(
+        "--min-width",
+        type=int,
+        default=DEFAULT_DINO_MIN_WIDTH,
+        help="Transformer bbox 최소 너비(px).",
+    )
+    parser.add_argument(
+        "--min-height",
+        type=int,
+        default=DEFAULT_DINO_MIN_HEIGHT,
+        help="Transformer bbox 최소 높이(px).",
+    )
+    parser.add_argument(
+        "--min-aspect-ratio",
+        type=float,
+        default=DEFAULT_DINO_MIN_ASPECT_RATIO,
+        help="Transformer bbox 최소 가로/세로 비율.",
+    )
+    parser.add_argument(
+        "--max-aspect-ratio",
+        type=float,
+        default=DEFAULT_DINO_MAX_ASPECT_RATIO,
+        help="Transformer bbox 최대 가로/세로 비율.",
+    )
     parser.add_argument(
         "--shrink-x",
         type=float,
@@ -531,7 +1110,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--manual-bbox",
-        help="DINO 검출 대신 사용할 bbox. 형식: x1,y1,x2,y2",
+        help="Transformer 검출 대신 사용할 bbox. 형식: x1,y1,x2,y2",
     )
     parser.add_argument(
         "--nms-iou",
@@ -580,18 +1159,18 @@ def main() -> None:
         )
         detections = [VehicleDetection(class_name="car", confidence=1.0, bbox=bbox)]
     else:
-        detector = VehicleBBoxDetector(
+        detector = RTDETRVehicleBBoxDetector(
             model_path=args.model,
             conf=args.conf,
-            text_threshold=args.text_threshold,
             min_area=args.min_area,
-            shrink_x=args.shrink_x,
-            shrink_left=args.shrink_left,
-            shrink_right=args.shrink_right,
+            min_area_ratio=args.min_area_ratio,
+            min_width=args.min_width,
+            min_height=args.min_height,
+            min_aspect_ratio=args.min_aspect_ratio,
+            max_aspect_ratio=args.max_aspect_ratio,
             nms_iou=args.nms_iou,
             contain_threshold=args.contain_threshold,
             device=args.device,
-            local_files_only=args.local_files_only,
         )
         detections = detector.detect_frame(frame)
     save_training_txt(

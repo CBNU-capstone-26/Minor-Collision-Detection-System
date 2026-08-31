@@ -74,7 +74,11 @@ def _draw_state_label(frame, state):
 
 
 def _window_motion_score(frames, start, clip_length):
-    """224x224 crop 윈도우 안의 평균 프레임 변화량을 계산한다."""
+    """224x224 crop 윈도우 안의 순간 변화량을 robust하게 계산한다.
+
+    주차장 접촉 사고는 전체 윈도우 평균보다 짧은 충격성 변화가 중요하다.
+    따라서 전체 평균 대신 상위 변화량들의 평균을 사용해 순간 움직임을 덜 희석한다.
+    """
     end = min(len(frames), start + clip_length)
     if end - start < 2:
         return 0.0
@@ -85,7 +89,10 @@ def _window_motion_score(frames, start, clip_length):
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         diffs.append(float(cv2.absdiff(gray, prev_gray).mean()))
         prev_gray = gray
-    return float(np.mean(diffs)) if diffs else 0.0
+    if not diffs:
+        return 0.0
+    top_k = max(1, int(np.ceil(len(diffs) * 0.25)))
+    return float(np.mean(sorted(diffs, reverse=True)[:top_k]))
 
 
 def _event_representative_prob(probs):
@@ -145,12 +152,19 @@ def _build_accident_events(
 
 def _append_event_if_valid(events, event, fps, min_windows, min_duration_sec):
     duration_sec = max(0.0, (event["end_frame"] - event["start_frame"] + 1) / fps)
-    if event["window_count"] < min_windows:
+    crash_prob = _event_representative_prob(event["probs"])
+    is_strong_single_window = (
+        event["window_count"] == 1
+        and crash_prob is not None
+        and crash_prob >= getattr(config, "ACCIDENT_HIGH_PROB_THRESHOLD", 0.90)
+    )
+    if event["window_count"] < min_windows and not is_strong_single_window:
         return
     if duration_sec < min_duration_sec:
-        return
+        if not is_strong_single_window:
+            return
 
-    event["crash_prob"] = _event_representative_prob(event["probs"])
+    event["crash_prob"] = crash_prob
     event["motion_score"] = float(np.mean(event["motion_scores"])) if event["motion_scores"] else 0.0
     events.append(event)
 
@@ -430,6 +444,8 @@ def predict_events_and_clips(
     accident_max_gap_windows=config.ACCIDENT_MAX_GAP_WINDOWS,
     accident_min_duration_sec=config.ACCIDENT_MIN_DURATION_SEC,
     accident_motion_threshold=config.ACCIDENT_MOTION_THRESHOLD,
+    accident_high_prob_threshold=config.ACCIDENT_HIGH_PROB_THRESHOLD,
+    accident_high_prob_motion_threshold=config.ACCIDENT_HIGH_PROB_MOTION_THRESHOLD,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -537,16 +553,26 @@ def predict_events_and_clips(
                         window_idx,
                         clip_length,
                     )
-                    is_candidate = (
+                    is_motion_candidate = (
                         accident_prob >= accident_prob_threshold
                         and motion_score >= accident_motion_threshold
                     )
+                    is_high_prob_candidate = (
+                        accident_prob >= accident_high_prob_threshold
+                        and motion_score >= accident_high_prob_motion_threshold
+                    )
+                    is_candidate = is_motion_candidate or is_high_prob_candidate
                     window_records.append({
                         'window_idx': window_idx,
                         'frame_idx': frame_idx,
                         'accident_prob': accident_prob,
                         'motion_score': motion_score,
                         'is_candidate': is_candidate,
+                        'candidate_reason': (
+                            'prob_motion' if is_motion_candidate else
+                            'high_prob' if is_high_prob_candidate else
+                            None
+                        ),
                     })
 
                     if is_candidate:
@@ -576,12 +602,19 @@ def predict_events_and_clips(
             max_prob = max(record['accident_prob'] for record in window_records)
             max_motion = max(record['motion_score'] for record in window_records)
             candidate_count = sum(1 for record in window_records if record['is_candidate'])
+            high_prob_count = sum(
+                1 for record in window_records
+                if record.get('candidate_reason') == 'high_prob'
+            )
             print(
                 "[predict_events_and_clips] "
                 f"windows={len(window_records)}, candidates={candidate_count}, "
+                f"high_prob_candidates={high_prob_count}, "
                 f"max_accident_prob={max_prob:.3f}, max_motion={max_motion:.2f}, "
                 f"prob_threshold={accident_prob_threshold:.2f}, "
-                f"motion_threshold={accident_motion_threshold:.2f}"
+                f"motion_threshold={accident_motion_threshold:.2f}, "
+                f"high_prob_threshold={accident_high_prob_threshold:.2f}, "
+                f"high_prob_motion_threshold={accident_high_prob_motion_threshold:.2f}"
             )
 
         # ── 2패스: 이벤트 구간 프레임만 영상에서 다시 읽어 CAM 클립 렌더링 ──────

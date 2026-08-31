@@ -3104,6 +3104,12 @@ body.dark-mode .camera-bar-wrapper {
   color: #115e59;
 }
 
+.detector-mode-badge.mode-rtdetr {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1e40af;
+}
+
 .detector-mode-badge.mode-yolo_fallback {
   border-color: #ea580c;
   background: #ffedd5;
@@ -3332,11 +3338,17 @@ body.dark-mode .camera-bar-wrapper {
   box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.24);
 }
 
+.bbox-auto-outline.source-transformer {
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.08);
+  box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.22);
+}
+
 .bbox-auto-outline.hovered {
   opacity: 0;
 }
 
-/* Transformer DINO + YOLO 탐지 마우스 Hover 미리보기 박스 */
+/* RT-DETR + YOLO 탐지 마우스 Hover 미리보기 박스 */
 .bbox-hover-preview {
   position: absolute;
   border: 2.5px solid #10b981;
