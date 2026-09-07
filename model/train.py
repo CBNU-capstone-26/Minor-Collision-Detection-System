@@ -99,19 +99,57 @@ def train_model(
         data_dir=data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=False,
     )
-    n_total = len(train_dataset)
-    train_size = int(train_split_ratio * n_total)
-    # 재현 가능한 분할 (seed 고정)
-    perm = torch.randperm(
-        n_total, generator=torch.Generator().manual_seed(42)).tolist()
-    train_idx, val_idx = perm[:train_size], perm[train_size:]
-    train_subset = Subset(train_dataset, train_idx)
-    val_subset = Subset(val_dataset, val_idx)
+    # 계층적 분할(stratified): 그룹을 세분화해 각 그룹을 train_split_ratio(8:2)로 나눈다.
+    #   rc  : 방향(N/S/L/R) × 클래스(A/S) → 최대 8그룹 (각 방향·클래스가 train/val에 고루 분포)
+    #   real: 클래스(A/S)만 → 2그룹 (실제 영상엔 방향 개념이 없음)
+    #   → train은 모든 그룹의 학습분(80%)을 합쳐 학습, val은 rc용/real용을 분리해 각각 측정.
+    def _domain(mp4_path):
+        parts = os.path.normpath(mp4_path).split(os.sep)
+        return 'real' if 'realdata' in parts else 'rc'
+
+    def _direction(file_name):
+        # 파일명 예: 220510_LA_0001 → 두 번째 토큰의 첫 글자가 방향(N/L/R/S)
+        seg = file_name.split('_')
+        return seg[1][0] if len(seg) > 1 and seg[1] else '?'
+
+    def _scenario(file_name):
+        # 두 번째 토큰의 마지막 글자가 시나리오/클래스 코드
+        #   rc: A(충돌)/V(주차)/S(직진)/W(배회),  real: A(충돌)/S(비충돌)
+        seg = file_name.split('_')
+        return seg[1][-1] if len(seg) > 1 and seg[1] else '?'
+
+    # 층화 그룹: rc = 방향(N/L/R/S) × 시나리오(A/V/S/W) → 최대 16그룹,
+    #            real = 시나리오(A/S) → 2그룹. 각 그룹을 train_split_ratio(8:2)로 나눈다.
+    #   ※ 실제 학습 라벨은 그대로 txt 기반 이진값(A vs 비A) — 시나리오는 '분할 균형'에만 사용.
+    groups = {}  # (domain, direction, scenario) -> [sample_idx, ...]
+    for i, s in enumerate(train_dataset.samples):
+        dom = _domain(s['mp4_path'])
+        direction = _direction(s['file_name']) if dom == 'rc' else '-'
+        groups.setdefault((dom, direction, _scenario(s['file_name'])), []).append(i)
+
+    gen = torch.Generator().manual_seed(42)  # 재현 가능한 분할 (seed 고정)
+    train_idx, val_rc_idx, val_real_idx = [], [], []
+    for (dom, direction, scen), idxs in sorted(groups.items()):
+        shuffled = [idxs[i]
+                    for i in torch.randperm(len(idxs), generator=gen).tolist()]
+        cut = int(train_split_ratio * len(idxs))
+        train_idx += shuffled[:cut]
+        (val_real_idx if dom == 'real' else val_rc_idx).extend(shuffled[cut:])
+
+    print(f"[분할] train {len(train_idx)} / val_rc {len(val_rc_idx)} / val_real {len(val_real_idx)}")
+    print("  그룹별 개수: " + ", ".join(
+        f"{d}{'' if dr == '-' else '-' + dr}-{sc}:{len(v)}"
+        for (d, dr, sc), v in sorted(groups.items())))
 
     train_loader = _make_loader(
-        train_subset, batch_size=batch_size, shuffle=True, device=device)
-    val_loader = _make_loader(
-        val_subset, batch_size=batch_size, shuffle=False, device=device)
+        Subset(train_dataset, train_idx), batch_size=batch_size,
+        shuffle=True, device=device)
+    val_rc_loader = _make_loader(
+        Subset(val_dataset, val_rc_idx), batch_size=batch_size,
+        shuffle=False, device=device) if val_rc_idx else None
+    val_real_loader = _make_loader(
+        Subset(val_dataset, val_real_idx), batch_size=batch_size,
+        shuffle=False, device=device) if val_real_idx else None
 
     # 학습 시에는 Kinetics-400 사전학습 가중치로 초기화 (config.PRETRAINED)
     model = HitAndRun3DCNN(
@@ -182,34 +220,43 @@ def train_model(
 
         avg_train_loss = train_loss / len(train_loader.dataset)
 
-        model.eval()
-        val_loss = 0.0
-        correct = 0
-        with torch.inference_mode():
-            for inputs, labels in val_loader:
-                non_blocking = cuda_like
-                inputs = inputs.to(device, non_blocking=non_blocking)
-                labels = labels.to(device, non_blocking=non_blocking)
-                if channels_last_enabled:
-                    inputs = inputs.contiguous(
-                        memory_format=torch.channels_last_3d)
+        # rc용/real용 val을 각각 분리해서 성능 측정
+        def _evaluate(loader):
+            """val 로더 하나에 대해 (avg_loss, acc) 반환. 로더 없으면 (None, None)."""
+            if loader is None:
+                return None, None
+            model.eval()
+            vloss, correct = 0.0, 0
+            with torch.inference_mode():
+                for inputs, labels in loader:
+                    inputs = inputs.to(device, non_blocking=cuda_like)
+                    labels = labels.to(device, non_blocking=cuda_like)
+                    if channels_last_enabled:
+                        inputs = inputs.contiguous(
+                            memory_format=torch.channels_last_3d)
+                    outputs = model(inputs)
+                    vloss += criterion(outputs, labels).item() * inputs.size(0)
+                    correct += torch.sum(outputs.argmax(dim=1) == labels).item()
+            n = len(loader.dataset)
+            return vloss / n, correct / n
 
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item() * inputs.size(0)
-                preds = outputs.argmax(dim=1)
-                correct += torch.sum(preds == labels)
+        rc_loss, rc_acc = _evaluate(val_rc_loader)
+        real_loss, real_acc = _evaluate(val_real_loader)
 
-        avg_val_loss = val_loss / len(val_loader.dataset)
-        val_acc = correct.double() / len(val_loader.dataset)
-
-        # val loss 기준으로 LR 스케줄러 갱신 (정체 시 두 그룹 모두 비례 감소)
-        scheduler.step(avg_val_loss)
+        # 조기종료·스케줄러·best 저장 기준: 실제 영상 성능이 목표이므로 real val 우선.
+        # real val이 없으면(rc만 학습) rc val로 대체.
+        monitor_loss = real_loss if real_loss is not None else rc_loss
+        scheduler.step(monitor_loss)
         current_lr = optimizer.param_groups[-1]['lr']  # 헤드 LR 표시
 
-        print(f'Epoch [{epoch+1}/{num_epochs}] Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f} | LR: {current_lr:.2e}')
+        def _fmt(l, a):
+            return f'{l:.4f}/{a:.4f}' if l is not None else 'N/A'
+        print(f'Epoch [{epoch+1}/{num_epochs}] Train {avg_train_loss:.4f} | '
+              f'val_rc(L/Acc) {_fmt(rc_loss, rc_acc)} | '
+              f'val_real(L/Acc) {_fmt(real_loss, real_acc)} | LR {current_lr:.2e}')
 
-        early_stopping(avg_val_loss, model, epoch + 1)
+        # best 저장 기준은 real val (파일명 손실율도 real val 기준으로 기록됨)
+        early_stopping(monitor_loss, model, epoch + 1)
         if early_stopping.early_stop:
             print("조기 종료 조건 충족. 학습을 중단합니다.")
             break

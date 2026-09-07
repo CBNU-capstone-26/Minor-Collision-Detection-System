@@ -93,5 +93,6 @@ class AnalyzeResponse(BaseModel):
 class TaskStatusOut(BaseModel):
     task_id: int
     status: str
+    progress: Optional[int] = None   # 진행도 %(PROCESSING 중 추론 진행률, 없으면 None)
     error_message: Optional[str] = None
     events: list[EventOut] = []

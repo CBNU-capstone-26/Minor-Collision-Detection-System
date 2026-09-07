@@ -58,9 +58,19 @@ def get_task_status(
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.task_id == task.id).all()
+
+    # 처리 중이면 Celery 상태(Redis)에서 실제 추론 진행도(%)를 읽어온다.
+    progress = None
+    if task.status == "PROCESSING" and task.celery_task_id:
+        from app.worker import celery_app
+        res = celery_app.AsyncResult(task.celery_task_id)
+        if res.state == "PROGRESS" and isinstance(res.info, dict):
+            progress = res.info.get("percent")
+
     return api_schemas.TaskStatusOut(
         task_id=task.id,
         status=task.status,
+        progress=progress,
         error_message=task.error_message,
         events=[to_event_out(e) for e in events],
     )
@@ -89,4 +99,5 @@ def get_event_clip(event_id: int, db: Session = Depends(get_db)):
     path = settings.abs_path(event.cam_heatmap_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="클립 파일이 없습니다.")
-    return FileResponse(str(path), media_type="video/mp4")
+    media_type = "video/webm" if str(path).endswith(".webm") else "video/mp4"
+    return FileResponse(str(path), media_type=media_type)

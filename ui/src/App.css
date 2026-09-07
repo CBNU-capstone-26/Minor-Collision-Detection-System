@@ -1267,6 +1267,17 @@ button {
   position: relative;
 }
 
+/* 실제 <video>는 오버레이 div를 정확히 채우고, 콘텐츠는 비율 유지(contain)로
+   레터박스. bbox 좌표 계산(getVideoGeom)이 이 레터박스를 반영해 정렬한다. */
+.real-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 .video-state-label {
   color: rgba(255, 255, 255, 0.86);
   font-size: 13px;
@@ -3901,4 +3912,442 @@ body.dark-mode .analysis-job-name { color: #e2e8f0; }
 .analysis-status-idle { justify-content: center; min-width: 440px; min-height: 36px; }
 .analysis-idle-text { font-size: 15px; color: #94a3b8; font-weight: 600; white-space: nowrap; }
 body.dark-mode .analysis-idle-text { color: #64748b; }
+
+/* ===== 다중 파일 업로드 모달 및 동일 날짜 영상 선택 모달 ===== */
+.multi-upload-modal {
+  width: min(640px, 92vw) !important;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.upload-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.upload-modal-header h2 {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+}
+body.dark-mode .upload-modal-header h2 {
+  color: #f8fafc;
+}
+
+/* Dropzone (파일 미선택 시) */
+.upload-dropzone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 36px 20px;
+  text-align: center;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.upload-dropzone:hover,
+.upload-dropzone.drag-active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+body.dark-mode .upload-dropzone {
+  background: #1e293b;
+  border-color: #475569;
+}
+body.dark-mode .upload-dropzone:hover,
+body.dark-mode .upload-dropzone.drag-active {
+  background: #1e293b;
+  border-color: #60a5fa;
+}
+
+.dropzone-icon {
+  font-size: 38px;
+  margin-bottom: 10px;
+}
+.dropzone-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 4px 0;
+}
+body.dark-mode .dropzone-title {
+  color: #e2e8f0;
+}
+.dropzone-sub {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
+body.dark-mode .dropzone-sub {
+  color: #94a3b8;
+}
+
+/* File list container */
+.upload-file-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.upload-file-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+body.dark-mode .upload-file-list-toolbar {
+  border-bottom-color: #334155;
+}
+.file-count-badge {
+  font-size: 13.5px;
+  color: #475569;
+}
+body.dark-mode .file-count-badge {
+  color: #cbd5e1;
+}
+.file-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+.add-more-files-btn,
+.clear-all-files-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.add-more-files-btn {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+.add-more-files-btn:hover {
+  background: #dbeafe;
+}
+body.dark-mode .add-more-files-btn {
+  background: #1e3a8a;
+  color: #93c5fd;
+  border-color: #1e40af;
+}
+.clear-all-files-btn {
+  background: #fef2f2;
+  color: #ef4444;
+  border: 1px solid #fecaca;
+}
+.clear-all-files-btn:hover {
+  background: #fee2e2;
+}
+body.dark-mode .clear-all-files-btn {
+  background: #7f1d1d;
+  color: #fca5a5;
+  border-color: #991b1b;
+}
+
+/* Bulk date bar */
+.bulk-date-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #334155;
+}
+body.dark-mode .bulk-date-bar {
+  background: #0f172a;
+  color: #cbd5e1;
+}
+.bulk-date-bar input[type="date"] {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 12.5px;
+  color: #0f172a;
+}
+body.dark-mode .bulk-date-bar input[type="date"] {
+  background: #1e293b;
+  border-color: #475569;
+  color: #f8fafc;
+}
+.bulk-date-tip {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+/* File scroll list */
+.upload-file-scroll-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+.upload-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+body.dark-mode .upload-file-item {
+  background: #1e293b;
+  border-color: #334155;
+}
+.file-item-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.file-item-icon {
+  font-size: 18px;
+}
+.file-item-name-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.file-item-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.dark-mode .file-item-name {
+  color: #f8fafc;
+}
+.file-item-size {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.file-item-date-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #475569;
+}
+body.dark-mode .file-item-date-group {
+  color: #cbd5e1;
+}
+.file-item-date-group input[type="date"] {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 12px;
+  color: #0f172a;
+}
+body.dark-mode .file-item-date-group input[type="date"] {
+  background: #0f172a;
+  border-color: #475569;
+  color: #f8fafc;
+}
+.file-item-remove-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+.file-item-remove-btn:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+body.dark-mode .file-item-remove-btn:hover {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+/* Upload progress box in modal */
+.upload-progress-box {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+body.dark-mode .upload-progress-box {
+  background: #1e3a8a;
+  border-color: #1e40af;
+}
+.upload-progress-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1e40af;
+}
+body.dark-mode .upload-progress-info {
+  color: #93c5fd;
+}
+.upload-progress-filename {
+  font-size: 11.5px;
+  font-weight: 500;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Calendar Multi Video Badge */
+.calendar-multi-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #3b82f6;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 999px;
+  margin-top: 2px;
+  line-height: 1;
+}
+
+/* Date Videos Modal (동일 날짜 영상 선택 모달) */
+.date-videos-modal {
+  width: min(580px, 92vw);
+  max-height: 80vh;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+}
+body.dark-mode .date-videos-modal {
+  background: #1e293b;
+  border: 1px solid #334155;
+}
+.date-videos-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.date-videos-header h2 {
+  margin: 0 0 4px 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: #0f172a;
+}
+body.dark-mode .date-videos-header h2 {
+  color: #f8fafc;
+}
+.date-videos-scroll-list {
+  max-height: 440px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+.date-video-card-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.date-video-card-item:hover {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12);
+}
+body.dark-mode .date-video-card-item {
+  background: #0f172a;
+  border-color: #334155;
+}
+body.dark-mode .date-video-card-item:hover {
+  background: #1e3a8a;
+  border-color: #3b82f6;
+}
+
+.date-video-thumb-wrapper {
+  position: relative;
+  width: 90px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  flex-shrink: 0;
+}
+.date-video-thumb-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.date-video-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.date-video-card-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.dark-mode .date-video-card-info h3 {
+  color: #f8fafc;
+}
+.date-video-card-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+body.dark-mode .date-video-card-meta {
+  color: #94a3b8;
+}
+.date-video-play-btn {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  background: #111827;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.date-video-card-item:hover .date-video-play-btn {
+  background: #2563eb;
+}
+
 

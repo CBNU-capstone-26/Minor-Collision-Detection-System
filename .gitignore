@@ -19,15 +19,23 @@ dist-ssr/
 
 # Runtime uploads and generated media
 storage/
-Data/
-Predictions/
+data/
 data/train/*.mp4
+
+# 진단·디버그 산출물(탐지 결과 이미지 등)
+outputs/
 
 # Model weights (대용량 바이너리 — git에서 제외)
 weights/
 
+# YOLO / torch 체크포인트 (대용량 — 첫 실행 시 자동 다운로드)
+*.pt
+
 # Local notebooks and docs
 *.ipynb
+*.md
+# 팀원 온보딩 문서(README)는 저장소에 포함
+!README.md
 
 # Local editor and OS files
 .vscode/
@@ -35,8 +43,3 @@ weights/
 .DS_Store
 ._*
 *.local
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
