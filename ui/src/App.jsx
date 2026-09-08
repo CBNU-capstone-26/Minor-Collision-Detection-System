@@ -663,6 +663,8 @@ function Dashboard({ onLogout, view }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
   const playerContainerRef = useRef(null);
+  const detectAbortControllerRef = useRef(null);
+  const analyzeAbortControllerRef = useRef(null);
 
   // 바운딩박스 / 차량 지정 모드 상태 ("none" | "manual" | "auto")
   const [selectionMode, setSelectionMode] = useState("none");
@@ -964,6 +966,17 @@ function Dashboard({ onLogout, view }) {
     setHoveredDetectedBox(null);
   };
 
+  // YOLO 차량 탐지 취소
+  const handleCancelDetectVehicles = () => {
+    if (detectAbortControllerRef.current) {
+      detectAbortControllerRef.current.abort();
+      detectAbortControllerRef.current = null;
+    }
+    setIsDetectingVehicles(false);
+    setSelectionMode("none");
+    showToast("차량 탐지가 취소되었습니다.", "info");
+  };
+
   // YOLO 차량 탐지 실행 (영상 pause → 백엔드 탐지 → Hover 선택 활성화)
   const handleAutoDetectVehicles = async () => {
     if (!selectedVideo) return;
@@ -974,8 +987,12 @@ function Dashboard({ onLogout, view }) {
     setSelectionMode("auto");
     setIsDetectingVehicles(true);
     showToast("YOLO 모델로 차량을 탐지 중입니다...", "info");
+
+    const controller = new AbortController();
+    detectAbortControllerRef.current = controller;
+
     try {
-      const res = await api.detectVehicles(selectedVideo.id, currentTime);
+      const res = await api.detectVehicles(selectedVideo.id, currentTime, controller.signal);
       const list = res.detected_vehicles || [];
       setDetectedBoxes(list);
       setIsBBoxMode(true);
@@ -986,9 +1003,13 @@ function Dashboard({ onLogout, view }) {
         showToast(`${list.length}대의 차량이 탐지되었습니다! 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`, "success");
       }
     } catch (err) {
+      if (err.name === "AbortError") {
+        return;
+      }
       showToast(`차량 탐지 실패: ${err.message}`, "error");
     } finally {
       setIsDetectingVehicles(false);
+      detectAbortControllerRef.current = null;
     }
   };
 
@@ -1001,6 +1022,26 @@ function Dashboard({ onLogout, view }) {
       return;
     }
     setShowDetectConfirm(true);
+  };
+
+  // 사고감지 분석 작업 취소
+  const handleCancelAnalysis = async (taskId) => {
+    if (analyzeAbortControllerRef.current) {
+      analyzeAbortControllerRef.current.abort();
+      analyzeAbortControllerRef.current = null;
+    }
+    if (taskId) {
+      try {
+        await api.cancelTask(taskId);
+        removeJob(taskId);
+        showToast("사고 감지 분석 작업을 취소했습니다.", "info");
+        loadVideos();
+      } catch (e) {
+        showToast(`분석 취소 실패: ${e.message}`, "error");
+      }
+    } else {
+      showToast("분석 요청이 취소되었습니다.", "info");
+    }
   };
 
   // 분석 태스크 상태 폴링 (analyzedId = 분석을 시작한 영상 id)
@@ -1025,6 +1066,11 @@ function Dashboard({ onLogout, view }) {
         if (status.status === "FAILURE") {
           removeJob(taskId);
           showToast(`분석 실패: ${status.error_message || "오류"}`, "error");
+          return;
+        }
+        if (status.status === "CANCELLED") {
+          removeJob(taskId);
+          showToast("사고 감지 분석이 취소되었습니다.", "info");
           return;
         }
         // 백엔드가 실제 추론 진행도(%)를 주면 해당 job에 반영
@@ -1082,13 +1128,21 @@ function Dashboard({ onLogout, view }) {
       startedAt: Date.now(),
     };
 
+    const controller = new AbortController();
+    analyzeAbortControllerRef.current = controller;
+
     try {
-      const res = await api.analyze(analyzedId, bbox);
+      const res = await api.analyze(analyzedId, bbox, controller.signal);
       job.taskId = res.task_id;
       setAnalyzingJobs((prev) => [...prev, job]);
       pollTask(res.task_id, analyzedId);
     } catch (e) {
+      if (e.name === "AbortError") {
+        return;
+      }
       showToast(`분석 요청 실패: ${e.message}`, "error");
+    } finally {
+      analyzeAbortControllerRef.current = null;
     }
   };
 
@@ -1267,7 +1321,16 @@ function Dashboard({ onLogout, view }) {
                               <span className="analysis-job-name">
                                 {job.dateLabel} · {job.cameraLabel}
                               </span>
-                              <span className="analysis-job-pct">{Math.round(p.pct)}%</span>
+                              <div className="analysis-job-top-right">
+                                <span className="analysis-job-pct">{Math.round(p.pct)}%</span>
+                                <button
+                                  className="analysis-job-cancel-btn"
+                                  onClick={() => handleCancelAnalysis(job.taskId)}
+                                  title="분석 취소"
+                                >
+                                  🛑 취소
+                                </button>
+                              </div>
                             </div>
                             <div className="analysis-progress-track">
                               <div
@@ -1503,11 +1566,11 @@ function Dashboard({ onLogout, view }) {
             <div className="watch-header-actions">
             <button
               className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
-              disabled={isAnalyzing || isDetectingVehicles}
-              onClick={handleAutoDetectVehicles}
-              title="YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"
+              disabled={isAnalyzing}
+              onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
+              title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다" : "YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"}
             >
-              {isDetectingVehicles ? "차량 탐지 중..." : "🔍 탐지하기"}
+              {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
             </button>
 
             <button
@@ -1537,16 +1600,28 @@ function Dashboard({ onLogout, view }) {
 
 
 
-            {/* 사고감지 실행 버튼 + 확인 팝오버 */}
+            {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
             <div className="detect-btn-wrapper">
-              <button
-                className="detect-run-btn"
-                onClick={handleDetectClick}
-                disabled={isAnalyzing}
-                title="선택한 차량의 사고예상 구간 탐지"
-              >
-                {isAnalyzing ? "분석 중..." : "사고감지 실행"}
-              </button>
+              {isAnalyzing ? (
+                <button
+                  className="detect-run-btn analyzing-cancel-btn"
+                  onClick={() => {
+                    const currentJob = analyzingJobs.find((j) => j.videoId === selectedVideo?.id);
+                    handleCancelAnalysis(currentJob?.taskId);
+                  }}
+                  title="진행 중인 사고 감지 분석을 취소합니다"
+                >
+                  🛑 사고감지 취소
+                </button>
+              ) : (
+                <button
+                  className="detect-run-btn"
+                  onClick={handleDetectClick}
+                  title="선택한 차량의 사고예상 구간 탐지"
+                >
+                  사고감지 실행
+                </button>
+              )}
 
               {showDetectConfirm && (
                 <>

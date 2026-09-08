@@ -3895,6 +3895,53 @@ body.dark-mode .bbox-copy-btn {
   gap: 8px;
   font-size: 12px;
 }
+.analysis-job-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.analysis-job-cancel-btn {
+  background: #fef2f2;
+  color: #ef4444;
+  border: 1px solid #fecaca;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.analysis-job-cancel-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+body.dark-mode .analysis-job-cancel-btn {
+  background: #7f1d1d;
+  color: #fca5a5;
+  border-color: #991b1b;
+}
+.auto-detect-btn.detecting {
+  background: #fef2f2 !important;
+  color: #ef4444 !important;
+  border: 1px solid #fecaca !important;
+}
+.auto-detect-btn.detecting:hover {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+}
+body.dark-mode .auto-detect-btn.detecting {
+  background: #7f1d1d !important;
+  color: #fca5a5 !important;
+  border-color: #991b1b !important;
+}
+.analyzing-cancel-btn {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3) !important;
+}
+.analyzing-cancel-btn:hover {
+  background: #dc2626 !important;
+}
 .analysis-job-name { font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-job-pct { color: #2563eb; font-weight: 800; }
 .analysis-job-eta { font-size: 11px; color: #94a3b8; }
