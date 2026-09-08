@@ -676,6 +676,7 @@ function Dashboard({ onLogout, view }) {
   const [showJobsDropdown, setShowJobsDropdown] = useState(false);
   const [now, setNow] = useState(() => Date.now()); // 진행률 계산용 현재시각(0.5s마다 갱신)
   const selectedVideoIdRef = useRef(null); // 폴링 중 최신 선택 영상 추적(stale closure 방지)
+  const progressMaxRef = useRef({}); // 작업별 최대 진행률(진행바가 뒤로 가지 않게)
   const [clipEvent, setClipEvent] = useState(null); // CAM 클립 팝업 대상 이벤트
 
   // 업로드 모달
@@ -1143,22 +1144,28 @@ function Dashboard({ onLogout, view }) {
     return () => clearInterval(id);
   }, [analyzingJobs.length]);
 
-  // 작업별 진행률(%) / 남은 시간(초) 계산 (시간 기반 추정 — 완료 전까지 96%에서 대기)
+  // 작업별 진행률(%) / 남은 시간(초).
+  // 백엔드가 디코딩·선별·추론·렌더링 전 단계에서 '실제' 진행도를 보고하므로
+  // 가짜 시간기반 추정을 만들지 않는다. (예전엔 정적 공식으로 큰 예상시간을
+  // 띄우다가 실제 진행도가 도착하면 진행바가 뒤로 점프하는 문제가 있었다.)
   const jobProgress = (job) => {
+    const key = job.taskId ?? job.videoId;
     const elapsed = (now - job.startedAt) / 1000;
-    // 백엔드가 실제 추론 진행도(%)를 보고했으면 그걸 우선 사용
-    if (typeof job.progress === "number") {
-      const pct = Math.min(99, job.progress);
-      // 남은 시간: 현재까지 경과/진행률로 역산 (진행률 데이터 기반)
-      const remain = job.progress > 0
-        ? Math.max(0, Math.ceil((elapsed * (100 - job.progress)) / job.progress))
-        : Math.ceil(job.estimatedSec);
-      return { pct, remain };
-    }
-    // 폴백: 아직 진행도 보고 전(PENDING 등)이면 시간 기반 추정
-    const pct = Math.min(96, (elapsed / job.estimatedSec) * 100);
-    const remain = Math.max(0, Math.ceil(job.estimatedSec - elapsed));
-    return { pct, remain };
+    const hasReal = typeof job.progress === "number" && job.progress > 0;
+
+    // 실제 진행도가 오기 전 = 준비 중(불확정). 숫자 ETA를 지어내지 않는다.
+    let pct = hasReal ? Math.min(99, job.progress) : 0;
+    // 남은 시간은 '측정된 속도'로만 역산 → 2단계로 빨라져도 자동으로 맞춰짐
+    const remain = hasReal
+      ? Math.max(0, Math.ceil((elapsed * (100 - job.progress)) / job.progress))
+      : null;
+
+    // 진행바는 절대 뒤로 가지 않게 단조 증가로 고정
+    const prevMax = progressMaxRef.current[key] || 0;
+    pct = Math.max(prevMax, pct);
+    progressMaxRef.current[key] = pct;
+
+    return { pct, remain, preparing: !hasReal };
   };
 
   // 오버레이 div 안에서 실제 영상 콘텐츠가 차지하는 영역(object-fit:contain 레터박스)과
@@ -1208,7 +1215,7 @@ function Dashboard({ onLogout, view }) {
             </div>
           ) : (() => {
             const lead = analyzingJobs[0];
-            const { pct, remain } = jobProgress(lead);
+            const { pct, remain, preparing } = jobProgress(lead);
             return (
               <div className="analysis-status-box">
                 <div className="analysis-status-main">
@@ -1216,12 +1223,14 @@ function Dashboard({ onLogout, view }) {
                     <span className="analysis-status-label">
                       🔍 {lead.dateLabel} 분석 중
                     </span>
-                    <span className="analysis-status-eta">약 {remain}초 남음</span>
+                    <span className="analysis-status-eta">
+                      {preparing ? "분석 준비 중…" : `약 ${remain}초 남음`}
+                    </span>
                   </div>
                   <div className="analysis-progress-track">
                     <div
-                      className="analysis-progress-fill"
-                      style={{ width: `${pct}%` }}
+                      className={`analysis-progress-fill${preparing ? " is-indeterminate" : ""}`}
+                      style={preparing ? undefined : { width: `${pct}%` }}
                     />
                   </div>
                 </div>
@@ -1252,12 +1261,14 @@ function Dashboard({ onLogout, view }) {
                               <span className="analysis-job-name">
                                 {job.dateLabel} · {job.cameraLabel}
                               </span>
-                              <span className="analysis-job-pct">{Math.round(p.pct)}%</span>
+                              <span className="analysis-job-pct">
+                                {p.preparing ? "준비 중" : `${Math.round(p.pct)}%`}
+                              </span>
                             </div>
                             <div className="analysis-progress-track">
                               <div
-                                className="analysis-progress-fill"
-                                style={{ width: `${p.pct}%` }}
+                                className={`analysis-progress-fill${p.preparing ? " is-indeterminate" : ""}`}
+                                style={p.preparing ? undefined : { width: `${p.pct}%` }}
                               />
                             </div>
                             <span className="analysis-job-eta">약 {p.remain}초 남음</span>

@@ -61,6 +61,16 @@ PREDICT_INFER_BATCH_SIZE = 2 # batch size 2로 바꾸었음(배기원)
 PREDICT_WINDOW_STRIDE = 5  # CPU 추론 절충값 (윈도우 83% 중첩 → 정확도 거의 유지 + 속도↑). GPU면 1로 낮춰 정확도↑
 # ⚠️ 이 값을 바꾸면 ui/src/App.jsx 의 예상시간 공식(totalFrames/stride)도 같이 맞춰야 함
 
+# ---------- 2단계 파이프라인: 광학흐름 사전선별 ----------
+# 멀티-아워 영상 대비: 피해차 크롭 영역의 옵티컬 플로우로 '사고 의심 시점'만
+# 먼저 뽑고, 무거운 3D-CNN은 그 근처 윈도우에만 실행한다(고재현율 그물→CNN 확정).
+# 검증: 라벨된 충돌 5/5에서 플로우 피크가 충돌구간과 일치, 현저도 10~797x.
+PREDICT_USE_FLOW_PRESCREEN = True
+PREDICT_FLOW_THRESHOLD_FACTOR = 2.0   # τ=median+factor·std. 낮을수록 고재현율(후보↑)
+PREDICT_FLOW_PRESCREEN_PAD = CLIP_LENGTH  # 스파이크 주변 ±pad 프레임 윈도우까지 평가
+PREDICT_FLOW_SAMPLE_STEP = 2          # 선별 단계 플로우 계산 프레임 간격(속도)
+PREDICT_FLOW_MAX_SUSPICIOUS_RATIO = 0.8  # 의심 프레임이 이 비율 초과면 전체스캔 폴백
+
 # ---------- 실제영상 정확도 평가 전용 ----------
 EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260828_32ep_earlyY_0.3807.pth"
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"

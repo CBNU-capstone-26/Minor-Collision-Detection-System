@@ -18,6 +18,13 @@ _FFMPEG = shutil.which("ffmpeg")
 
 activation = {}
 
+# 진행도(0.0~1.0) 구간 배분 — 단계마다 '실제' 진행도를 보고해 UI가 가짜 추정을
+# 쓰지 않게 한다(가짜 추정 → 실제값 전환 시 진행바가 뒤로 점프하는 문제 방지).
+PROG_DECODE_END = 0.25    # 프레임 디코딩/크롭
+PROG_PRESCREEN_END = 0.30  # 광학흐름 사전선별
+PROG_INFER_END = 0.95     # S3D 윈도우 추론
+# 0.95~1.0 = 사고구간 CAM 클립 렌더링
+
 
 def _open_clip_writer(dest_stem, fps, size):
     """클립을 mp4v 임시본에 렌더할 VideoWriter를 연다. 반환: (writer, rendered_path).
@@ -379,6 +386,63 @@ def predict_hit_and_run_final(
             out_video.release()
 
 
+def _flow_prescreen_suspicious(
+    processed_frames,
+    clip_length,
+    threshold_factor=config.PREDICT_FLOW_THRESHOLD_FACTOR,
+    pad=config.PREDICT_FLOW_PRESCREEN_PAD,
+    sample_step=config.PREDICT_FLOW_SAMPLE_STEP,
+    max_ratio=config.PREDICT_FLOW_MAX_SUSPICIOUS_RATIO,
+):
+    """[2단계 1단계] 피해차 크롭(processed_frames, 224 RGB)에서 옵티컬 플로우
+    크기 시계열을 만들어 '사고 의심 프레임'의 불리언 배열을 반환한다.
+
+    - 이미 RAM에 있는 크롭 프레임을 쓰므로 추가 영상 디코딩이 없다.
+    - 크롭은 r=1이라 피해차가 대부분을 차지 → 크롭 전체 평균 플로우가 사실상
+      마스크 플로우. 접근/통과 차량이 크롭에 들어오면 스파이크 → 고재현율.
+    - 임계값 τ=median+factor·std(강건). τ 초과 지점을 ±pad로 팽창.
+    - 의심 비율이 max_ratio를 넘거나 계산 실패 시 '전체 True'로 폴백(정확도 우선).
+
+    Returns:
+        (suspicious, mag)
+        suspicious: np.bool_ 배열 (len == len(processed_frames))
+        mag: 프레임별 플로우 크기 시계열(np.float32) 또는 None(계산 실패)
+             — 이벤트별 '충격 시점'(피크) 산출에도 재사용한다.
+    """
+    n = len(processed_frames)
+    all_true = np.ones(n, dtype=bool)
+    if n < clip_length + 2:
+        return all_true, None  # 너무 짧으면 전체 스캔
+    try:
+        grays = [cv2.cvtColor(f, cv2.COLOR_RGB2GRAY) for f in processed_frames]
+        step = max(1, int(sample_step))
+        mag = np.zeros(n, dtype=np.float32)
+        prev_i = 0
+        for i in range(step, n, step):
+            flow = cv2.calcOpticalFlowFarneback(
+                grays[prev_i], grays[i], None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            m = float(np.sqrt(flow[..., 0]**2 + flow[..., 1]**2).mean())
+            mag[prev_i + 1:i + 1] = m  # 구간에 동일값 채움
+            prev_i = i
+        med = float(np.median(mag))
+        std = float(mag.std())
+        tau = med + threshold_factor * std
+        suspicious = mag > tau
+        if suspicious.any():
+            # ±pad 프레임 팽창(스파이크로 끝나는 윈도우까지 평가되도록)
+            idx = np.where(suspicious)[0]
+            dilated = np.zeros(n, dtype=bool)
+            for j in idx:
+                dilated[max(0, j - pad):min(n, j + pad + 1)] = True
+            suspicious = dilated
+        ratio = suspicious.mean()
+        if ratio == 0.0 or ratio > max_ratio:
+            return all_true, mag  # 후보 없음/과다 → 전체 스캔 폴백(mag은 유지)
+        return suspicious, mag
+    except Exception:
+        return all_true, None  # 어떤 이유로든 실패하면 안전하게 전체 스캔
+
+
 def predict_events_and_clips(
     model,
     video_path,
@@ -391,6 +455,7 @@ def predict_events_and_clips(
     window_stride=config.PREDICT_WINDOW_STRIDE,
     clip_pad_frames=15,
     progress_callback=None,
+    use_flow_prescreen=config.PREDICT_USE_FLOW_PRESCREEN,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -445,6 +510,12 @@ def predict_events_and_clips(
             first_frame, target_bbox, r_value, resize)
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
+        # 디코딩 단계도 실제 진행도로 보고한다(0~PROG_DECODE_END).
+        # 이게 없으면 긴 영상에서 '진행도 없음' 구간이 길어져 UI가 가짜 추정을
+        # 쓰게 되고, 이후 실제 진행도가 오면 진행바가 뒤로 점프한다.
+        total_frames_hint = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        _decoded = 0
+        _last_decode_report = -1
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -453,6 +524,13 @@ def predict_events_and_clips(
             processed, _ = _crop_square_and_pad(
                 frame_rgb, target_bbox, r_value, resize)
             processed_frames.append(processed)
+            _decoded += 1
+            if progress_callback is not None and total_frames_hint > 0:
+                frac = PROG_DECODE_END * min(1.0, _decoded / total_frames_hint)
+                step = int(frac * 100)
+                if step != _last_decode_report:   # 정수 %마다만 보고
+                    _last_decode_report = step
+                    progress_callback(frac)
         cap.release()
 
         if not processed_frames:
@@ -471,20 +549,45 @@ def predict_events_and_clips(
 
         # ── 추론: 윈도우별 예측 + 사고 프레임의 CAM 히트맵 캐싱 ──────────────
         events = []          # [{'start_frame','end_frame'}, ...]
-        prev_state = 0
-        event_start = None
-        # frame_idx → (heatmap_valid, prob) (사고로 예측된 프레임만)
+        # frame_idx → (heatmap_bbox, prob) (사고로 예측된 프레임만)
         accident_overlays = {}
+        # window_idx → pred_class (S3D를 실제로 실행한 윈도우만)
+        window_pred = {}
 
         num_windows = full_video_tensor.size(1) - (clip_length - 1)
         window_starts = list(range(0, max(0, num_windows), window_stride))
 
+        # [2단계 1단계] 광학흐름 사전선별: '사고 의심 프레임'으로 끝나는 윈도우만
+        # S3D로 평가한다. 나머지는 비사고(class 0)로 간주(선별기가 고재현율이므로
+        # 실제 충돌은 반드시 스파이크 근처에 있음). 멀티-아워 영상에서 S3D 호출을
+        # 대폭 줄인다. 선별 실패/과다 시 helper가 '전체 True'를 돌려 전체스캔 폴백.
+        # 플로우 시계열은 '충격 시점(피크)' 산출에도 쓰므로 항상 계산한다(224 크롭이라 저렴).
+        suspicious, flow_mag = _flow_prescreen_suspicious(
+            processed_frames, clip_length)
+        if not use_flow_prescreen:
+            suspicious = np.ones(len(processed_frames), dtype=bool)
+        n_frames_susp = len(suspicious)
+        eval_window_starts = [
+            w for w in window_starts
+            if suspicious[min(w + clip_length - 1, n_frames_susp - 1)]]
+        if not eval_window_starts:
+            eval_window_starts = window_starts  # 방어적: 하나도 없으면 전체
+        print(f"[2단계] 사전선별: 전체 {len(window_starts)} 윈도우 → "
+              f"S3D 평가 {len(eval_window_starts)}개 "
+              f"({100.0 * len(eval_window_starts) / max(1, len(window_starts)):.0f}%)")
+        if progress_callback is not None:
+            progress_callback(PROG_PRESCREEN_END)
+
+        # Phase A: 선별된 윈도우에만 S3D 실행 (예측/확률/CAM 저장)
         with torch.inference_mode():
-            for batch_start in range(0, len(window_starts), infer_batch_size):
-                # 실제 추론 진행도 보고 (처리한 윈도우 비율, 0.0~1.0)
+            for batch_start in range(0, len(eval_window_starts), infer_batch_size):
+                # 실제 추론 진행도 보고 (사전선별 종료~추론 종료 구간에 매핑)
                 if progress_callback is not None:
-                    progress_callback(batch_start / max(1, len(window_starts)))
-                batch_window_starts = window_starts[
+                    frac = batch_start / max(1, len(eval_window_starts))
+                    progress_callback(
+                        PROG_PRESCREEN_END
+                        + (PROG_INFER_END - PROG_PRESCREEN_END) * frac)
+                batch_window_starts = eval_window_starts[
                     batch_start:batch_start + infer_batch_size]
                 clips = torch.stack(
                     [full_video_tensor[:, i:i + clip_length, :, :]
@@ -502,16 +605,7 @@ def predict_events_and_clips(
                     frame_idx = window_idx + clip_length - 1
                     pred_class = int(pred_classes[offset].item())
                     prob = probs[offset, pred_class].item()
-
-                    # 이벤트 상태 전환 감지 (S→A 시작 / A→S 종료)
-                    if prev_state == 0 and pred_class == 1:
-                        event_start = window_idx
-                    elif prev_state == 1 and pred_class == 0:
-                        if event_start is not None:
-                            events.append({'start_frame': event_start,
-                                           'end_frame': frame_idx - 1})
-                            event_start = None
-                    prev_state = pred_class
+                    window_pred[window_idx] = pred_class
 
                     if pred_class == 1:
                         feat_map = feat_maps[offset]
@@ -530,6 +624,22 @@ def predict_events_and_clips(
                         ]
                         accident_overlays[frame_idx] = (heatmap_bbox, prob)
 
+        # Phase B: 전체 윈도우 순서대로 상태머신(S→A→S)으로 이벤트 구간 확정.
+        # 평가 안 한 윈도우는 비사고(0)로 간주한다.
+        prev_state = 0
+        event_start = None
+        for window_idx in window_starts:
+            frame_idx = window_idx + clip_length - 1
+            pred_class = window_pred.get(window_idx, 0)
+            if prev_state == 0 and pred_class == 1:
+                event_start = window_idx
+            elif prev_state == 1 and pred_class == 0:
+                if event_start is not None:
+                    events.append({'start_frame': event_start,
+                                   'end_frame': frame_idx - 1})
+                    event_start = None
+            prev_state = pred_class
+
         # 영상 끝까지 A 상태가 유지된 경우 이벤트 닫기
         if prev_state == 1 and event_start is not None:
             events.append({'start_frame': event_start,
@@ -542,6 +652,10 @@ def predict_events_and_clips(
         render_cap = cv2.VideoCapture(video_path) if events else None
         try:
             for ev_idx, ev in enumerate(events, 1):
+                if progress_callback is not None:
+                    progress_callback(
+                        PROG_INFER_END
+                        + (1.0 - PROG_INFER_END) * ((ev_idx - 1) / len(events)))
                 start_f = ev['start_frame']
                 end_f = ev['end_frame']
                 clip_start = max(0, start_f - clip_pad_frames)
@@ -585,11 +699,27 @@ def predict_events_and_clips(
                 # 브라우저 호환 최종본(H.264/mp4)으로 변환
                 clip_path = _finalize_clip(rendered_path, clip_stem)
 
+                # ── 사고 '시점' 확정: 이벤트 구간 내 플로우 최대점(=충격 순간) ──
+                # 모델은 '윈도우 마지막 프레임=충돌 종료'로 학습돼 윈도우 시작
+                # (start_f = F-29)은 체계적으로 이르다. 라벨 검증 결과 플로우
+                # 피크가 충돌구간에 5/5 적중(라벨 시작 +3~4프레임)해 가장 정확했다.
+                # (naive 상승엣지는 '접근 차량' 모션을 먼저 잡아 최대 -56프레임
+                #  빗나가 채택하지 않음)
+                impact_f = start_f
+                if flow_mag is not None and end_f >= start_f:
+                    seg = flow_mag[start_f:min(end_f + 1, len(flow_mag))]
+                    if seg.size:
+                        impact_f = start_f + int(np.argmax(seg))
+
                 results.append({
-                    'start_frame': start_f,
+                    # start_* = 사고 발생(충격) 시점 — UI 타임라인/DB 기록용
+                    'start_frame': impact_f,
+                    'start_sec': impact_f / fps,
                     'end_frame': end_f,
-                    'start_sec': start_f / fps,
                     'end_sec': end_f / fps,
+                    # 참고용: 모델이 A로 판정한 구간 전체(클립 렌더 범위 기준)
+                    'event_start_frame': start_f,
+                    'event_end_frame': end_f,
                     'crash_prob': crash_prob,
                     'clip_path': clip_path,
                 })

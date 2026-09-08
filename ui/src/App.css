@@ -3847,6 +3847,18 @@ body.dark-mode .bbox-copy-btn {
   transition: width 0.5s linear;
 }
 
+/* 실제 진행도가 오기 전(준비 중): 가짜 %를 그리지 않고 불확정 애니메이션 표시 */
+.analysis-progress-fill.is-indeterminate {
+  width: 35%;
+  transition: none;
+  animation: analysis-progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes analysis-progress-indeterminate {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
 .analysis-jobs-toggle {
   flex-shrink: 0;
   padding: 6px 10px;
