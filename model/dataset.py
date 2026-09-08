@@ -191,6 +191,14 @@ class HitAndRunDataset(Dataset):
             hw, hh = int(bw * s / 2), int(bh * s / 2)
             bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
 
+        # r 증강(학습 전용): 클립마다 r을 하나 뽑아 '모든 프레임에 동일 적용'한다.
+        # 검증/추론은 항상 self.r_value(=1.0) → 서비스 추론 조건과 일치.
+        r = self.r_value
+        if (self.augment
+                and getattr(config, 'TRAIN_R_AUGMENT_VALUES', ())
+                and random.random() < getattr(config, 'TRAIN_R_AUGMENT_PROB', 0.0)):
+            r = random.choice(config.TRAIN_R_AUGMENT_VALUES)
+
         cap = cv2.VideoCapture(sample['mp4_path'])
         frames = []
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_f)
@@ -200,8 +208,7 @@ class HitAndRunDataset(Dataset):
             if not ret:
                 break
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append(self._crop_and_pad(
-                frame, bbox, self.r_value))
+            frames.append(self._crop_and_pad(frame, bbox, r))
         cap.release()
 
         while len(frames) < self.clip_length:
