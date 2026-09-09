@@ -121,22 +121,36 @@ def train_model(
     # 층화 그룹: rc = 방향(N/L/R/S) × 시나리오(A/V/S/W) → 최대 16그룹,
     #            real = 시나리오(A/S) → 2그룹. 각 그룹을 train_split_ratio(8:2)로 나눈다.
     #   ※ 실제 학습 라벨은 그대로 txt 기반 이진값(A vs 비A) — 시나리오는 '분할 균형'에만 사용.
-    groups = {}  # (domain, direction, scenario) -> [sample_idx, ...]
+    # ⚠️ 분할은 반드시 '영상 단위'로 한다. 비충돌 영상은 한 영상에서 여러 클립이
+    #    나오는데(S 슬라이싱), 그 클립들이 train과 val로 갈리면 같은 장면을 이미
+    #    학습한 상태로 검증하게 되어 검증 점수가 부풀려진다(데이터 누수).
+    groups = {}  # (domain, direction, scenario) -> {video_key: [sample_idx, ...]}
     for i, s in enumerate(train_dataset.samples):
         dom = _domain(s['mp4_path'])
         direction = _direction(s['file_name']) if dom == 'rc' else '-'
-        groups.setdefault((dom, direction, _scenario(s['file_name'])), []).append(i)
+        key = (dom, direction, _scenario(s['file_name']))
+        vkey = s.get('video_key', s['mp4_path'])
+        groups.setdefault(key, {}).setdefault(vkey, []).append(i)
 
     gen = torch.Generator().manual_seed(42)  # 재현 가능한 분할 (seed 고정)
     train_idx, val_rc_idx, val_real_idx = [], [], []
-    for (dom, direction, scen), idxs in sorted(groups.items()):
-        shuffled = [idxs[i]
-                    for i in torch.randperm(len(idxs), generator=gen).tolist()]
-        cut = int(train_split_ratio * len(idxs))
-        train_idx += shuffled[:cut]
-        (val_real_idx if dom == 'real' else val_rc_idx).extend(shuffled[cut:])
+    n_train_vid = n_val_vid = 0
+    for (dom, direction, scen), vid_map in sorted(groups.items()):
+        vkeys = sorted(vid_map)                      # 영상 목록(그룹 내)
+        order = torch.randperm(len(vkeys), generator=gen).tolist()
+        shuffled = [vkeys[i] for i in order]
+        cut = int(train_split_ratio * len(vkeys))
+        for vk in shuffled[:cut]:                    # 영상 통째로 train
+            train_idx += vid_map[vk]
+        for vk in shuffled[cut:]:                    # 영상 통째로 val
+            (val_real_idx if dom == 'real' else val_rc_idx).extend(vid_map[vk])
+        n_train_vid += cut
+        n_val_vid += len(vkeys) - cut
 
-    print(f"[분할] train {len(train_idx)} / val_rc {len(val_rc_idx)} / val_real {len(val_real_idx)}")
+    print(f"[분할] 영상 {n_train_vid + n_val_vid}개 → train {n_train_vid} / "
+          f"val {n_val_vid} (영상 단위, 누수 없음)")
+    print(f"[분할] 클립 train {len(train_idx)} / val_rc {len(val_rc_idx)} / "
+          f"val_real {len(val_real_idx)}")
     print("  그룹별 개수: " + ", ".join(
         f"{d}{'' if dr == '-' else '-' + dr}-{sc}:{len(v)}"
         for (d, dr, sc), v in sorted(groups.items())))
@@ -164,7 +178,15 @@ def train_model(
     if channels_last_enabled:
         model = model.to(memory_format=torch.channels_last_3d)
 
-    criterion = nn.CrossEntropyLoss()
+    # S 슬라이싱으로 A:S 불균형이 커지면 모델이 S로 치우칠 수 있어, 필요 시
+    # config.TRAIN_CLASS_WEIGHTS로 가중치를 준다(기본 None = 기존과 동일).
+    _cw = getattr(config, 'TRAIN_CLASS_WEIGHTS', None)
+    if _cw:
+        criterion = nn.CrossEntropyLoss(
+            weight=torch.tensor(_cw, dtype=torch.float32, device=device))
+        print(f"[손실] 클래스 가중치 적용: {tuple(_cw)}")
+    else:
+        criterion = nn.CrossEntropyLoss()
     # 미세조정 표준 관행: 사전학습된 백본(features)은 낮은 LR(×0.1)로 보수적으로,
     # 새로 초기화된 분류 헤드(head_conv)는 기본 LR로 학습한다.
     optimizer = optim.Adam([

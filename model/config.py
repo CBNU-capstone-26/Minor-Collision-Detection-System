@@ -36,6 +36,24 @@ R_VALUE = 1.0
 # 비활성화하려면 TRAIN_R_AUGMENT_PROB = 0.0. ※ 다음 학습부터 적용됨
 TRAIN_R_AUGMENT_PROB = 0.4            # 이 확률로만 r을 바꾸고, 나머지 60%는 r=1.0
 TRAIN_R_AUGMENT_VALUES = (1.5, 2.0, 2.33, 3.0)
+
+# ---------- 비충돌(S) 클립 슬라이싱 ----------
+# 기존 구현은 S 영상당 '맨 앞 30프레임' 1개만 학습에 넣었다(start_f=0 고정).
+# 그러면 모델이 배우는 '비충돌'이 사실상 "아직 차가 안 들어온 빈 장면"이 되어,
+# "차가 지나가지만 부딪히지는 않는" 장면을 학습하지 못한다 → 오탐의 직접 원인.
+# 논문은 이 문제를 명시하고 비충돌 영상을 통째로 잘라 전부 학습에 넣었다:
+#   "the appearance of a slowly moving vehicle and a vehicle slightly displaced
+#    due to a collision are quite similar. To reduce the false alarm rate ...
+#    we divided the non-collision videos into frames of a specific length"
+# ※ 학습 데이터가 크게 늘고 A:S 불균형도 커진다. 끄려면 False.
+TRAIN_S_SLICE_ENABLED = True
+TRAIN_S_SLICE_STRIDE = CLIP_LENGTH    # 30 = 겹치지 않게 연속 분할(논문 방식)
+TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 때 상한용
+
+# 클래스 가중치(CrossEntropyLoss weight). S 슬라이싱으로 A:S 불균형이 커지면
+# 모델이 S로 치우쳐 '미검출'이 늘 수 있다. (없음=None, 예: (1.0, 3.0) → A 3배)
+# ※ 검증 없이 켜지 말 것 — 값에 따라 오탐이 급증할 수 있다.
+TRAIN_CLASS_WEIGHTS = None
 TARGET_ID = 0
 USE_AMP = True
 USE_CHANNELS_LAST = True

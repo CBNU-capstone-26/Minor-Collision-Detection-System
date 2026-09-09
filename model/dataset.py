@@ -64,14 +64,43 @@ class HitAndRunDataset(Dataset):
                 target_id, [0, 0, self.resize[0], self.resize[1]])
             label = 1 if class_str == 'A' else 0
 
-            samples.append({
-                'file_name': file_name,
-                'mp4_path': mp4_path,
-                'label': label,
-                'start_f': start_f,
-                'bbox': target_bbox,
-            })
+            def _add(sf):
+                samples.append({
+                    'file_name': file_name,
+                    'video_key': mp4_path,   # 분할을 '영상 단위'로 묶기 위한 키
+                    'mp4_path': mp4_path,
+                    'label': label,
+                    'start_f': sf,
+                    'bbox': target_bbox,
+                })
+
+            if label == 1 or not getattr(config, 'TRAIN_S_SLICE_ENABLED', False):
+                # 충돌(A)은 논문과 동일하게 영상당 1클립(충돌 시점 기준)
+                _add(start_f)
+            else:
+                # 비충돌(S)은 영상 전체를 클립 길이 단위로 잘라 전부 학습에 넣는다.
+                # (기존엔 맨 앞 30프레임 1개뿐이라 '차가 지나가지만 충돌 아님'을
+                #  학습하지 못했고, 이것이 오탐의 직접 원인이었다 — config 주석 참고)
+                total = self._frame_count(mp4_path)
+                stride = max(1, int(getattr(config, 'TRAIN_S_SLICE_STRIDE',
+                                            self.clip_length)))
+                cap_n = int(getattr(config, 'TRAIN_S_MAX_CLIPS_PER_VIDEO', 0))
+                starts = list(range(0, max(1, total - self.clip_length + 1), stride))
+                if not starts:
+                    starts = [0]
+                if cap_n > 0:
+                    starts = starts[:cap_n]
+                for sf in starts:
+                    _add(sf)
         return samples
+
+    @staticmethod
+    def _frame_count(mp4_path):
+        """영상 총 프레임 수(메타데이터만 읽어 빠름). 실패 시 0."""
+        cap = cv2.VideoCapture(mp4_path)
+        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        cap.release()
+        return n
 
     def _parse_annotation(self, txt_path):
         bboxes = {}
