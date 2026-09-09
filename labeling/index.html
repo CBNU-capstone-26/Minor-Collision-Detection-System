@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>물피도주 라벨 확인 도구</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         background:#0f1115; color:#e6e8eb; display:flex; height:100vh; }
+  /* 좌측 영상 목록 */
+  #side { width:330px; flex:0 0 330px; border-right:1px solid #262a33;
+          overflow:auto; background:#141821; }
+  #side h2 { margin:0; padding:12px 14px; font-size:14px; color:#9aa4b2;
+             border-bottom:1px solid #262a33; position:sticky; top:0; background:#141821; }
+  #filters { padding:10px 14px; border-bottom:1px solid #262a33; background:#141821;
+             position:sticky; top:41px; z-index:2; }
+  #filters input[type=search], #filters select {
+    width:100%; background:#0f1319; color:#e6e8eb; border:1px solid #333c4a;
+    border-radius:6px; padding:6px; font-size:13px; }
+  #filters .frow { display:flex; gap:6px; margin-top:6px; }
+  #filters .frow select { flex:1; }
+  #filters .frow button { flex:0 0 auto; font-size:12px; padding:5px 8px; }
+  /* 폴더 헤더(접기/펴기) */
+  .grp { padding:9px 14px; color:#c3cad6; font-size:12px; cursor:pointer;
+         background:#171c26; border-top:1px solid #262a33;
+         display:flex; align-items:center; gap:8px; user-select:none; }
+  .grp:hover { background:#1b2029; }
+  .grp .arrow { transition:transform .15s; }
+  .grp.collapsed .arrow { transform:rotate(-90deg); }
+  .grp .cnt { margin-left:auto; color:#6b7280; }
+  .grp .prog { color:#60a5fa; }
+  .vid { padding:8px 14px; cursor:pointer; border-left:3px solid transparent; }
+  .vid:hover { background:#1b2029; }
+  .vid.sel { background:#1e2a3d; border-left-color:#3b82f6; }
+  .vid .n { font-weight:600; }
+  .vid .m { color:#8b95a5; font-size:12px; }
+  .badgeA { color:#f87171; font-weight:700; }
+  .badgeS { color:#34d399; font-weight:700; }
+  .warn { color:#fbbf24; }
+  /* 우측 본문 */
+  #main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #bar { padding:10px 16px; border-bottom:1px solid #262a33; background:#141821; }
+  #stage { flex:1; display:flex; align-items:center; justify-content:center;
+           overflow:auto; background:#0a0c10; padding:10px; }
+  #stage img { max-width:100%; max-height:100%; border-radius:6px; }
+  #ctrl { padding:12px 16px; border-top:1px solid #262a33; background:#141821; }
+  .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  button { background:#232a36; color:#e6e8eb; border:1px solid #333c4a;
+           border-radius:6px; padding:6px 10px; cursor:pointer; font-size:13px; }
+  button:hover { background:#2c3543; }
+  button.primary { background:#2563eb; border-color:#2563eb; }
+  button.primary:hover { background:#1d4ed8; }
+  input[type=number] { width:100px; background:#0f1319; color:#e6e8eb;
+                       border:1px solid #333c4a; border-radius:6px; padding:6px; }
+  input[type=range] { flex:1; min-width:200px; }
+  .k { color:#8b95a5; }
+  .big { font-size:20px; font-weight:700; }
+  .inrange { color:#f87171; font-weight:700; }
+  #msg { margin-left:auto; color:#34d399; }
+  code { background:#1b2029; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h2>영상 목록</h2>
+  <div id="filters">
+    <input id="q" type="search" placeholder="파일명 검색…" oninput="renderList()">
+    <div class="frow">
+      <select id="fcls" onchange="renderList()">
+        <option value="">전체</option>
+        <option value="A">A라벨 있음(충돌)</option>
+        <option value="none">A라벨 없음(=S)</option>
+        <option value="over30">A구간 30f 초과</option>
+        <option value="nobox">bbox 없음</option>
+      </select>
+      <button onclick="toggleAll(true)">전체 접기</button>
+      <button onclick="toggleAll(false)">전체 펴기</button>
+    </div>
+  </div>
+  <div id="list"></div>
+</div>
+
+<div id="main">
+  <div id="bar">
+    <div class="row">
+      <span class="big" id="title">영상을 선택하세요</span>
+      <span class="k" id="meta"></span>
+    </div>
+  </div>
+
+  <div id="stage"><img id="frame" alt=""></div>
+
+  <div id="ctrl">
+    <!-- 프레임 이동 -->
+    <div class="row" style="margin-bottom:10px">
+      <button onclick="step(-100)">◀◀ 100</button>
+      <button onclick="step(-30)">◀ 30</button>
+      <button onclick="step(-5)">◀ 5</button>
+      <button onclick="step(-1)">◀ 1</button>
+      <input type="range" id="slider" min="0" max="0" value="0">
+      <button onclick="step(1)">1 ▶</button>
+      <button onclick="step(5)">5 ▶</button>
+      <button onclick="step(30)">30 ▶</button>
+      <button onclick="step(100)">100 ▶▶</button>
+    </div>
+
+    <!-- 현재 프레임 정보 -->
+    <div class="row" style="margin-bottom:10px">
+      <span class="k">프레임</span>
+      <input type="number" id="idx" value="0" onchange="goTo(+this.value)">
+      <span class="k">/ <span id="total">0</span></span>
+      <span class="k">시각</span> <span id="time" class="big">0.00s</span>
+      <span id="rangeState"></span>
+      <label style="margin-left:12px"><input type="checkbox" id="showBox" checked
+        onchange="render()"> bbox 표시</label>
+    </div>
+
+    <!-- 라벨 편집 -->
+    <div class="row">
+      <span class="k">클래스</span>
+      <select id="cls" style="background:#0f1319;color:#e6e8eb;border:1px solid #333c4a;border-radius:6px;padding:6px">
+        <option value="">S (비충돌 — A라인 없음)</option>
+        <option value="A">A (충돌)</option>
+      </select>
+      <span class="k">기준차량 id</span>
+      <input type="number" id="tid" value="0" style="width:70px">
+      <span class="k">충돌 시작</span><input type="number" id="sf">
+      <button onclick="setFrom('sf')">← 현재 프레임</button>
+      <span class="k">충돌 끝</span><input type="number" id="ef">
+      <button onclick="setFrom('ef')">← 현재 프레임</button>
+      <button class="primary" onclick="save()">저장</button>
+      <span id="msg"></span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <span class="k">단축키: <code>←</code>/<code>→</code> ±1 ·
+        <code>Shift+←/→</code> ±10 · <code>,</code>/<code>.</code> ±30 ·
+        <code>[</code> 시작으로 · <code>]</code> 끝으로 · <code>S</code> 저장</span>
+    </div>
+  </div>
+</div>
+
+<script>
+let videos = [], cur = null, idx = 0, lab = null;
+
+const collapsed = {};          // 폴더별 접힘 상태(세션 유지)
+
+async function boot() {
+  const r = await fetch('/api/videos'); const d = await r.json();
+  videos = d.videos;
+  renderList();
+}
+
+function toggleGrp(dir) { collapsed[dir] = !collapsed[dir]; renderList(); }
+function toggleAll(state) {
+  new Set(videos.map(v => v.dir)).forEach(d => collapsed[d] = state);
+  renderList();
+}
+
+// 필터(검색어·클래스)를 적용해 폴더별로 그려준다. 접힘 상태는 유지.
+function renderList() {
+  const q = (document.getElementById('q').value || '').toLowerCase();
+  const fc = document.getElementById('fcls').value;
+  const el = document.getElementById('list'); el.innerHTML = '';
+
+  const dirs = [...new Set(videos.map(v => v.dir))];
+  for (const dir of dirs) {
+    const all = videos.filter(v => v.dir === dir);
+    const shown = all.filter(v => {
+      if (q && !v.name.toLowerCase().includes(q)) return false;
+      if (fc === 'A' && v.cls !== 'A') return false;
+      if (fc === 'none' && v.cls) return false;
+      // 학습 클립(30프레임)을 넘는 A구간 = 정리 대상
+      if (fc === 'over30' && !(v.span != null && v.span > 30)) return false;
+      if (fc === 'nobox' && v.n_boxes) return false;
+      return true;
+    });
+    if (!shown.length) continue;
+    // 폴더별 A라벨 진행률 — eval처럼 라벨을 새로 다는 폴더에서 진척도 확인용
+    const nA = all.filter(v => v.cls === 'A').length;
+    const isCol = !!collapsed[dir];
+    el.insertAdjacentHTML('beforeend',
+      `<div class="grp ${isCol ? 'collapsed' : ''}" onclick="toggleGrp('${dir}')">
+         <span class="arrow">▼</span><span>${dir}</span>
+         <span class="cnt"><span class="prog">A ${nA}</span> / ${all.length}${
+           shown.length !== all.length ? ` · 표시 ${shown.length}` : ''}</span>
+       </div>`);
+    if (isCol) continue;
+    shown.forEach(v => {
+      // 클래스 배지: A라인이 있으면 A, 없으면 규약상 S
+      const cls = v.cls === 'A' ? `<span class="badgeA">A</span>`
+                                : `<span class="badgeS">S</span>`;
+      // bbox 라벨과 A 라벨은 별개다 — 둘을 구분해서 표기(예전엔 A가 없으면
+      // bbox가 있어도 '라벨 없음'으로 보여 오해를 샀다)
+      const boxInfo = v.n_boxes
+        ? `bbox ${v.n_boxes}` : `<span class="warn">bbox 없음</span>`;
+      const aInfo = v.cls === 'A'
+        ? `A ${v.start_f}~${v.end_f}` +
+          (v.span == null ? '' :
+            ` (${v.span}f${v.span > 30 ? ' <span class="warn">30f초과</span>' : ''})`)
+        : `<span class="k">A라벨 없음</span>`;
+      el.insertAdjacentHTML('beforeend',
+        `<div class="vid ${cur && cur.rel === v.rel ? 'sel' : ''}"
+              data-rel="${v.rel}" onclick="pick('${v.rel}')">
+           <div class="n">${cls} ${v.name}</div>
+           <div class="m">${v.fps}fps · ${v.total}f · ${v.width}×${v.height}</div>
+           <div class="m">${boxInfo} · ${aInfo}</div>
+         </div>`);
+    });
+  }
+}
+
+async function pick(rel) {
+  cur = videos.find(v => v.rel === rel);
+  document.querySelectorAll('.vid').forEach(n =>
+    n.classList.toggle('sel', n.dataset.rel === rel));
+  document.getElementById('title').textContent = cur.name;
+  document.getElementById('meta').textContent =
+    `${cur.dir} · ${cur.fps}fps · ${cur.total}프레임 · ${cur.width}×${cur.height}`;
+  document.getElementById('total').textContent = cur.total - 1;
+  document.getElementById('slider').max = Math.max(0, cur.total - 1);
+
+  lab = await (await fetch('/api/label?video=' + encodeURIComponent(rel))).json();
+  document.getElementById('cls').value = lab.cls || '';
+  document.getElementById('tid').value = lab.target_id ?? 0;
+  document.getElementById('sf').value = lab.start_f ?? '';
+  document.getElementById('ef').value = lab.end_f ?? '';
+  // 라벨 시작 지점으로 바로 이동(없으면 0)
+  goTo(lab.start_f ?? 0);
+}
+
+function goTo(n) {
+  if (!cur) return;
+  idx = Math.max(0, Math.min(cur.total - 1, Math.round(n || 0)));
+  render();
+}
+function step(d) { goTo(idx + d); }
+
+// 숫자·시간·구간표시만 즉시 갱신(이미지 요청 없음) — 드래그 중에도 반응이 즉각적
+function updateInfo() {
+  document.getElementById('idx').value = idx;
+  document.getElementById('slider').value = idx;
+  document.getElementById('time').textContent =
+    (cur.fps ? (idx / cur.fps).toFixed(2) : '?') + 's';
+  const s = parseInt(document.getElementById('sf').value);
+  const e = parseInt(document.getElementById('ef').value);
+  const st = document.getElementById('rangeState');
+  st.innerHTML = (!isNaN(s) && !isNaN(e) && idx >= s && idx <= e)
+    ? `<span class="inrange">● 라벨 구간 안 (${s}~${e})</span>`
+    : (!isNaN(s) ? `<span class="k">라벨 구간 ${s}~${isNaN(e) ? '?' : e}</span>` : '');
+}
+
+// preview=true면 폭 720으로 줄여 받아 드래그가 가볍다. 놓으면 원본 화질로 다시 받음.
+function loadFrame(preview) {
+  const box = document.getElementById('showBox').checked ? 1 : 0;
+  const w = preview ? '&w=720' : '';
+  document.getElementById('frame').src =
+    `/api/frame?video=${encodeURIComponent(cur.rel)}&idx=${idx}&box=${box}${w}`;
+}
+
+function render() { if (!cur) return; updateInfo(); loadFrame(false); }
+
+// ── 슬라이더 스크러빙: 드래그 중엔 저해상도 + 쓰로틀, 놓으면 원본 ──
+(function initSlider() {
+  const sl = document.getElementById('slider');
+  let timer = null, pending = false;
+  sl.addEventListener('input', e => {
+    if (!cur) return;
+    idx = Math.max(0, Math.min(cur.total - 1, +e.target.value));
+    updateInfo();                 // 프레임 번호는 즉시 반영
+    if (timer) { pending = true; return; }   // 요청 폭주 방지
+    loadFrame(true);
+    timer = setTimeout(function tick() {
+      timer = null;
+      if (pending) { pending = false; loadFrame(true); timer = setTimeout(tick, 70); }
+    }, 70);
+  });
+  sl.addEventListener('change', () => {      // 마우스를 놓은 시점
+    if (!cur) return;
+    if (timer) { clearTimeout(timer); timer = null; pending = false; }
+    loadFrame(false);             // 원본 화질로 마무리
+  });
+})();
+
+function setFrom(which) { document.getElementById(which).value = idx; render(); }
+
+async function save() {
+  if (!cur) return;
+  const body = {
+    video: cur.rel,
+    boxes: Object.fromEntries(Object.entries(lab.boxes || {})),
+    cls: document.getElementById('cls').value || null,
+    target_id: +document.getElementById('tid').value || 0,
+    start_f: document.getElementById('sf').value === '' ? null : +document.getElementById('sf').value,
+    end_f: document.getElementById('ef').value === '' ? null : +document.getElementById('ef').value,
+  };
+  const r = await fetch('/api/label', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const d = await r.json();
+  const m = document.getElementById('msg');
+  m.textContent = d.ok ? '저장됨 (원본은 .txt.bak 백업)' : '저장 실패';
+  setTimeout(() => m.textContent = '', 3000);
+  // 목록 항목만 제자리 갱신 — 접힘/필터 상태를 잃지 않는다
+  cur.cls = body.cls === 'A' ? 'A' : null;
+  cur.start_f = body.start_f; cur.end_f = body.end_f;
+  cur.span = (cur.cls !== 'A' || body.start_f == null || body.end_f == null)
+             ? null : body.end_f - body.start_f;
+  renderList();
+}
+
+document.addEventListener('keydown', e => {
+  if (['INPUT', 'SELECT'].includes(e.target.tagName)) return;
+  if (e.key === 'ArrowLeft') { step(e.shiftKey ? -10 : -1); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') { step(e.shiftKey ? 10 : 1); e.preventDefault(); }
+  else if (e.key === ',') step(-30);
+  else if (e.key === '.') step(30);
+  else if (e.key === '[') setFrom('sf');
+  else if (e.key === ']') setFrom('ef');
+  else if (e.key === 's' || e.key === 'S') save();
+});
+
+boot();
+</script>
+</body>
+</html>
