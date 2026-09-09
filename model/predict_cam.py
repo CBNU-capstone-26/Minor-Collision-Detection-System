@@ -389,6 +389,7 @@ def predict_hit_and_run_final(
 def _flow_prescreen_suspicious(
     processed_frames,
     clip_length,
+    roi=None,
     threshold_factor=config.PREDICT_FLOW_THRESHOLD_FACTOR,
     pad=config.PREDICT_FLOW_PRESCREEN_PAD,
     sample_step=config.PREDICT_FLOW_SAMPLE_STEP,
@@ -403,26 +404,45 @@ def _flow_prescreen_suspicious(
     - 임계값 τ=median+factor·std(강건). τ 초과 지점을 ±pad로 팽창.
     - 의심 비율이 max_ratio를 넘거나 계산 실패 시 '전체 True'로 폴백(정확도 우선).
 
+    Args:
+        roi: (x1,y1,x2,y2) — 224 크롭 좌표계에서의 '피해차 bbox' 영역.
+            주면 이 영역만의 플로우 시계열(mag_roi)을 함께 만든다.
+
     Returns:
-        (suspicious, mag)
-        suspicious: np.bool_ 배열 (len == len(processed_frames))
-        mag: 프레임별 플로우 크기 시계열(np.float32) 또는 None(계산 실패)
-             — 이벤트별 '충격 시점'(피크) 산출에도 재사용한다.
+        (suspicious, mag_crop, mag_roi)
+        suspicious: np.bool_ 배열 (len == len(processed_frames)) — 사전선별용
+        mag_crop  : 크롭 전체 평균 플로우 시계열 (사전선별 판단에 사용)
+        mag_roi   : 피해차 bbox 영역만의 플로우 시계열 (충격 '시점' 판정에 사용)
+                    roi가 없거나 계산 실패 시 None
+
+    ⚠️ 두 시계열을 분리하는 이유(실측 근거):
+       크롭은 정사각형이라 차량 위아래에 여백이 생기고, **가해차량이 그 여백을
+       통과할 때의 모션이 피해차의 미세 흔들림을 압도**한다. 크롭 전체 argmax로
+       충격 시점을 잡으면 접촉이 아니라 '가해차량 진입'을 가리킨다
+       (실차 CCTV 실측: bbox 한정 피크와 -52 / +105 프레임까지 어긋남).
+       → 선별은 넓게(고재현율), 시점 판정은 좁게(bbox 한정).
     """
     n = len(processed_frames)
     all_true = np.ones(n, dtype=bool)
     if n < clip_length + 2:
-        return all_true, None  # 너무 짧으면 전체 스캔
+        return all_true, None, None  # 너무 짧으면 전체 스캔
     try:
         grays = [cv2.cvtColor(f, cv2.COLOR_RGB2GRAY) for f in processed_frames]
         step = max(1, int(sample_step))
         mag = np.zeros(n, dtype=np.float32)
+        mag_roi = np.zeros(n, dtype=np.float32) if roi is not None else None
+        if roi is not None:
+            rx1, ry1, rx2, ry2 = roi
         prev_i = 0
         for i in range(step, n, step):
             flow = cv2.calcOpticalFlowFarneback(
                 grays[prev_i], grays[i], None, 0.5, 3, 15, 3, 5, 1.2, 0)
-            m = float(np.sqrt(flow[..., 0]**2 + flow[..., 1]**2).mean())
+            fmag = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
+            m = float(fmag.mean())
             mag[prev_i + 1:i + 1] = m  # 구간에 동일값 채움
+            if mag_roi is not None:
+                sub = fmag[ry1:ry2, rx1:rx2]
+                mag_roi[prev_i + 1:i + 1] = float(sub.mean()) if sub.size else m
             prev_i = i
         med = float(np.median(mag))
         std = float(mag.std())
@@ -437,10 +457,10 @@ def _flow_prescreen_suspicious(
             suspicious = dilated
         ratio = suspicious.mean()
         if ratio == 0.0 or ratio > max_ratio:
-            return all_true, mag  # 후보 없음/과다 → 전체 스캔 폴백(mag은 유지)
-        return suspicious, mag
+            return all_true, mag, mag_roi  # 후보 없음/과다 → 전체 스캔 폴백
+        return suspicious, mag, mag_roi
     except Exception:
-        return all_true, None  # 어떤 이유로든 실패하면 안전하게 전체 스캔
+        return all_true, None, None  # 실패하면 안전하게 전체 스캔
 
 
 def predict_events_and_clips(
@@ -561,9 +581,20 @@ def predict_events_and_clips(
         # S3D로 평가한다. 나머지는 비사고(class 0)로 간주(선별기가 고재현율이므로
         # 실제 충돌은 반드시 스파이크 근처에 있음). 멀티-아워 영상에서 S3D 호출을
         # 대폭 줄인다. 선별 실패/과다 시 helper가 '전체 True'를 돌려 전체스캔 폴백.
+        # 피해차 bbox를 224 크롭 좌표계로 환산 → 충격 '시점' 판정 전용 ROI.
+        # (정사각 크롭 여백을 지나는 가해차량 모션에 시점이 끌려가지 않게 한다)
+        _cw = max(1, rx2 - rx1)
+        _ch = max(1, ry2 - ry1)
+        _sx, _sy = resize[0] / _cw, resize[1] / _ch
+        _roi = (
+            max(0, min(resize[0] - 1, int((bx1 - rx1) * _sx))),
+            max(0, min(resize[1] - 1, int((by1 - ry1) * _sy))),
+            max(1, min(resize[0], int((bx2 - rx1) * _sx))),
+            max(1, min(resize[1], int((by2 - ry1) * _sy))),
+        )
         # 플로우 시계열은 '충격 시점(피크)' 산출에도 쓰므로 항상 계산한다(224 크롭이라 저렴).
-        suspicious, flow_mag = _flow_prescreen_suspicious(
-            processed_frames, clip_length)
+        suspicious, flow_mag, flow_mag_roi = _flow_prescreen_suspicious(
+            processed_frames, clip_length, roi=_roi)
         if not use_flow_prescreen:
             suspicious = np.ones(len(processed_frames), dtype=bool)
         n_frames_susp = len(suspicious)
@@ -645,6 +676,26 @@ def predict_events_and_clips(
             events.append({'start_frame': event_start,
                            'end_frame': real_frame_count - 1})
 
+        # ── 이벤트 후처리: 병합 → 길이필터 (한 충돌이 여러 개로 쪼개지는 것 방지) ──
+        # 순서가 중요하다: 먼저 병합해야 '한 충돌의 조각들'이 하나로 합쳐져 길이를
+        # 회복하고, 그 뒤 남은 고립된 단발 깜빡임만 길이필터로 제거된다.
+        _n_raw = len(events)
+        if events:
+            events.sort(key=lambda e: e['start_frame'])
+            merged = [events[0]]
+            for ev in events[1:]:
+                gap = ev['start_frame'] - merged[-1]['end_frame']
+                if gap <= config.PREDICT_EVENT_MERGE_GAP_FRAMES:
+                    merged[-1]['end_frame'] = max(
+                        merged[-1]['end_frame'], ev['end_frame'])
+                else:
+                    merged.append(ev)
+            events = [e for e in merged
+                      if (e['end_frame'] - e['start_frame'])
+                      >= config.PREDICT_MIN_EVENT_SPAN_FRAMES]
+        if _n_raw != len(events):
+            print(f"[이벤트 후처리] {_n_raw}개 → 병합·길이필터 후 {len(events)}개")
+
         # ── 2패스: 이벤트 구간 프레임만 영상에서 다시 읽어 CAM 클립 렌더링 ──────
         # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
         results = []
@@ -705,9 +756,13 @@ def predict_events_and_clips(
                 # 피크가 충돌구간에 5/5 적중(라벨 시작 +3~4프레임)해 가장 정확했다.
                 # (naive 상승엣지는 '접근 차량' 모션을 먼저 잡아 최대 -56프레임
                 #  빗나가 채택하지 않음)
+                # 시점 판정은 '피해차 bbox 한정' 플로우로 한다(없으면 크롭 전체로 폴백)
+                _mag_for_impact = (flow_mag_roi if flow_mag_roi is not None
+                                   else flow_mag)
                 impact_f = start_f
-                if flow_mag is not None and end_f >= start_f:
-                    seg = flow_mag[start_f:min(end_f + 1, len(flow_mag))]
+                if _mag_for_impact is not None and end_f >= start_f:
+                    seg = _mag_for_impact[
+                        start_f:min(end_f + 1, len(_mag_for_impact))]
                     if seg.size:
                         impact_f = start_f + int(np.argmax(seg))
 

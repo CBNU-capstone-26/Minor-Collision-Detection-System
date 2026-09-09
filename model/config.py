@@ -82,6 +82,16 @@ PREDICT_FLOW_PRESCREEN_PAD = CLIP_LENGTH  # 스파이크 주변 ±pad 프레임 
 PREDICT_FLOW_SAMPLE_STEP = 2          # 선별 단계 플로우 계산 프레임 간격(속도)
 PREDICT_FLOW_MAX_SUSPICIOUS_RATIO = 0.8  # 의심 프레임이 이 비율 초과면 전체스캔 폴백
 
+# ---------- 이벤트 후처리 (분할 방지 / 깜빡임 제거) ----------
+# 모델 판정이 A→S→A로 깜빡이면 한 충돌이 여러 이벤트로 쪼개진다(실측: 실차 영상
+# 1건이 6개로 분할). 아래 두 단계로 정리한다. 순서는 '병합 → 길이필터'.
+#   1) 간격이 가까운 이벤트는 같은 사고로 보고 병합
+#   2) 그래도 너무 짧은(단발 깜빡임) 이벤트는 제거
+# 근거(실측 stride=1, 구간길이 프레임): 단일 윈도우 깜빡임=29프레임에 몰려 있고,
+# 지속 검출은 48프레임 이상에 분포 → 그 사이인 40으로 컷.
+PREDICT_EVENT_MERGE_GAP_FRAMES = 45   # 이벤트 간 간격 ≤ 45면 하나로 병합(≈1.5초)
+PREDICT_MIN_EVENT_SPAN_FRAMES = 40    # 구간 길이가 이보다 짧으면 깜빡임으로 보고 제거
+
 # ---------- 실제영상 정확도 평가 전용 ----------
 EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260828_32ep_earlyY_0.3807.pth"
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
