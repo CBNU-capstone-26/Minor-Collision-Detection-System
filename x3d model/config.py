@@ -22,7 +22,7 @@ INFER_DEVICE_TYPE = "cpu"    # 예측·평가(추론) 전용 디바이스
 # ---------- 공통 설정 ----------
 DATA_DIR = _ROOT / "data" / "train"
 # 이 폴더가 학습/추론하는 백본 이름. 가중치 파일명에 붙어 모델을 구분한다.
-MODEL_NAME = "s3d"
+MODEL_NAME = "x3d"
 MODEL_NUM_CLASSES = 2
 CLIP_LENGTH = 30
 RESIZE = (224, 224)
