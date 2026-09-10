@@ -64,6 +64,9 @@ class HitAndRunDataset(Dataset):
                 target_id, [0, 0, self.resize[0], self.resize[1]])
             label = 1 if class_str == 'A' else 0
 
+            # 영상 메타는 한 번만 읽는다(S 슬라이싱의 총프레임 + 지터 환산용 fps).
+            total, fps = self._video_meta(mp4_path)
+
             def _add(sf):
                 samples.append({
                     'file_name': file_name,
@@ -72,6 +75,7 @@ class HitAndRunDataset(Dataset):
                     'label': label,
                     'start_f': sf,
                     'bbox': target_bbox,
+                    'fps': fps,              # 시간 지터를 '초' 기준으로 맞추기 위함
                 })
 
             if label == 1 or not getattr(config, 'TRAIN_S_SLICE_ENABLED', False):
@@ -81,7 +85,6 @@ class HitAndRunDataset(Dataset):
                 # 비충돌(S)은 영상 전체를 클립 길이 단위로 잘라 전부 학습에 넣는다.
                 # (기존엔 맨 앞 30프레임 1개뿐이라 '차가 지나가지만 충돌 아님'을
                 #  학습하지 못했고, 이것이 오탐의 직접 원인이었다 — config 주석 참고)
-                total = self._frame_count(mp4_path)
                 stride = max(1, int(getattr(config, 'TRAIN_S_SLICE_STRIDE',
                                             self.clip_length)))
                 cap_n = int(getattr(config, 'TRAIN_S_MAX_CLIPS_PER_VIDEO', 0))
@@ -95,12 +98,13 @@ class HitAndRunDataset(Dataset):
         return samples
 
     @staticmethod
-    def _frame_count(mp4_path):
-        """영상 총 프레임 수(메타데이터만 읽어 빠름). 실패 시 0."""
+    def _video_meta(mp4_path):
+        """(총 프레임 수, fps). 메타데이터만 읽어 빠르다. 읽기 실패 시 fps는 30 가정."""
         cap = cv2.VideoCapture(mp4_path)
         n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
         cap.release()
-        return n
+        return n, (fps if fps > 1.0 else 30.0)
 
     def _parse_annotation(self, txt_path):
         bboxes = {}
@@ -207,8 +211,13 @@ class HitAndRunDataset(Dataset):
         if self.augment:
             # ① 시간 오프셋 지터: 학습 클립이 항상 '충돌 시작 = 윈도 첫 프레임'이면
             #    추론(슬라이딩 윈도)에서 충돌이 윈도 중간에 걸릴 때 분포가 어긋난다.
-            #    시작점을 0~10프레임 앞으로 당겨 충돌 위치를 윈도 내에서 다양화.
-            start_f = max(0, start_f - random.randint(0, 10))
+            #    시작점을 조금 앞으로 당겨 충돌 위치를 윈도 내에서 다양화.
+            #    ※ 폭을 '초' 기준으로 환산한다. 프레임 수로 고정하면 같은 증강이
+            #      fps에 따라 다른 의미가 된다(10프레임 = 30fps 0.33초, 10fps 1.0초).
+            #      기본 0.33초는 30fps에서 기존 동작(0~10프레임)과 동일하다.
+            jitter = int(round(sample.get('fps', 30.0)
+                               * getattr(config, 'TRAIN_TIME_JITTER_SEC', 0.33)))
+            start_f = max(0, start_f - random.randint(0, max(0, jitter)))
             # ② bbox 지터: 서비스에서는 사용자가 마우스로 대충 박스를 그린다.
             #    GT 좌표 그대로만 학습하면 손그림 박스와 분포가 어긋나므로
             #    중심 이동(±5%)·크기 배율(0.9~1.15)로 부정확한 박스를 시뮬레이션.

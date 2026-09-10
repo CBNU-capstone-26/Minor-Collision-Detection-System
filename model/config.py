@@ -46,6 +46,10 @@ TRAIN_R_AUGMENT_VALUES = (1.5, 2.0, 2.33, 3.0)
 #    due to a collision are quite similar. To reduce the false alarm rate ...
 #    we divided the non-collision videos into frames of a specific length"
 # ※ 학습 데이터가 크게 늘고 A:S 불균형도 커진다. 끄려면 False.
+# 시간 오프셋 지터 폭(초). 프레임이 아니라 '초'로 두어야 fps가 다른 영상들에서
+# 같은 물리적 의미를 갖는다. 0.33초 = 30fps 기준 0~10프레임(기존 동작과 동일).
+TRAIN_TIME_JITTER_SEC = 0.33
+
 TRAIN_S_SLICE_ENABLED = True
 TRAIN_S_SLICE_STRIDE = CLIP_LENGTH    # 30 = 겹치지 않게 연속 분할(논문 방식)
 TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 때 상한용
