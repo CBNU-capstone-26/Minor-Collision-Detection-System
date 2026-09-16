@@ -21,6 +21,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     name = Column(String(100), nullable=True)      # 회원가입: 실명
     email = Column(String(255), unique=True, nullable=True)
+    phone = Column(String(50), nullable=True)      # 연락처
     role = Column(String(50), default="USER")
     created_at = Column(DateTime, default=datetime.utcnow)
 

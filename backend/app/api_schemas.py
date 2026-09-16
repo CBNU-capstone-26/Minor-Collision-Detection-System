@@ -24,7 +24,19 @@ class UserOut(BaseModel):
     username: str
     name: Optional[str] = None
     email: Optional[str] = None
+    phone: Optional[str] = None
     role: str
+
+
+class UpdateUserRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class LoginResponse(BaseModel):
