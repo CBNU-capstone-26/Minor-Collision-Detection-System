@@ -62,12 +62,14 @@ class DetectedVehicleBox(BaseModel):
     class_name: str
     confidence: float
     bbox: list[int]  # [xmin, ymin, xmax, ymax]
+    source: str = "yolo"
 
 
 class VehicleDetectionResponse(BaseModel):
     video_id: int
     total_detected: int
     detected_vehicles: list[DetectedVehicleBox] = []
+    detector_mode: str = "yolo"
 
 
 # ---------- 영상 ----------

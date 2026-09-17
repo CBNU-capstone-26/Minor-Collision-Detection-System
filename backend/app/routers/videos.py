@@ -264,7 +264,13 @@ def detect_vehicles_in_video(
 
     # 차량 탐지 모듈은 지연 임포트 — ultralytics/torch를 웹 프로세스 시작 시 로드하지 않도록.
     try:
-        from app.vehicle_detector import get_detector, read_source_frame
+        from app.vehicle_detector import (
+            DEFAULT_RTDETR_MODEL,
+            DEFAULT_YOLO_MODEL,
+            DEFAULT_YOLO_SEG_MODEL,
+            get_hybrid_detector,
+            read_source_frame,
+        )
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"차량 탐지 모듈 로드 실패: {err}")
 
@@ -276,22 +282,21 @@ def detect_vehicles_in_video(
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
-    # YOLO11x(detection) + 동적 imgsz(상한 1536) + 낮은 conf + 야간 전처리
-    # → 원거리/야간/부분가림 회수율 강화. detection 모델이라 마스크 없이
-    #   YOLO detection bbox를 그대로 사용한다. 동적 imgsz는 프레임 해상도에
-    #   맞춰 입력 크기를 정해 고해상도 정보손실/저해상도 낭비를 함께 줄인다.
-    # 탐지기는 get_detector로 프로세스당 1회만 로드·재사용(매 요청 재로드 오버헤드 제거).
-    model_path = str(settings.BASE_DIR / "yolo11x.pt")
-    if not Path(model_path).exists():
-        model_path = "yolo11x.pt"  # 파일 없으면 ultralytics가 자동 다운로드
-
     try:
-        detector = get_detector(
-            model_path=model_path, conf=0.15, imgsz=1536,
-            enhance_night=True, dynamic_imgsz=True, imgsz_min=640)
-        detections = detector.detect_frame(frame)
+        def model_path(name: str) -> str:
+            local_path = settings.BASE_DIR / name
+            return str(local_path) if local_path.exists() else name
+
+        detector = get_hybrid_detector(
+            rtdetr_path=model_path(DEFAULT_RTDETR_MODEL),
+            yolo_path=model_path(DEFAULT_YOLO_MODEL),
+            yolo_seg_path=model_path(DEFAULT_YOLO_SEG_MODEL),
+        )
+        detection_result = detector.detect_frame(frame)
+        detections = detection_result.detections
+        detector_mode = detection_result.mode
     except Exception as err:
-        raise HTTPException(status_code=500, detail=f"YOLO 차량 탐지 중 오류: {err}")
+        raise HTTPException(status_code=500, detail=f"하이브리드 차량 탐지 중 오류: {err}")
 
     detected_list = []
     for idx, det in enumerate(detections):
@@ -301,6 +306,7 @@ def detect_vehicles_in_video(
             "class_name": det.class_name,
             "confidence": round(det.confidence, 4),
             "bbox": [x1, y1, x2, y2],
+            "source": det.source,
         })
 
     # [디버그] 서비스가 실제로 탐지한 결과를 이미지로 저장 (outputs/) — 눈으로 확인용.
@@ -333,5 +339,5 @@ def detect_vehicles_in_video(
         detected_vehicles=[
             api_schemas.DetectedVehicleBox(**item) for item in detected_list
         ],
+        detector_mode=detector_mode,
     )
-
