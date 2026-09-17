@@ -43,3 +43,5 @@ weights/
 .DS_Store
 ._*
 *.local
+
+docs/
