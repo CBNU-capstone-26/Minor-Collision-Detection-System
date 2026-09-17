@@ -1,6 +1,6 @@
 """분석 요청 / 태스크 상태 / 이벤트·클립 조회 라우터."""
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
@@ -8,6 +8,7 @@ from app import db_models, api_schemas
 from app.auth_guard import get_current_user
 from app.settings import settings
 from app.routers.videos import to_event_out, _get_owned_video
+from app.object_storage import LocalObjectStorage, get_storage
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -126,8 +127,11 @@ def get_event_clip(event_id: int, db: Session = Depends(get_db)):
     event = db.get(db_models.CrashEvent, event_id)
     if event is None or not event.cam_heatmap_path:
         raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")
-    path = settings.abs_path(event.cam_heatmap_path)
-    if not path.exists():
+    storage = get_storage()
+    if not storage.exists(event.cam_heatmap_path):
         raise HTTPException(status_code=404, detail="클립 파일이 없습니다.")
+    if not isinstance(storage, LocalObjectStorage):
+        return RedirectResponse(storage.presigned_url(event.cam_heatmap_path))
+    path = storage.local_path(event.cam_heatmap_path)
     media_type = "video/webm" if str(path).endswith(".webm") else "video/mp4"
     return FileResponse(str(path), media_type=media_type)

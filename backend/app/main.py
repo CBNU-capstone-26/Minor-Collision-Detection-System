@@ -1,6 +1,7 @@
 """FastAPI 진입점 — CORS, 라우터 등록, 시작 시 테이블 생성."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from app.db_connection import engine, Base
 from app import db_models  # noqa: F401  (테이블 등록을 위해 임포트)
@@ -20,25 +21,20 @@ app.add_middleware(
 # 서버 시작 시 테이블이 없으면 자동 생성
 Base.metadata.create_all(bind=engine)
 
-# 기존 테이블에 detected_vehicles 컬럼 마이그레이션 보장
-with engine.connect() as conn:
-    try:
-        from sqlalchemy import text
-        conn.execute(text("ALTER TABLE videos ADD COLUMN detected_vehicles TEXT NULL;"))
-        conn.commit()
-    except Exception:
-        pass
+# create_all()은 이미 존재하는 테이블에 새 컬럼을 추가하지 않으므로,
+# MySQL과 PostgreSQL(Supabase) 모두에서 필요한 최소 컬럼을 보정한다.
+def ensure_column(table_name: str, column_name: str, column_ddl: str):
+    columns = {column["name"] for column in inspect(engine).get_columns(table_name)}
+    if column_name in columns:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_ddl}"
+        ))
 
-# 기존 DB에 User 모델의 연락처 컬럼이 없을 수 있으므로 보정한다.
-# create_all()은 이미 존재하는 테이블에 새 컬럼을 추가하지 않는다.
-with engine.connect() as conn:
-    try:
-        from sqlalchemy import text
-        conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(50) NULL;"))
-        conn.commit()
-    except Exception:
-        # 컬럼이 이미 존재하는 경우 등에는 정상 기동을 계속한다.
-        pass
+
+ensure_column("videos", "detected_vehicles", "TEXT NULL")
+ensure_column("users", "phone", "VARCHAR(50) NULL")
 
 app.include_router(auth.router)
 app.include_router(videos.router)

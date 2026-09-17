@@ -1,5 +1,6 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
 import shutil
+import tempfile
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 from pathlib import Path
@@ -7,13 +8,14 @@ from pathlib import Path
 from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, UploadFile, Query,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
 from app import db_models, api_schemas
 from app.auth_guard import get_current_user
 from app.settings import settings
+from app.object_storage import LocalObjectStorage, get_storage, materialize
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
@@ -72,6 +74,8 @@ def upload_video(
 ):
     ext = Path(file.filename).suffix or ".mp4"
     stored_name = f"{uuid4().hex}{ext}"
+    storage = get_storage()
+    object_key = f"uploads/{stored_name}"
     dest = settings.UPLOAD_DIR / stored_name
     with open(dest, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -91,13 +95,17 @@ def upload_video(
     video = db_models.Video(
         user_id=user.id,
         video_name=file.filename,
-        video_path=settings.rel_path(dest),
+        video_path=object_key,
         recording_date=rec_date,
         width=width,
         height=height,
         fps=fps,
         total_frames=total_frames,
     )
+    if not isinstance(storage, LocalObjectStorage):
+        storage.upload_path(dest, object_key, content_type=file.content_type or "video/mp4")
+        dest.unlink(missing_ok=True)
+
     db.add(video)
     db.commit()
     db.refresh(video)
@@ -148,7 +156,7 @@ def delete_video(
         db_models.CrashEvent.video_id == video_id).all()
     for ev in events:
         if ev.cam_heatmap_path:
-            settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+            get_storage().delete(ev.cam_heatmap_path)
         db.delete(ev)
 
     # 2) analysis_tasks 행 삭제
@@ -157,8 +165,9 @@ def delete_video(
         db.delete(task)
 
     # 3) 원본 영상 + 썸네일 파일 삭제
-    settings.abs_path(video.video_path).unlink(missing_ok=True)
-    (settings.THUMBNAIL_DIR / f"{Path(video.video_path).stem}.jpg").unlink(missing_ok=True)
+    storage = get_storage()
+    storage.delete(video.video_path)
+    storage.delete(f"thumbnails/{Path(video.video_path).stem}.jpg")
 
     # 4) 영상 행 삭제
     db.delete(video)
@@ -183,7 +192,7 @@ def delete_crash_event(
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
 
     if event.cam_heatmap_path:
-        settings.abs_path(event.cam_heatmap_path).unlink(missing_ok=True)
+        get_storage().delete(event.cam_heatmap_path)
 
     db.delete(event)
     db.commit()
@@ -204,7 +213,7 @@ def clear_all_crash_events(
     count = len(events)
     for ev in events:
         if ev.cam_heatmap_path:
-            settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+            get_storage().delete(ev.cam_heatmap_path)
         db.delete(ev)
     db.commit()
     return {"deleted_count": count}
@@ -217,9 +226,12 @@ def stream_video(video_id: int, db: Session = Depends(get_db)):
     video = db.get(db_models.Video, video_id)
     if video is None:
         raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
-    path = settings.abs_path(video.video_path)
-    if not path.exists():
+    storage = get_storage()
+    if not storage.exists(video.video_path):
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
+    if not isinstance(storage, LocalObjectStorage):
+        return RedirectResponse(storage.presigned_url(video.video_path))
+    path = storage.local_path(video.video_path)
     # FileResponse는 HTTP Range 요청(영상 탐색)을 지원한다.
     return FileResponse(str(path), media_type="video/mp4")
 
@@ -231,20 +243,31 @@ def video_thumbnail(video_id: int, db: Session = Depends(get_db)):
     if video is None:
         raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
 
-    thumb = settings.THUMBNAIL_DIR / f"{Path(video.video_path).stem}.jpg"
-    if not thumb.exists():
-        src = settings.abs_path(video.video_path)
-        if not src.exists():
-            raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
+    storage = get_storage()
+    thumb_key = f"thumbnails/{Path(video.video_path).stem}.jpg"
+    if storage.exists(thumb_key):
+        if not isinstance(storage, LocalObjectStorage):
+            return RedirectResponse(storage.presigned_url(thumb_key))
+        return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
+
+    if not storage.exists(video.video_path):
+        raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
+    with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as src:
         import cv2  # 지연 임포트
         cap = cv2.VideoCapture(str(src))
         ok, frame = cap.read()  # 첫 프레임 (BGR)
         cap.release()
         if not ok:
             raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
-        cv2.imwrite(str(thumb), frame)
+        with tempfile.NamedTemporaryFile(suffix=".jpg") as temp_thumb:
+            import cv2
+            if not cv2.imwrite(temp_thumb.name, frame):
+                raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
+            storage.upload_path(temp_thumb.name, thumb_key, content_type="image/jpeg")
 
-    return FileResponse(str(thumb), media_type="image/jpeg")
+    if not isinstance(storage, LocalObjectStorage):
+        return RedirectResponse(storage.presigned_url(thumb_key))
+    return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
 
 
 @router.post("/{video_id}/detect-vehicles", response_model=api_schemas.VehicleDetectionResponse)
@@ -258,8 +281,8 @@ def detect_vehicles_in_video(
     import json
 
     video = _get_owned_video(video_id, db, user)
-    src_path = settings.abs_path(video.video_path)
-    if not src_path.exists():
+    storage = get_storage()
+    if not storage.exists(video.video_path):
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
 
     # 차량 탐지 모듈은 지연 임포트 — ultralytics/torch를 웹 프로세스 시작 시 로드하지 않도록.
@@ -278,7 +301,8 @@ def detect_vehicles_in_video(
     frame_index = max(0, min(frame_index, max(0, video.total_frames - 1)))
 
     try:
-        frame = read_source_frame(src_path, frame_index=frame_index)
+        with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as src_path:
+            frame = read_source_frame(src_path, frame_index=frame_index)
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
