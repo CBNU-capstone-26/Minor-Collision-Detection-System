@@ -1,0 +1,28 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: capstone_db
+    ports:
+      - "3306:3306"
+    # 데이터 영구 보존: named volume을 MySQL 데이터 디렉터리에 마운트
+    # (컨테이너를 삭제·재생성해도 mysql_data 볼륨에 데이터가 유지됨)
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # Docker(데몬/Desktop) 시작 시 자동 기동 — 재부팅 후에도 수동 실행 불필요
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    # AOF 영속화 활성화 + 볼륨 (Celery 작업 큐/결과 보존용)
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:

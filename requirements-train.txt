@@ -1,0 +1,58 @@
+# ================================================================
+# requirement-train.txt
+# 물피도주 감지 "모델 학습 · 추론" 전용 Python 환경 (model/ 패키지)
+# 재현 검증 환경: Python 3.11.15
+#
+# 이 파일은 ML 코드(model/ 의 train / predict / eval)만 실행하기 위한 최소 의존성입니다.
+# 웹 서비스(FastAPI·Celery·MySQL·Redis)는 포함하지 않습니다 → 그건 루트 requirements.txt 사용.
+# ================================================================
+#
+# -- 무엇을 위한 파일인가 -----------------------------------------
+#   python -m model.main --mode train     # 학습
+#   python -m model.main --mode predict   # 단일 영상 CAM 예측
+#   python -m model.main --mode eval      # 폴더 정확도 평가
+#
+# -- torch / torchvision 은 아래 별도 스텝으로 설치 ----------------
+#   PyTorch 전용 인덱스에서 받아야 하므로 이 파일에 넣지 않습니다.
+#   (PyPI와 인덱스가 달라 한 파일에 섞으면 uv 인덱스 정책과 충돌 가능)
+#
+#   ※ 버전을 고정하지 말고 각 CUDA 인덱스가 제공하는 최신 쌍을 설치하는 것을 권장.
+#     PyTorch는 오래된 CUDA 빌드를 순차 종료하므로, 특정 torch 버전이 특정 인덱스에
+#     없을 수 있다. (예: cu121 인덱스는 torch 2.5.1 까지만 제공 → 2.12.0 설치 불가)
+#     이 프로젝트 코드는 torch 2.5.1 이상이면 정상 동작한다(S3D·AMP·channels_last).
+#
+#   • 학습(GPU/CUDA): 서버 드라이버가 지원하는 CUDA에 맞는 인덱스 선택
+#       (nvidia-smi 의 'CUDA Version' 확인 → cu121 / cu124 / cu126 / cu128 …)
+#       pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision
+#     → torch·torchvision 짝은 pip이 자동 해결 (cu121이면 2.5.1 + 0.20.1)
+#     → model/config.py 의 TRAIN_DEVICE_TYPE="cuda"
+#
+#   • 추론(CPU, 서비스/로컬 검증):
+#       pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+#     → model/config.py 의 INFER_DEVICE_TYPE="cpu"
+#     (로컬 검증 시 실제 설치본: torch 2.12.0+cpu / torchvision 0.27.0+cpu)
+#
+# -- 설치 순서 (로컬, CPU 추론 기준) -------------------------------
+#   uv venv --python 3.11 venv311
+#   uv pip install --python venv311 -r requirement-train.txt
+#   uv pip install --python venv311 \
+#       --index-url https://download.pytorch.org/whl/cpu torch==2.12.0 torchvision==0.27.0
+#
+#   (일반 venv/pip)
+#   python3.11 -m venv venv311 && source venv311/bin/activate
+#   pip install -r requirement-train.txt
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+# ================================================================
+
+# ---- 딥러닝 프레임워크 (별도 인덱스 스텝으로 설치; 위 헤더 참고) ----
+#   torch          # >= 2.5.1 이면 동작 (인덱스 제공 최신 권장)
+#   torchvision    # torch와 짝 맞춰 자동 설치 — S3D 백본 + Kinetics-400 사전학습 제공
+
+# ---- 영상 처리 / 수치 연산 (dataset·predict_cam·evaluate) ----
+# Python 버전에 따라 제공되는 최신 버전이 다르므로 하한(>=)만 지정해 이식성 확보.
+# (정확 핀(==)은 특정 Python에서만 휠이 있어 resolution 실패 위험 — 예: numpy 2.4.x는 Python 3.11+ 전용)
+# 로컬 검증(Python 3.11.15) 당시 실제 버전: numpy 2.4.6 / opencv 4.13.0.92 / pillow 12.2.0 / tqdm 4.68.1
+numpy>=1.24                         # 수치 연산 (Python 3.10 → 2.2.x, 3.11+ → 2.4.x 등 자동 선택)
+opencv-python-headless>=4.8         # cv2: 프레임 디코딩·크롭·CAM 오버레이·클립 렌더링
+pillow>=10.0                        # PIL: 데이터 증강(색상 지터 등) 시 이미지 변환
+tqdm>=4.65                          # 평가 진행률 표시
