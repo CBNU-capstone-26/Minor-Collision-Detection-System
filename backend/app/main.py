@@ -29,6 +29,17 @@ with engine.connect() as conn:
     except Exception:
         pass
 
+# 기존 DB에 User 모델의 연락처 컬럼이 없을 수 있으므로 보정한다.
+# create_all()은 이미 존재하는 테이블에 새 컬럼을 추가하지 않는다.
+with engine.connect() as conn:
+    try:
+        from sqlalchemy import text
+        conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(50) NULL;"))
+        conn.commit()
+    except Exception:
+        # 컬럼이 이미 존재하는 경우 등에는 정상 기동을 계속한다.
+        pass
+
 app.include_router(auth.router)
 app.include_router(videos.router)
 app.include_router(analysis.router)
