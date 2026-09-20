@@ -15,10 +15,12 @@ _ROOT = Path(__file__).resolve().parent.parent
 # "cpu"  : CPU
 #
 # 학습(train)과 추론(predict/eval)의 디바이스를 분리합니다.
-#  - 학습은 GPU 서버에서 수행하므로 기본값 "cuda".
-#  - 추론은 GPU 서버가 없는 서비스 환경(Celery 워커)에서 돌 수 있으므로 "cpu".
+#  - 학습은 GPU 서버에서 수행하므로 "cuda".
+#  - 추론도 GPU 서버에서 평가를 돌리므로 "cuda"로 둔다.
+#    GPU가 없는 환경(로컬 Celery 워커)에서는 get_device()가 경고를 찍고
+#    CPU로 자동 폴백하므로 이대로 둬도 서비스는 동작한다(느릴 뿐).
 TRAIN_DEVICE_TYPE = "cuda"   # 학습 전용 디바이스 (기본 GPU)
-INFER_DEVICE_TYPE = "cpu"    # 예측·평가(추론) 전용 디바이스
+INFER_DEVICE_TYPE = "cuda"    # 예측·평가(추론) 전용 디바이스
 
 # ---------- 공통 설정 ----------
 DATA_DIR = _ROOT / "data" / "train"
