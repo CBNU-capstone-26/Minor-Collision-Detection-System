@@ -476,6 +476,7 @@ def predict_events_and_clips(
     clip_pad_frames=15,
     progress_callback=None,
     use_flow_prescreen=config.PREDICT_USE_FLOW_PRESCREEN,
+    render_clips=True,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -488,6 +489,9 @@ def predict_events_and_clips(
         bbox (tuple|list): 대상 차량 좌표 (xmin, ymin, xmax, ymax) — 원본 해상도 기준
         output_dir (str|Path): 클립 저장 폴더
         clip_pad_frames (int): 구간 앞뒤로 덧붙일 여유 프레임 수
+        render_clips (bool): False면 CAM 클립을 만들지 않고 이벤트 목록만 돌려준다
+            (clip_path=None). 평가에서 '서비스와 동일한 경로'로 이벤트를 뽑을 때
+            쓴다 — 렌더링은 평가에 불필요하고 가장 느린 단계다.
 
     Returns:
         list[dict]: 이벤트 목록. 각 항목:
@@ -700,7 +704,8 @@ def predict_events_and_clips(
         # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
         results = []
         base_name = os.path.splitext(os.path.basename(video_path))[0]
-        render_cap = cv2.VideoCapture(video_path) if events else None
+        render_cap = (cv2.VideoCapture(video_path)
+                      if (events and render_clips) else None)
         try:
             for ev_idx, ev in enumerate(events, 1):
                 if progress_callback is not None:
@@ -717,38 +722,40 @@ def predict_events_and_clips(
                                   if start_f <= f <= end_f]
                 crash_prob = max(probs_in_event) if probs_in_event else None
 
-                clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
-                writer, rendered_path = _open_clip_writer(
-                    clip_stem, fps, (orig_w, orig_h))
+                clip_path = None
+                if render_clips:
+                    clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
+                    writer, rendered_path = _open_clip_writer(
+                        clip_stem, fps, (orig_w, orig_h))
 
 
-                # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
-                render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
-                last_heatmap = None
-                for f in range(clip_start, clip_end + 1):
-                    ret, frame = render_cap.read()  # 이미 BGR
-                    if not ret:
-                        break
-                    if f in accident_overlays:
-                        last_heatmap = accident_overlays[f][0]
-                    in_event = start_f <= f <= end_f
-                    if in_event and last_heatmap is not None:
-                        roi = frame[by1:by2, bx1:bx2]
-                        # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
-                        hm = cv2.resize(last_heatmap, (roi.shape[1], roi.shape[0]))
-                        frame[by1:by2, bx1:bx2] = cv2.addWeighted(
-                            roi, 0.6, hm, 0.4, 0)
-                        cv2.rectangle(frame, (bx1, by1),
-                                      (bx2, by2), (0, 0, 255), 3)
-                        _draw_state_label(frame, 1)
-                    else:
-                        cv2.rectangle(frame, (bx1, by1),
-                                      (bx2, by2), (0, 255, 0), 2)
-                        _draw_state_label(frame, 0)
-                    writer.write(frame)
-                writer.release()
-                # 브라우저 호환 최종본(H.264/mp4)으로 변환
-                clip_path = _finalize_clip(rendered_path, clip_stem)
+                    # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
+                    render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
+                    last_heatmap = None
+                    for f in range(clip_start, clip_end + 1):
+                        ret, frame = render_cap.read()  # 이미 BGR
+                        if not ret:
+                            break
+                        if f in accident_overlays:
+                            last_heatmap = accident_overlays[f][0]
+                        in_event = start_f <= f <= end_f
+                        if in_event and last_heatmap is not None:
+                            roi = frame[by1:by2, bx1:bx2]
+                            # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
+                            hm = cv2.resize(last_heatmap, (roi.shape[1], roi.shape[0]))
+                            frame[by1:by2, bx1:bx2] = cv2.addWeighted(
+                                roi, 0.6, hm, 0.4, 0)
+                            cv2.rectangle(frame, (bx1, by1),
+                                          (bx2, by2), (0, 0, 255), 3)
+                            _draw_state_label(frame, 1)
+                        else:
+                            cv2.rectangle(frame, (bx1, by1),
+                                          (bx2, by2), (0, 255, 0), 2)
+                            _draw_state_label(frame, 0)
+                        writer.write(frame)
+                    writer.release()
+                    # 브라우저 호환 최종본(H.264/mp4)으로 변환
+                    clip_path = _finalize_clip(rendered_path, clip_stem)
 
                 # ── 사고 '시점' 확정: 이벤트 구간 내 플로우 최대점(=충격 순간) ──
                 # 모델은 '윈도우 마지막 프레임=충돌 종료'로 학습돼 윈도우 시작

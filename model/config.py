@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 # ==========================================
@@ -17,7 +18,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 #  - 학습은 GPU 서버에서 수행하므로 기본값 "cuda".
 #  - 추론은 GPU 서버가 없는 서비스 환경(Celery 워커)에서 돌 수 있으므로 "cpu".
 TRAIN_DEVICE_TYPE = "cuda"   # 학습 전용 디바이스 (기본 GPU)
-INFER_DEVICE_TYPE = "cpu"    # 예측·평가(추론) 전용 디바이스
+INFER_DEVICE_TYPE = "cuda"    # 예측·평가(추론) 전용 디바이스
 
 # ---------- 공통 설정 ----------
 DATA_DIR = _ROOT / "data" / "train"
@@ -67,7 +68,13 @@ USE_CHANNELS_LAST = True
 # ---------- 사전학습 / 입력 정규화 ----------
 # 백본은 torchvision S3D. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
 # (사전학습은 파라미터 '초기값'만 바꾸므로 모델 크기·추론 속도는 동일)
-PRETRAINED = True
+# 사전학습 사용 여부. 환경변수로 덮어써서 같은 코드로 A/B를 돌릴 수 있다:
+#     PRETRAINED=0 python main.py --mode train      (scratch 학습)
+# ※ 논문(Hwang & Lee 2024)은 3D-CNN을 scratch로 학습했으나 그 이유나 비교실험을
+#   제시하지 않았다. 어느 쪽이 나은지는 우리 데이터로 직접 비교해야 한다.
+PRETRAINED = os.getenv("PRETRAINED", "1").strip().lower() not in ("0", "false", "no")
+# 결과물이 서로 덮어쓰이지 않도록 사전학습 여부를 파일명에 박는다(ptY/ptN).
+PRETRAIN_TAG = "ptY" if PRETRAINED else "ptN"
 # 입력 정규화 통계 — S3D Kinetics-400 사전학습과 동일한 값 사용 (전이 효율 최대화)
 NORM_MEAN = (0.43216, 0.394666, 0.37645)
 NORM_STD = (0.22803, 0.22145, 0.216989)
@@ -76,12 +83,21 @@ NORM_STD = (0.22803, 0.22145, 0.216989)
 # 학습 '작업용' 경로. 학습 중 best 가중치를 해당 파일로 갱신 저장했놓고, 학습 종료 시
 # 규칙 파일명: (hitandrun_[YYMMDD]_[N]ep_[earlyY|N]_[손실율]) 으로 rename 된다(train.py).
 # [YYMMDD] : 학습 시작 날짜, [N]ep : 학습 종료 시점 epoch, [earlyY|N] : 조기 종료 여부, [손실율] : 최종 검증 손실율(val loss)
-TRAIN_BEST_MODEL_SAVE_PATH = _ROOT / "weights" / f"hitandrun_{MODEL_NAME}_best.pth"
+TRAIN_BEST_MODEL_SAVE_PATH = (
+    _ROOT / "weights" / f"hitandrun_{MODEL_NAME}_{PRETRAIN_TAG}_best.pth")
 TRAIN_BATCH_SIZE = 8  # GPU VRAM 상황에 맞게 조절 (예: 16, 32, 64 등)(기본값: 15)
 TRAIN_NUM_EPOCHS = 100
 TRAIN_SPLIT_RATIO = 0.8
-TRAIN_EARLY_STOPPING_PATIENCE = 15 # patience 값 변경 10 -> 15로 변경 (이정주)
+TRAIN_EARLY_STOPPING_PATIENCE = 10
 TRAIN_LEARNING_RATE = 0.00003  # S3D 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
+# AdamW의 decoupled weight decay. ⚠️ Adam에 weight_decay를 주면 L2 페널티가
+# 적응적 학습률에 의해 파라미터마다 왜곡되므로, 정규화 목적이면 AdamW를 써야 한다.
+# 학습 클립 662개 / 원본 영상 116개에 비해 파라미터가 많아(2.98M~33.65M) 켜둔다.
+TRAIN_WEIGHT_DECAY = 0.01
+# 에포크별 학습 곡선 CSV 저장 위치 (과적합 판단·모델 비교용)
+TRAIN_LOG_DIR = _ROOT / "outputs" / "trainlogs"
+# 평가 결과 로그(콘솔 전문 + 5가지 모델 비교용 요약 CSV) 저장 위치
+EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 S3D 구조(.pth)여야 한다.
@@ -117,7 +133,10 @@ PREDICT_EVENT_MERGE_GAP_FRAMES = 45   # 이벤트 간 간격 ≤ 45면 하나로
 PREDICT_MIN_EVENT_SPAN_FRAMES = 40    # 구간 길이가 이보다 짧으면 깜빡임으로 보고 제거
 
 # ---------- 실제영상 정확도 평가 전용 ----------
-EVAL_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_260828_32ep_earlyY_0.3807.pth"
+# 평가할 가중치. 여러 학습 결과를 비교할 땐 환경변수로 골라 쓴다:
+#     EVAL_WEIGHTS=weights/hitandrun_s3d_..._ptN_0.31.pth python main.py --mode eval
+EVAL_WEIGHTS_PATH = (Path(os.environ["EVAL_WEIGHTS"]) if os.getenv("EVAL_WEIGHTS")
+                     else _ROOT / "weights" / "hitandrun_260828_32ep_earlyY_0.3807.pth")
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 EVAL_INFER_BATCH_SIZE = 8 # batch size 8로 바꾸었음(이정주)
 EVAL_WINDOW_STRIDE = 1  # 기본값: 1 (올리면 속도↑ 정확도 소폭↓)

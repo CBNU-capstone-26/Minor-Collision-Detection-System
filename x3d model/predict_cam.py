@@ -22,7 +22,7 @@ activation = {}
 # 쓰지 않게 한다(가짜 추정 → 실제값 전환 시 진행바가 뒤로 점프하는 문제 방지).
 PROG_DECODE_END = 0.25    # 프레임 디코딩/크롭
 PROG_PRESCREEN_END = 0.30  # 광학흐름 사전선별
-PROG_INFER_END = 0.95     # S3D 윈도우 추론
+PROG_INFER_END = 0.95     # 3D-CNN 윈도우 추론
 # 0.95~1.0 = 사고구간 CAM 클립 렌더링
 
 
@@ -67,7 +67,7 @@ def get_activation(name):
 
 
 def _frames_to_video_tensor(frames):
-    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(S3D Kinetics-400)
+    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(Kinetics-400)
     mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD,
@@ -476,6 +476,7 @@ def predict_events_and_clips(
     clip_pad_frames=15,
     progress_callback=None,
     use_flow_prescreen=config.PREDICT_USE_FLOW_PRESCREEN,
+    render_clips=True,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -488,6 +489,9 @@ def predict_events_and_clips(
         bbox (tuple|list): 대상 차량 좌표 (xmin, ymin, xmax, ymax) — 원본 해상도 기준
         output_dir (str|Path): 클립 저장 폴더
         clip_pad_frames (int): 구간 앞뒤로 덧붙일 여유 프레임 수
+        render_clips (bool): False면 CAM 클립을 만들지 않고 이벤트 목록만 돌려준다
+            (clip_path=None). 평가에서 '서비스와 동일한 경로'로 이벤트를 뽑을 때
+            쓴다 — 렌더링은 평가에 불필요하고 가장 느린 단계다.
 
     Returns:
         list[dict]: 이벤트 목록. 각 항목:
@@ -571,15 +575,15 @@ def predict_events_and_clips(
         events = []          # [{'start_frame','end_frame'}, ...]
         # frame_idx → (heatmap_bbox, prob) (사고로 예측된 프레임만)
         accident_overlays = {}
-        # window_idx → pred_class (S3D를 실제로 실행한 윈도우만)
+        # window_idx → pred_class (3D-CNN을 실제로 실행한 윈도우만)
         window_pred = {}
 
         num_windows = full_video_tensor.size(1) - (clip_length - 1)
         window_starts = list(range(0, max(0, num_windows), window_stride))
 
         # [2단계 1단계] 광학흐름 사전선별: '사고 의심 프레임'으로 끝나는 윈도우만
-        # S3D로 평가한다. 나머지는 비사고(class 0)로 간주(선별기가 고재현율이므로
-        # 실제 충돌은 반드시 스파이크 근처에 있음). 멀티-아워 영상에서 S3D 호출을
+        # 3D-CNN으로 평가한다. 나머지는 비사고(class 0)로 간주(선별기가 고재현율이므로
+        # 실제 충돌은 반드시 스파이크 근처에 있음). 멀티-아워 영상에서 3D-CNN 호출을
         # 대폭 줄인다. 선별 실패/과다 시 helper가 '전체 True'를 돌려 전체스캔 폴백.
         # 피해차 bbox를 224 크롭 좌표계로 환산 → 충격 '시점' 판정 전용 ROI.
         # (정사각 크롭 여백을 지나는 가해차량 모션에 시점이 끌려가지 않게 한다)
@@ -604,12 +608,12 @@ def predict_events_and_clips(
         if not eval_window_starts:
             eval_window_starts = window_starts  # 방어적: 하나도 없으면 전체
         print(f"[2단계] 사전선별: 전체 {len(window_starts)} 윈도우 → "
-              f"S3D 평가 {len(eval_window_starts)}개 "
+              f"3D-CNN 평가 {len(eval_window_starts)}개 "
               f"({100.0 * len(eval_window_starts) / max(1, len(window_starts)):.0f}%)")
         if progress_callback is not None:
             progress_callback(PROG_PRESCREEN_END)
 
-        # Phase A: 선별된 윈도우에만 S3D 실행 (예측/확률/CAM 저장)
+        # Phase A: 선별된 윈도우에만 3D-CNN 실행 (예측/확률/CAM 저장)
         with torch.inference_mode():
             for batch_start in range(0, len(eval_window_starts), infer_batch_size):
                 # 실제 추론 진행도 보고 (사전선별 종료~추론 종료 구간에 매핑)
@@ -700,7 +704,8 @@ def predict_events_and_clips(
         # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
         results = []
         base_name = os.path.splitext(os.path.basename(video_path))[0]
-        render_cap = cv2.VideoCapture(video_path) if events else None
+        render_cap = (cv2.VideoCapture(video_path)
+                      if (events and render_clips) else None)
         try:
             for ev_idx, ev in enumerate(events, 1):
                 if progress_callback is not None:
@@ -717,38 +722,40 @@ def predict_events_and_clips(
                                   if start_f <= f <= end_f]
                 crash_prob = max(probs_in_event) if probs_in_event else None
 
-                clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
-                writer, rendered_path = _open_clip_writer(
-                    clip_stem, fps, (orig_w, orig_h))
+                clip_path = None
+                if render_clips:
+                    clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
+                    writer, rendered_path = _open_clip_writer(
+                        clip_stem, fps, (orig_w, orig_h))
 
 
-                # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
-                render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
-                last_heatmap = None
-                for f in range(clip_start, clip_end + 1):
-                    ret, frame = render_cap.read()  # 이미 BGR
-                    if not ret:
-                        break
-                    if f in accident_overlays:
-                        last_heatmap = accident_overlays[f][0]
-                    in_event = start_f <= f <= end_f
-                    if in_event and last_heatmap is not None:
-                        roi = frame[by1:by2, bx1:bx2]
-                        # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
-                        hm = cv2.resize(last_heatmap, (roi.shape[1], roi.shape[0]))
-                        frame[by1:by2, bx1:bx2] = cv2.addWeighted(
-                            roi, 0.6, hm, 0.4, 0)
-                        cv2.rectangle(frame, (bx1, by1),
-                                      (bx2, by2), (0, 0, 255), 3)
-                        _draw_state_label(frame, 1)
-                    else:
-                        cv2.rectangle(frame, (bx1, by1),
-                                      (bx2, by2), (0, 255, 0), 2)
-                        _draw_state_label(frame, 0)
-                    writer.write(frame)
-                writer.release()
-                # 브라우저 호환 최종본(H.264/mp4)으로 변환
-                clip_path = _finalize_clip(rendered_path, clip_stem)
+                    # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
+                    render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
+                    last_heatmap = None
+                    for f in range(clip_start, clip_end + 1):
+                        ret, frame = render_cap.read()  # 이미 BGR
+                        if not ret:
+                            break
+                        if f in accident_overlays:
+                            last_heatmap = accident_overlays[f][0]
+                        in_event = start_f <= f <= end_f
+                        if in_event and last_heatmap is not None:
+                            roi = frame[by1:by2, bx1:bx2]
+                            # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
+                            hm = cv2.resize(last_heatmap, (roi.shape[1], roi.shape[0]))
+                            frame[by1:by2, bx1:bx2] = cv2.addWeighted(
+                                roi, 0.6, hm, 0.4, 0)
+                            cv2.rectangle(frame, (bx1, by1),
+                                          (bx2, by2), (0, 0, 255), 3)
+                            _draw_state_label(frame, 1)
+                        else:
+                            cv2.rectangle(frame, (bx1, by1),
+                                          (bx2, by2), (0, 255, 0), 2)
+                            _draw_state_label(frame, 0)
+                        writer.write(frame)
+                    writer.release()
+                    # 브라우저 호환 최종본(H.264/mp4)으로 변환
+                    clip_path = _finalize_clip(rendered_path, clip_stem)
 
                 # ── 사고 '시점' 확정: 이벤트 구간 내 플로우 최대점(=충격 순간) ──
                 # 모델은 '윈도우 마지막 프레임=충돌 종료'로 학습돼 윈도우 시작

@@ -3,6 +3,11 @@ import torch.nn as nn
 from torchvision.models.video import s3d, S3D_Weights
 
 
+# 분류 헤드 앞 dropout 비율 — 세 백본 공통값.
+# 백본 비교 실험에서 정규화 강도가 모델마다 다르면 결과 해석이 불가능해지므로
+# 반드시 같은 값을 쓴다. (기존: s3d 0.2 / x3d 0.5 / slowfast 0.2 로 제각각이었음)
+DROPOUT_P = 0.5
+
 class HitAndRun3DCNN(nn.Module):
     """S3D 백본 기반 물피도주 감지 모델.
 
@@ -25,7 +30,7 @@ class HitAndRun3DCNN(nn.Module):
                      False(기본값)로 생성해 불필요한 다운로드를 피한다.
     """
 
-    def __init__(self, num_classes=2, pretrained=False):
+    def __init__(self, num_classes=2, pretrained=False, dropout_p=DROPOUT_P):
         super(HitAndRun3DCNN, self).__init__()
         weights = S3D_Weights.KINETICS400_V1 if pretrained else None
         base = s3d(weights=weights)
@@ -34,7 +39,7 @@ class HitAndRun3DCNN(nn.Module):
         self.features = base.features
 
         self.avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
-        self.dropout = nn.Dropout(p=0.2) #dropout 값 0.4 -> 0.2로 변경 (이정주)
+        self.dropout = nn.Dropout(p=dropout_p)
         # 분류 헤드는 logit을 출력하므로 BN/ReLU 없이 Conv3d 단독 (CAM 가중치로도 사용)
         self.head_conv = nn.Conv3d(1024, num_classes, kernel_size=1)
 

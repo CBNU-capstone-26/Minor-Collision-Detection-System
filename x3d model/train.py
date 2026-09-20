@@ -1,3 +1,4 @@
+import csv
 import os
 from datetime import datetime
 from pathlib import Path
@@ -165,6 +166,24 @@ def train_model(
         Subset(val_dataset, val_real_idx), batch_size=batch_size,
         shuffle=False, device=device) if val_real_idx else None
 
+    # ── 학습 곡선 로그 (CSV) ───────────────────────────────────────
+    # 파일명에 모델·사전학습여부·시각이 들어가 5가지 조합이 섞이지 않는다.
+    log_path = config.TRAIN_LOG_DIR / (
+        f"trainlog_{config.MODEL_NAME}_{config.PRETRAIN_TAG}_"
+        f"{datetime.now().strftime('%y%m%d_%H%M')}.csv")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, 'w', newline='', encoding='utf-8') as _f:
+        csv.writer(_f).writerow([
+            'epoch', 'lr', 'train_loss',
+            'val_rc_loss', 'val_rc_acc', 'val_rc_recallA', 'val_rc_precA',
+            'val_real_loss', 'val_real_acc', 'val_real_recallA', 'val_real_precA',
+        ])
+    print(f"[로그] 학습 곡선 CSV: {log_path}")
+
+    def _csv(v):
+        """None(해당 val 셋 없음/분모 0)은 빈칸으로 기록."""
+        return '' if v is None else f'{v:.6f}'
+
     # 학습 시에는 Kinetics-400 사전학습 가중치로 초기화 (config.PRETRAINED)
     model = HitAndRun3DCNN(
         num_classes=num_classes, pretrained=config.PRETRAINED).to(device)
@@ -189,9 +208,42 @@ def train_model(
         criterion = nn.CrossEntropyLoss()
     # 미세조정 표준 관행: 사전학습된 백본(features)은 낮은 LR(×0.1)로 보수적으로,
     # 새로 초기화된 분류 헤드(head_conv)는 기본 LR로 학습한다.
-    optimizer = optim.Adam([
-        {'params': model.features.parameters(), 'lr': learning_rate * 0.1},
-        {'params': model.head_conv.parameters(), 'lr': learning_rate},
+    # AdamW = decoupled weight decay. 과적합 억제용 정규화는 여기서 건다.
+    # (Adam + weight_decay 는 L2가 적응적 LR에 왜곡되어 의도대로 동작하지 않는다)
+    #
+    # 파라미터를 (사전학습/신규) × (decay/no-decay) 4그룹으로 나눈다.
+    #  · 사전학습된 부분은 LR ×0.1 로 보수적으로 (기존 동작 유지)
+    #  · ⚠️ model.named_parameters() 를 순회해야 한다. features/head_conv 만
+    #    나열하면 그 사이에 있는 모듈(x3d 의 head_pool 0.97M)이 통째로 빠져
+    #    학습되지 않는다.
+    #  · BN scale/bias 와 모든 bias 는 weight decay 제외 — 표준 관행.
+    #    BN 의 γ 가 0 으로 끌려가면 해당 채널 출력이 죽는다. 3D CNN 은 BN 텐서가
+    #    154~220 개라 영향이 크다.
+    _norm_ids = set()
+    for _m in model.modules():
+        if isinstance(_m, (nn.BatchNorm3d, nn.BatchNorm2d, nn.BatchNorm1d,
+                           nn.GroupNorm, nn.LayerNorm)):
+            _norm_ids.update(id(p) for p in _m.parameters(recurse=False))
+
+    _g = {'new_d': [], 'new_n': [], 'pre_d': [], 'pre_n': []}
+    for _name, _p in model.named_parameters():
+        if not _p.requires_grad:
+            continue
+        # 새로 초기화되는 분류 헤드만 기본 LR, 나머지(사전학습분)는 ×0.1
+        _kind = 'new' if _name.startswith('head_conv') else 'pre'
+        _decay = 'n' if (id(_p) in _norm_ids or _name.endswith('bias')) else 'd'
+        _g[f'{_kind}_{_decay}'].append(_p)
+
+    _wd = config.TRAIN_WEIGHT_DECAY
+    print(f"[옵티마이저] 사전학습부 {sum(p.numel() for p in _g['pre_d'])/1e6:.2f}M(decay) + "
+          f"{sum(p.numel() for p in _g['pre_n'])/1e3:.1f}K(no-decay) / "
+          f"헤드 {sum(p.numel() for p in _g['new_d'] + _g['new_n'])/1e3:.1f}K, "
+          f"weight_decay={_wd}")
+    optimizer = optim.AdamW([
+        {'params': _g['pre_d'], 'lr': learning_rate * 0.1, 'weight_decay': _wd},
+        {'params': _g['pre_n'], 'lr': learning_rate * 0.1, 'weight_decay': 0.0},
+        {'params': _g['new_n'], 'lr': learning_rate, 'weight_decay': 0.0},
+        {'params': _g['new_d'], 'lr': learning_rate, 'weight_decay': _wd},
     ])
 
     # ── 안전한 학습 안정화 장치 (모델 구조·손실 불변, 성능 저하 없음) ──
@@ -244,11 +296,16 @@ def train_model(
 
         # rc용/real용 val을 각각 분리해서 성능 측정
         def _evaluate(loader):
-            """val 로더 하나에 대해 (avg_loss, acc) 반환. 로더 없으면 (None, None)."""
+            """val 로더 하나 → (avg_loss, acc, recall_A, precision_A).
+
+            ⚠️ 데이터가 A:S = 1:10.4 로 치우쳐 있어 정확도(acc)만 보면 전부 S로
+               찍어도 91%가 나온다. 사고를 실제로 잡았는지는 A클래스 recall로 본다.
+            """
             if loader is None:
-                return None, None
+                return None, None, None, None
             model.eval()
             vloss, correct = 0.0, 0
+            tp = fp = fn = 0                       # A(=1) 기준
             with torch.inference_mode():
                 for inputs, labels in loader:
                     inputs = inputs.to(device, non_blocking=cuda_like)
@@ -258,12 +315,18 @@ def train_model(
                             memory_format=torch.channels_last_3d)
                     outputs = model(inputs)
                     vloss += criterion(outputs, labels).item() * inputs.size(0)
-                    correct += torch.sum(outputs.argmax(dim=1) == labels).item()
+                    preds = outputs.argmax(dim=1)
+                    correct += torch.sum(preds == labels).item()
+                    tp += torch.sum((preds == 1) & (labels == 1)).item()
+                    fp += torch.sum((preds == 1) & (labels != 1)).item()
+                    fn += torch.sum((preds != 1) & (labels == 1)).item()
             n = len(loader.dataset)
-            return vloss / n, correct / n
+            recall = tp / (tp + fn) if (tp + fn) else None
+            prec = tp / (tp + fp) if (tp + fp) else None
+            return vloss / n, correct / n, recall, prec
 
-        rc_loss, rc_acc = _evaluate(val_rc_loader)
-        real_loss, real_acc = _evaluate(val_real_loader)
+        rc_loss, rc_acc, rc_rec, rc_prec = _evaluate(val_rc_loader)
+        real_loss, real_acc, real_rec, real_prec = _evaluate(val_real_loader)
 
         # 조기종료·스케줄러·best 저장 기준: 실제 영상 성능이 목표이므로 real val 우선.
         # real val이 없으면(rc만 학습) rc val로 대체.
@@ -271,11 +334,24 @@ def train_model(
         scheduler.step(monitor_loss)
         current_lr = optimizer.param_groups[-1]['lr']  # 헤드 LR 표시
 
-        def _fmt(l, a):
-            return f'{l:.4f}/{a:.4f}' if l is not None else 'N/A'
+        def _fmt(l, a, r):
+            if l is None:
+                return 'N/A'
+            rs = f'{r:.3f}' if r is not None else '-'
+            return f'{l:.4f}/{a:.4f}/A{rs}'
         print(f'Epoch [{epoch+1}/{num_epochs}] Train {avg_train_loss:.4f} | '
-              f'val_rc(L/Acc) {_fmt(rc_loss, rc_acc)} | '
-              f'val_real(L/Acc) {_fmt(real_loss, real_acc)} | LR {current_lr:.2e}')
+              f'val_rc(L/Acc/Arecall) {_fmt(rc_loss, rc_acc, rc_rec)} | '
+              f'val_real(L/Acc/Arecall) {_fmt(real_loss, real_acc, real_rec)} | '
+              f'LR {current_lr:.2e}')
+
+        # 에포크별 곡선을 CSV로 남긴다 — 학습이 중간에 끊겨도 남도록 매번 append.
+        # 과적합 판단(train↓ val↑)과 5가지 조합 비교에 이 파일이 근거가 된다.
+        with open(log_path, 'a', newline='', encoding='utf-8') as _f:
+            csv.writer(_f).writerow([
+                epoch + 1, f'{current_lr:.3e}', f'{avg_train_loss:.6f}',
+                _csv(rc_loss), _csv(rc_acc), _csv(rc_rec), _csv(rc_prec),
+                _csv(real_loss), _csv(real_acc), _csv(real_rec), _csv(real_prec),
+            ])
 
         # best 저장 기준은 real val (파일명 손실율도 real val 기준으로 기록됨)
         early_stopping(monitor_loss, model, epoch + 1)
@@ -295,7 +371,7 @@ def train_model(
     early_str = 'earlyY' if early_stopping.early_stop else 'earlyN'
     loss_str = f'{early_stopping.val_loss_min:.4f}'
     final_name = (f'hitandrun_{config.MODEL_NAME}_{date_str}_'
-                  f'{epoch_str}_{early_str}_{loss_str}.pth')
+                  f'{epoch_str}_{early_str}_{config.PRETRAIN_TAG}_{loss_str}.pth')
     final_path = Path(save_path).with_name(final_name)
     # 학습 중엔 save_path(작업용)로 저장해 두고, 종료 시 규칙 파일명으로 이동
     os.replace(save_path, final_path)

@@ -10,6 +10,11 @@ SLOWFAST_ALPHA = 4
 SLOWFAST_FUSED_CHANNELS = 2048 + 256
 
 
+# 분류 헤드 앞 dropout 비율 — 세 백본 공통값.
+# 백본 비교 실험에서 정규화 강도가 모델마다 다르면 결과 해석이 불가능해지므로
+# 반드시 같은 값을 쓴다. (기존: s3d 0.2 / x3d 0.5 / slowfast 0.2 로 제각각이었음)
+DROPOUT_P = 0.5
+
 class _SlowFastFuse(nn.Module):
     """[slow, fast] 두 경로를 하나의 특징맵으로 합친다.
 
@@ -52,7 +57,7 @@ class HitAndRun3DCNN(nn.Module):
         pretrained : True면 Kinetics-400 사전학습 가중치로 백본 초기화.
     """
 
-    def __init__(self, num_classes=2, pretrained=False):
+    def __init__(self, num_classes=2, pretrained=False, dropout_p=DROPOUT_P):
         super(HitAndRun3DCNN, self).__init__()
         base = slowfast_r50(pretrained=pretrained)
 
@@ -61,7 +66,7 @@ class HitAndRun3DCNN(nn.Module):
         self.fuse = _SlowFastFuse()
 
         self.avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=dropout_p)
         # 분류 헤드는 logit 출력이므로 BN/ReLU 없이 Conv3d 단독 (CAM 가중치 겸용)
         self.head_conv = nn.Conv3d(
             SLOWFAST_FUSED_CHANNELS, num_classes, kernel_size=1)

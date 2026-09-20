@@ -18,7 +18,8 @@ def _get_model():
         return _model
 
     import sys
-    # model/ 폴더를 path에 추가 — 내부 절대 임포트(import config 등) 지원
+    # 선택된 백본 폴더를 path에 추가 — 내부 절대 임포트(import config 등) 지원.
+    # 폴더는 settings.MODEL_VARIANT(환경변수)가 고른다.
     sys.path.insert(0, str(settings.MODEL_DIR))
 
     import torch
@@ -37,7 +38,8 @@ def _get_model():
     model.load_state_dict(state_dict)
     model.eval()
     _model = model
-    print(f"[worker] 모델 로드 완료 (device={device})")
+    print(f"[worker] 모델 로드 완료 — {getattr(model_config, 'MODEL_NAME', '?')} "
+          f"(device={device}, weights={model_config.SERVICE_WEIGHTS_PATH.name})")
     return _model
 
 
