@@ -87,7 +87,14 @@ TRAIN_A_SLICE_STRIDE = 15
 TRAIN_A_PRE_FRAMES = 15
 
 TRAIN_S_SLICE_ENABLED = True
-TRAIN_S_SLICE_STRIDE = CLIP_LENGTH    # 30 = 겹치지 않게 연속 분할(논문 방식)
+# 논문은 비충돌 영상을 빈틈없이(=CLIP_LENGTH 간격) 잘라 전부 넣는다. 그대로 하면
+# S 클립이 A의 10배가 되고(1:10.4), batch 15의 33%에 A가 한 개도 안 들어가
+# 모델이 '전부 S'로 붕괴한다(실측: A recall 0.000).
+# 연속한 S 클립은 같은 주차장·같은 차를 1초 차이로 본 것이라 사실상 중복이므로,
+# 간격을 3초(90프레임)로 벌려 중복만 덜어낸다. A:S 1:10.4 → 약 1:4.3,
+# 에포크 시간도 2.6배 짧아진다. 모든 클립을 매 에포크 한 번씩 보는 성질은 유지된다
+# (WeightedRandomSampler 로 비율을 맞추면 S 클립 일부가 에포크마다 누락된다).
+TRAIN_S_SLICE_STRIDE = 90
 TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 때 상한용
 
 # 클래스 가중치(CrossEntropyLoss weight). S 슬라이싱으로 A:S 불균형이 커지면
@@ -99,7 +106,9 @@ TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 �
 #   가중치 없이 학습했더니 3에포크 내내 A recall 0.000 — '전부 S'로 붕괴했다.
 # 값 선택: 역빈도 그대로(12.9)는 오탐이 급증할 위험이 커서 제곱근 완화값을 쓴다.
 #   sqrt(12.9) ≈ 3.6. 이래도 recall이 0이면 12.9 쪽으로 올린다.
-TRAIN_CLASS_WEIGHTS = (1.0, 3.6)
+# → stride 90 으로 불균형을 1:4.3 까지 낮췄으므로 손실 가중은 끈다.
+#   둘을 같이 걸면 A를 이중으로 강조해 오탐이 급증한다.
+TRAIN_CLASS_WEIGHTS = None
 TARGET_ID = 0
 USE_AMP = True
 USE_CHANNELS_LAST = True
