@@ -146,8 +146,15 @@ TRAIN_EARLY_STOPPING_PATIENCE = 10
 TRAIN_LEARNING_RATE = 0.00003  # SlowFast-R50 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
 # AdamW의 decoupled weight decay. ⚠️ Adam에 weight_decay를 주면 L2 페널티가
 # 적응적 학습률에 의해 파라미터마다 왜곡되므로, 정규화 목적이면 AdamW를 써야 한다.
-# 학습 클립 662개 / 원본 영상 116개에 비해 파라미터가 많아(2.98M~33.65M) 켜둔다.
-TRAIN_WEIGHT_DECAY = 0.01
+#
+# 0.01(AdamW 기본)에서 0.1로 올림. 근거는 실측된 과적합이다:
+#   s3d+ptY 5에포크 — train 0.452→0.318 (↓) 인데 val_real 0.570→0.612 (↑),
+#   best 가 1에포크. train 손실이 2에포크부터 'A를 전혀 못 맞히고 낼 수 있는
+#   최소 손실'(0.407) 아래로 내려갔다 = 학습 A는 맞히지만 검증 A로 일반화 실패.
+# ⚠️ decoupled weight decay 는 LR과 곱해진다(θ ← θ − lr·λ·θ). 우리 LR이
+#    헤드 3e-5 / 백본 3e-6 이라 λ=0.01 로는 100에포크 전체에서 가중치가 0.2%
+#    밖에 줄지 않아 사실상 정규화가 걸리지 않았다. λ=0.1 이면 헤드 약 2%.
+TRAIN_WEIGHT_DECAY = 0.1
 # 에포크별 학습 곡선 CSV 저장 위치 (과적합 판단·모델 비교용)
 TRAIN_LOG_DIR = _ROOT / "outputs" / "trainlogs"
 # 평가 결과 로그(콘솔 전문 + 5가지 모델 비교용 요약 CSV) 저장 위치
