@@ -53,10 +53,13 @@ class HitAndRunDataset(Dataset):
                 class_str = action[0]
                 target_id = int(float(action[1]))
                 start_f = int(float(action[2]))
+                # 충돌 종료 프레임 — A 슬라이싱이 구간을 벗어나지 않도록 쓴다
+                end_f = int(float(action[3])) if len(action) > 3 else start_f
             else:
                 class_str = 'S'
                 target_id = 0
                 start_f = 0
+                end_f = 0
 
             if target_id not in bboxes:
                 target_id = next(iter(bboxes), 0)
@@ -78,8 +81,22 @@ class HitAndRunDataset(Dataset):
                     'fps': fps,              # 시간 지터를 '초' 기준으로 맞추기 위함
                 })
 
-            if label == 1 or not getattr(config, 'TRAIN_S_SLICE_ENABLED', False):
-                # 충돌(A)은 논문과 동일하게 영상당 1클립(충돌 시점 기준)
+            if label == 1:
+                # 충돌(A): 라벨 구간 안에서만 창을 밀어 여러 클립을 만든다.
+                # 창의 끝이 end_f를 넘지 않아야 충돌이 끝난 뒤 장면을 A로
+                # 잘못 학습시키지 않는다.
+                a_stride = max(1, int(getattr(config, 'TRAIN_A_SLICE_STRIDE', 15)))
+                last = end_f - self.clip_length + 1      # 창 끝 == end_f 인 시작점
+                if (getattr(config, 'TRAIN_A_SLICE_ENABLED', False)
+                        and last > start_f):
+                    starts = list(range(start_f, last + 1, a_stride))
+                    if starts[-1] != last:
+                        starts.append(last)   # 마지막 창은 충돌 종료에 정렬
+                    for sf in starts:
+                        _add(sf)
+                else:
+                    _add(start_f)             # 구간이 30프레임 이하면 기존과 동일
+            elif not getattr(config, 'TRAIN_S_SLICE_ENABLED', False):
                 _add(start_f)
             else:
                 # 비충돌(S)은 영상 전체를 클립 길이 단위로 잘라 전부 학습에 넣는다.
