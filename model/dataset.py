@@ -82,20 +82,23 @@ class HitAndRunDataset(Dataset):
                 })
 
             if label == 1:
-                # 충돌(A): 라벨 구간 안에서만 창을 밀어 여러 클립을 만든다.
-                # 창의 끝이 end_f를 넘지 않아야 충돌이 끝난 뒤 장면을 A로
-                # 잘못 학습시키지 않는다.
+                # 충돌(A): 창을 start_f 보다 TRAIN_A_PRE_FRAMES 앞에서 시작해
+                # '접근 → 충돌 → 흔들림'이 한 창에 담기게 한다(config 주석 참고).
+                pre = int(getattr(config, 'TRAIN_A_PRE_FRAMES', 0))
+                a_start = max(0, start_f - pre)
                 a_stride = max(1, int(getattr(config, 'TRAIN_A_SLICE_STRIDE', 15)))
                 last = end_f - self.clip_length + 1      # 창 끝 == end_f 인 시작점
                 if (getattr(config, 'TRAIN_A_SLICE_ENABLED', False)
-                        and last > start_f):
-                    starts = list(range(start_f, last + 1, a_stride))
+                        and last > a_start):
+                    # (기본 off) 구간 안에서 창을 밀어 A 클립을 늘리는 경로.
+                    # 첫 창만 접근을 담고 나머지는 '충돌 중'이 된다.
+                    starts = list(range(a_start, last + 1, a_stride))
                     if starts[-1] != last:
                         starts.append(last)   # 마지막 창은 충돌 종료에 정렬
                     for sf in starts:
                         _add(sf)
                 else:
-                    _add(start_f)             # 구간이 30프레임 이하면 기존과 동일
+                    _add(a_start)
             elif not getattr(config, 'TRAIN_S_SLICE_ENABLED', False):
                 _add(start_f)
             else:
@@ -232,9 +235,12 @@ class HitAndRunDataset(Dataset):
             #    ※ 폭을 '초' 기준으로 환산한다. 프레임 수로 고정하면 같은 증강이
             #      fps에 따라 다른 의미가 된다(10프레임 = 30fps 0.33초, 10fps 1.0초).
             #      기본 0.33초는 30fps에서 기존 동작(0~10프레임)과 동일하다.
+            #    ※ 양방향(±)으로 흔든다. 한쪽(앞으로만)이면 A 클립의 접근 구간이
+            #      TRAIN_A_PRE_FRAMES 보다 계속 길어져 충돌이 창 밖으로 밀린다.
             jitter = int(round(sample.get('fps', 30.0)
                                * getattr(config, 'TRAIN_TIME_JITTER_SEC', 0.33)))
-            start_f = max(0, start_f - random.randint(0, max(0, jitter)))
+            if jitter > 0:
+                start_f = max(0, start_f + random.randint(-jitter, jitter))
             # ② bbox 지터: 서비스에서는 사용자가 마우스로 대충 박스를 그린다.
             #    GT 좌표 그대로만 학습하면 손그림 박스와 분포가 어긋나므로
             #    중심 이동(±5%)·크기 배율(0.9~1.15)로 부정확한 박스를 시뮬레이션.

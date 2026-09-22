@@ -65,8 +65,26 @@ TRAIN_TIME_JITTER_SEC = 0.33
 #   · 마지막 창은 end_f에 정렬한다 — 논문이 최고 성능을 낸 '충돌 종료 기준' 클립.
 # stride 15 기준 A 58 → 203클립, 불균형 1:10.4 → 1:3.0.
 # ※ 끄려면 False (기존 동작 = 영상당 1클립)
-TRAIN_A_SLICE_ENABLED = True
+# ⚠️ 슬라이싱을 켜면 첫 창을 뺀 나머지가 전부 '충돌 중'(접근 장면 없음)이 되어,
+#    아래 TRAIN_A_PRE_FRAMES 로 얻는 이점을 잃는다. 불균형은 S 쪽에서 줄이고
+#    A는 '접근이 담긴 창 1개'로 두는 편이 논문 방식에 가깝다.
+TRAIN_A_SLICE_ENABLED = False
 TRAIN_A_SLICE_STRIDE = 15
+
+# ---------- A 클립에 '접근 장면'을 담기 ----------
+# 창을 start_f(충돌 시작)부터 잡으면 클립에 '차가 다가오는 장면'이 한 프레임도
+# 없다. 그러면 모델은 흔들림만으로 판단해야 하는데, 논문이 오탐의 주원인으로
+# 지목한 게 바로 그 구분이다:
+#   "the appearance of a vehicle moving slowly and the appearance of a vehicle
+#    being slightly pushed out due to a collision is very similar"
+# 논문은 창 끝을 '충돌 종료'에 맞췄고, rcdata 충돌 구간이 12~20프레임으로 짧아
+# 창 앞쪽 10~18프레임이 자동으로 접근 장면이 됐다(그래서 30프레임이 최고 성능).
+#   "In the case of the 30 frame, the vehicle approaches and collides, and the
+#    vehicle shakes."
+# 우리 realdata는 구간이 중앙 39프레임이라 end_f 정렬로는 창이 구간 안에 갇힌다.
+# 그래서 구간 길이와 무관하게 start_f 보다 이만큼 앞에서 창을 시작한다.
+# 15 = 창의 절반을 접근에 배분(접근 15 + 충돌 15). 논문 rcdata의 14와 비슷하다.
+TRAIN_A_PRE_FRAMES = 15
 
 TRAIN_S_SLICE_ENABLED = True
 TRAIN_S_SLICE_STRIDE = CLIP_LENGTH    # 30 = 겹치지 않게 연속 분할(논문 방식)
@@ -106,7 +124,10 @@ NORM_STD = (0.22803, 0.22145, 0.216989)
 # [YYMMDD] : 학습 시작 날짜, [N]ep : 학습 종료 시점 epoch, [earlyY|N] : 조기 종료 여부, [손실율] : 최종 검증 손실율(val loss)
 TRAIN_BEST_MODEL_SAVE_PATH = (
     _ROOT / "weights" / f"hitandrun_{MODEL_NAME}_{PRETRAIN_TAG}_best.pth")
-TRAIN_BATCH_SIZE = 8  # GPU VRAM 상황에 맞게 조절 (예: 16, 32, 64 등)(기본값: 15)
+TRAIN_BATCH_SIZE = 15  # 논문과 동일(Hwang&Lee 2024: batch 15). VRAM 부족하면 낮출 것
+# ⚠️ 배치가 작으면 A:S 1:12.9 에서 '배치에 A가 한 개도 없는' 일이 잦다
+#    (batch 8 → 55%, batch 15 → 33%, batch 32 → 9%). 그런 배치에서는
+#    클래스 가중치를 얼마로 올려도 A 학습 신호가 0이다.
 TRAIN_NUM_EPOCHS = 100
 TRAIN_SPLIT_RATIO = 0.8
 TRAIN_EARLY_STOPPING_PATIENCE = 10
