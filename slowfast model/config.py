@@ -75,7 +75,13 @@ TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 �
 # 클래스 가중치(CrossEntropyLoss weight). S 슬라이싱으로 A:S 불균형이 커지면
 # 모델이 S로 치우쳐 '미검출'이 늘 수 있다. (없음=None, 예: (1.0, 3.0) → A 3배)
 # ※ 검증 없이 켜지 말 것 — 값에 따라 오탐이 급증할 수 있다.
-TRAIN_CLASS_WEIGHTS = None
+#
+# 실측: A 슬라이싱을 켜도 A:S ≈ 1:12.9 (rcdata 833 + realdata 기준).
+#   rcdata의 A 구간은 12~20프레임이라 A 슬라이싱이 거의 작동하지 않는다.
+#   가중치 없이 학습했더니 3에포크 내내 A recall 0.000 — '전부 S'로 붕괴했다.
+# 값 선택: 역빈도 그대로(12.9)는 오탐이 급증할 위험이 커서 제곱근 완화값을 쓴다.
+#   sqrt(12.9) ≈ 3.6. 이래도 recall이 0이면 12.9 쪽으로 올린다.
+TRAIN_CLASS_WEIGHTS = (1.0, 3.6)
 TARGET_ID = 0
 USE_AMP = True
 USE_CHANNELS_LAST = True
