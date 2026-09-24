@@ -50,3 +50,4 @@ weights/
 !.env.example
 
 docs/
+tests/
