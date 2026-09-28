@@ -203,10 +203,14 @@ def _evaluate_folder_impl(
     svc = evaluate_service_path(model, folder_path, selected_files,
                                 target_id=target_id, r_value=r_value,
                                 resize=resize, clip_length=clip_length)
+    svc_rows = svc.pop('rows')
     return {
         'n_videos': total_videos, 'tp': tp, 'fn': fn, 'fp': fp, 'tn': tn,
         'recall': recall, 'false_alarm': false_alarm, 'accuracy': accuracy,
-        'precision': precision, 'f1': f1, **{f'svc_{k}': v for k, v in svc.items()},
+        'precision': precision, 'f1': f1,
+        **{(k if k.startswith(('clean_', 'n_in')) else f'svc_{k}'): v
+           for k, v in svc.items()},
+        '_svc_rows': svc_rows,
     }
 
 
@@ -230,6 +234,69 @@ def _read_label(txt_path):
     return bboxes, sf, ef
 
 
+def _training_video_names():
+    """학습 데이터 폴더(config.DATA_DIR) 아래 영상 파일명 집합.
+
+    평가 영상이 여기 있으면 모델이 학습했거나(train 분할) 학습 중 검증에 썼을(val
+    분할) 수 있어 성능이 부풀려진다. 실제로 eval 24개 중 18개가 학습에 들어간 채로
+    평가한 적이 있어, 파일명으로 겹침을 잡아 경고하고 깨끗한 영상만 따로 집계한다.
+    """
+    root = pathlib.Path(str(config.DATA_DIR))
+    if not root.exists():
+        return set()
+    return {p.name for p in root.rglob('*.mp4')}
+
+
+def _summarize(rows):
+    """영상별 결과(rows) → 서비스 관점 지표."""
+    A = [r for r in rows if r['gt'] == 'A']
+    S = [r for r in rows if r['gt'] == 'S']
+    hits = sum(1 for r in A if r['hit'])
+    errs = sorted(r['err_f'] for r in A if r['err_f'] is not None)
+    errs_s = sorted(r['err_sec'] for r in A if r['err_sec'] is not None)
+    hours = sum(r['frames'] / r['fps'] for r in rows if r['fps']) / 3600
+
+    def pct(a, b):
+        return round(a / b * 100, 2) if b else None
+
+    false_events = sum(r['false_events'] for r in rows)
+    return {
+        'n': len(rows), 'n_A': len(A), 'n_S': len(S),
+        'recall': pct(hits, len(A)),
+        'overlap_recall': pct(sum(1 for r in A if r['overlap']), len(A)),
+        'missed': sum(1 for r in A if r['n_events'] == 0),
+        'wrong_place': sum(1 for r in A if r['n_events'] and not r['hit']),
+        'split': sum(1 for r in A if r['hit'] and r['n_events'] > 1),
+        'false_events': false_events,
+        'false_per_hour': round(false_events / hours, 1) if hours else None,
+        'video_false_alarm': pct(sum(1 for r in S if r['n_events']), len(S)),
+        'err_median_f': errs[len(errs) // 2] if errs else None,
+        'err_median_sec': round(errs_s[len(errs_s) // 2], 3) if errs_s else None,
+        'hours': hours,
+    }
+
+
+def _print_summary(s, tol_sec):
+    print(f"영상 수            : {s['n']} 개  (A {s['n_A']} / S {s['n_S']}, "
+          f"총 {s['hours']*60:.1f}분)")
+    if s['n_A']:
+        print(f"Recall(시작 ±{tol_sec:g}초) : {s['recall']:.2f}%   "
+              f"← 라벨 시작 근처에서 시작한 이벤트가 있어야 검출")
+        print(f"  참고: 구간 겹침만  : {s['overlap_recall']:.2f}%   "
+              f"(클립에 충돌 장면이 담기기만 한 경우까지 인정)")
+        print(f"  놓침 {s['missed']}건 / 엉뚱한 곳 검출 {s['wrong_place']}건 / "
+              f"검출했지만 분할 {s['split']}건")
+    print(f"오탐 이벤트        : {s['false_events']}개"
+          + (f"  (영상 1시간당 {s['false_per_hour']}개)" if s['false_per_hour'] is not None else "")
+          + "   ← 충돌 시작과 무관한 클립 전부")
+    if s['n_S']:
+        print(f"비충돌 영상 오탐율 : {s['video_false_alarm']:.2f}%  "
+              f"(S {s['n_S']}개 중 이벤트가 하나라도 나온 비율)")
+    if s['err_median_f'] is not None:
+        print(f"시작 시점 오차     : 중앙값 {s['err_median_f']:+d}f "
+              f"({s['err_median_sec']:+.2f}초)  ← 가장 가까운 이벤트 기준")
+
+
 def evaluate_service_path(
     model,
     folder_path,
@@ -241,27 +308,30 @@ def evaluate_service_path(
 ):
     """서비스가 실제로 쓰는 predict_events_and_clips 로 평가한다.
 
-    위쪽 evaluate_folder_accuracy 는 flow 사전선별·이벤트 상태머신·병합/길이필터를
-    모두 건너뛰고 '영상에 A 윈도우가 하나라도 있는가'만 본다. 그래서 서비스가
-    내놓는 결과(이벤트 몇 개·언제)와 연결되지 않는다. 여기서는 같은 함수를
-    클립 렌더링만 끄고 호출해, 사용자가 실제로 받는 이벤트 목록을 라벨과 대조한다.
+    위쪽 평가는 flow 사전선별·이벤트 상태머신·병합/길이필터를 건너뛰고 '영상에
+    A 윈도우가 하나라도 있는가'만 본다(논문과 같은 영상 단위 지표). 여기서는
+    같은 함수를 클립 렌더링만 끄고 호출해, 사용자가 실제로 받는 이벤트를 라벨과
+    대조한다.
 
-    추가로 재는 것:
-      · 시점 오차   : 검출 이벤트 시작 − 라벨 start_f (서비스의 핵심 출력)
-      · 이벤트 개수 : 한 장면이 여러 클립으로 쪼개지는지 / 오탐이 몇 개인지
-      · 구간 IoU    : 검출 구간이 라벨 구간과 얼마나 겹치는지
+    판정 기준 (이 프로젝트는 충돌 '시작'이 중요하고 끝은 중요하지 않다):
+      · 검출      : 라벨 start_f ± EVAL_HIT_TOLERANCE_SEC 안에서 시작한 이벤트가 있음
+      · 엉뚱한 곳 : 이벤트는 나왔지만 시작 근처가 아님 → 검출로 치지 않는다.
+                    '이벤트가 하나라도 있으면 검출'로 세면 recall 이 부풀려진다.
+      · 오탐 이벤트: 충돌 시작 근처가 아닌 모든 이벤트(비충돌 영상의 것 + 충돌
+                    영상의 여분). 사용자가 헛걸음하게 되는 클립 수다.
     """
     import tempfile
     from predict_cam import predict_events_and_clips
 
-    print("\n" + "=" * 50)
+    tol_sec = float(getattr(config, 'EVAL_HIT_TOLERANCE_SEC', 1.0))
+    in_train = _training_video_names()
+
+    print("\n" + "=" * 60)
     print("[서비스 경로 평가]  prescreen + 상태머신 + 병합/길이필터 포함")
-    print("=" * 50)
+    print("=" * 60)
 
-    tp = tn = fp = fn = 0
-    time_errs, ious, n_events, split_cases, miss_list = [], [], [], [], []
+    rows = []
     tmp_dir = pathlib.Path(tempfile.mkdtemp(prefix='evalclips_'))
-
     for mp4_file in tqdm(selected_files, desc="서비스 경로"):
         base = mp4_file.rsplit('.', 1)[0]
         video_path = os.path.join(folder_path, mp4_file)
@@ -269,7 +339,11 @@ def evaluate_service_path(
         if not bboxes:
             continue
         bbox = bboxes.get(target_id, next(iter(bboxes.values())))
-        gt_label = 1 if gt_sf is not None else 0
+
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        cap.release()
 
         try:
             events = predict_events_and_clips(
@@ -280,80 +354,77 @@ def evaluate_service_path(
             print(f"  [경고] {mp4_file} 처리 실패: {exc}")
             continue
 
-        pred_label = 1 if events else 0
-        n_events.append(len(events))
-        if gt_label == 1 and pred_label == 1:
-            tp += 1
-        elif gt_label == 0 and pred_label == 0:
-            tn += 1
-        elif gt_label == 0 and pred_label == 1:
-            fp += 1
+        row = {'file': mp4_file, 'gt': 'A' if gt_sf is not None else 'S',
+               'in_train': mp4_file in in_train, 'fps': round(fps, 2),
+               'frames': frames, 'gt_start': gt_sf, 'gt_end': gt_ef,
+               'n_events': len(events),
+               'event_starts': ' '.join(str(e['start_frame']) for e in events),
+               'hit': None, 'overlap': None, 'err_f': None, 'err_sec': None,
+               'false_events': len(events)}
+        if gt_sf is not None:
+            tol = max(1, int(round(fps * tol_sec)))
+            row['hit'] = False
+            row['overlap'] = any(e['event_start_frame'] <= gt_ef
+                                 and e['event_end_frame'] >= gt_sf for e in events)
+            if events:
+                best = min(events, key=lambda e: abs(e['start_frame'] - gt_sf))
+                err = best['start_frame'] - gt_sf
+                row['err_f'] = err
+                row['err_sec'] = round(err / fps, 3)
+                row['hit'] = abs(err) <= tol
+                row['false_events'] = len(events) - (1 if row['hit'] else 0)
+        rows.append(row)
+
+    # ── 영상별 결과 ──
+    print(f"\n{'영상':<22} {'학습폴더':>6} {'fps':>4} {'라벨시작':>7} {'이벤트':>5} "
+          f"{'가장 가까운 시작(오차)':>24}  판정")
+    print("-" * 92)
+    for r in rows:
+        if r['gt'] == 'A':
+            if r['n_events'] == 0:
+                verdict = "❌ 놓침"
+            elif r['hit']:
+                verdict = "검출" + (f" +오탐{r['false_events']}" if r['false_events'] else "")
+            else:
+                verdict = f"❌ 엉뚱한 곳 ({r['n_events']}개)"
+            near = (f"{r['gt_start'] + r['err_f']} ({r['err_f']:+d}f, {r['err_sec']:+.2f}s)"
+                    if r['err_f'] is not None else "-")
         else:
-            fn += 1
-            miss_list.append(mp4_file)
+            verdict = f"❌ 오탐 {r['n_events']}개" if r['n_events'] else "정상"
+            near = "-"
+        print(f"{r['file']:<22} {'⚠있음' if r['in_train'] else '-':>6} {r['fps']:>4.0f} "
+              f"{r['gt_start'] if r['gt_start'] is not None else '-':>7} {r['n_events']:>5} "
+              f"{near:>24}  {verdict}")
 
-        if gt_label == 1 and events:
-            # 라벨 구간과 가장 많이 겹치는 이벤트를 '정답 대응'으로 본다
-            def _ov(e):
-                return (min(e['end_frame'], gt_ef) - max(e['start_frame'], gt_sf))
-            best = max(events, key=_ov)
-            time_errs.append(best['start_frame'] - gt_sf)
-            inter = max(0, _ov(best) + 1)
-            union = (max(best['end_frame'], gt_ef) - min(best['start_frame'], gt_sf) + 1)
-            ious.append(inter / union if union > 0 else 0.0)
-            if len(events) > 1:
-                split_cases.append((mp4_file, len(events)))
+    # ── 집계 ──
+    print("\n" + "-" * 60)
+    all_s = _summarize(rows)
+    _print_summary(all_s, tol_sec)
 
-    def _pct(a, b):
-        return (a / b * 100) if b > 0 else 0.0
+    n_contam = sum(1 for r in rows if r['in_train'])
+    clean_s = None
+    if n_contam:
+        clean = [r for r in rows if not r['in_train']]
+        print(f"\n⚠️  평가 영상 {len(rows)}개 중 {n_contam}개가 학습 폴더({config.DATA_DIR})에도 "
+              f"있습니다.\n    그 영상들은 학습에 쓰였을 수 있어 위 수치는 부풀려져 있습니다. "
+              f"학습 폴더에 없는 영상만 따로 집계:")
+        print("-" * 60)
+        if clean:
+            clean_s = _summarize(clean)
+            _print_summary(clean_s, tol_sec)
+        else:
+            print("  (없음 — 모든 평가 영상이 학습 폴더에 있어 신뢰할 수 있는 수치가 없습니다)")
+    print("=" * 60)
 
-    total = tp + tn + fp + fn
-    print(f"\n총 평가 영상 수 : {total} 개  (A {tp + fn} / S {fp + tn})")
-    print(f"혼동행렬        : TP {tp} / FN {fn} / FP {fp} / TN {tn}")
-    print("-" * 50)
-    print(f"Recall(재현율)      : {_pct(tp, tp + fn):.2f}%")
-    print(f"False alarm(오탐율) : {_pct(fp, fp + tn):.2f}%")
-    print(f"Accuracy(정확도)    : {_pct(tp + tn, total):.2f}%")
-    print("-" * 50)
-    if time_errs:
-        s = sorted(time_errs)
-        med = s[len(s) // 2]
-        within = sum(1 for e in s if abs(e) <= clip_length)
-        print(f"시점 오차(검출−라벨): 중앙값 {med:+d}f / 평균 {sum(s)/len(s):+.1f}f "
-              f"/ 범위 {s[0]:+d}~{s[-1]:+d}f")
-        print(f"                     ±{clip_length}f 이내 {within}/{len(s)}건 "
-              f"({_pct(within, len(s)):.0f}%)")
-    else:
-        print("시점 오차           : 측정 불가 (검출된 충돌 없음)")
-    if ious:
-        print(f"구간 IoU            : 평균 {sum(ious)/len(ious):.3f} / "
-              f"최소 {min(ious):.3f}")
-    if n_events:
-        print(f"영상당 이벤트 수    : 평균 {sum(n_events)/len(n_events):.2f} / "
-              f"최대 {max(n_events)}  (= 사용자가 받는 클립 수)")
-    if split_cases:
-        print(f"\n[한 충돌이 여러 이벤트로 분할된 영상] {len(split_cases)}건")
-        for f, n in split_cases:
-            print(f" - {f}: {n}개")
-    if miss_list:
-        print(f"\n[충돌을 놓친 영상] {len(miss_list)}건")
-        for f in miss_list:
-            print(f" - {f}")
-    print("=" * 50)
-
-    _s = sorted(time_errs)
-    return {
-        'recall': _pct(tp, tp + fn),
-        'false_alarm': _pct(fp, fp + tn),
-        'accuracy': _pct(tp + tn, total),
-        'time_err_median': (_s[len(_s) // 2] if _s else None),
-        'time_err_mean': (round(sum(_s) / len(_s), 2) if _s else None),
-        'iou_mean': (round(sum(ious) / len(ious), 4) if ious else None),
-        'events_per_video': (round(sum(n_events) / len(n_events), 2)
-                             if n_events else None),
-        'split_videos': len(split_cases),
-        'missed_videos': len(miss_list),
-    }
+    out = {'hit_tol_sec': tol_sec,
+           **{k: v for k, v in all_s.items() if k not in ('n', 'n_A', 'n_S', 'hours')},
+           'n_in_train': n_contam}
+    if clean_s:
+        out.update({'clean_n': clean_s['n'], 'clean_recall': clean_s['recall'],
+                    'clean_false_events': clean_s['false_events'],
+                    'clean_video_false_alarm': clean_s['video_false_alarm']})
+    out['rows'] = rows
+    return out
 
 
 class _Tee:
@@ -406,14 +477,34 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         print(f"[로그] 평가 로그: {log_path}")
         return m
 
+    # 영상별 결과 CSV — 어떤 영상에서 무엇이 틀렸는지 나중에 다시 보려고
+    rows = m.pop('_svc_rows', [])
+    if rows:
+        per_video = log_dir / f"eval_{config.MODEL_NAME}_{tag}_{stamp}_videos.csv"
+        with open(per_video, 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+        print(f"[로그] 영상별 결과: {per_video}")
+
     # 요약 CSV 에 한 줄 덧붙인다(모델 비교용)
     summary = log_dir / 'eval_summary.csv'
     cols = ['datetime', 'model', 'pretrain', 'weights', 'eval_folder', 'n_videos',
             'tp', 'fn', 'fp', 'tn', 'recall', 'false_alarm', 'accuracy',
             'precision', 'f1',
-            'svc_recall', 'svc_false_alarm', 'svc_accuracy',
-            'svc_time_err_median', 'svc_time_err_mean', 'svc_iou_mean',
-            'svc_events_per_video', 'svc_split_videos', 'svc_missed_videos']
+            'svc_hit_tol_sec', 'svc_recall', 'svc_overlap_recall', 'svc_missed',
+            'svc_wrong_place', 'svc_split', 'svc_false_events', 'svc_false_per_hour',
+            'svc_video_false_alarm', 'svc_err_median_f', 'svc_err_median_sec',
+            'n_in_train', 'clean_n', 'clean_recall', 'clean_false_events',
+            'clean_video_false_alarm']
+    # 컬럼 구성이 바뀐 옛 요약 파일에 이어 쓰면 열이 어긋나므로 옆으로 치워둔다
+    if summary.exists():
+        with open(summary, encoding='utf-8') as f:
+            old_header = f.readline().strip().split(',')
+        if old_header != cols:
+            moved = summary.with_name(f"eval_summary_old_{stamp}.csv")
+            summary.rename(moved)
+            print(f"[로그] 요약 CSV 컬럼이 바뀌어 기존 파일을 {moved.name} 로 옮겼습니다")
     row = {'datetime': datetime.now().strftime('%Y-%m-%d %H:%M'),
            'model': config.MODEL_NAME, 'pretrain': tag, 'weights': weights,
            'eval_folder': str(folder_path), **m}

@@ -199,5 +199,9 @@ PREDICT_MIN_EVENT_SPAN_FRAMES = 40    # 구간 길이가 이보다 짧으면 깜
 EVAL_WEIGHTS_PATH = (Path(os.environ["EVAL_WEIGHTS"]) if os.getenv("EVAL_WEIGHTS")
                      else _ROOT / "weights" / "hitandrun_slowfast_converted.pth")
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
+# 서비스 경로 평가에서 '검출'로 인정하는 시작 시점 허용 오차(초).
+# 이벤트가 라벨 start_f ± 이 값 안에서 시작해야 검출로 센다. 이벤트가 나오긴 했어도
+# 엉뚱한 곳이면 검출이 아니다. 1초 = 30fps 기준 윈도우 하나 길이.
+EVAL_HIT_TOLERANCE_SEC = 1.0
 EVAL_INFER_BATCH_SIZE = 8 # batch size 8로 바꾸었음(이정주)
 EVAL_WINDOW_STRIDE = 1  # 기본값: 1 (올리면 속도↑ 정확도 소폭↓)
