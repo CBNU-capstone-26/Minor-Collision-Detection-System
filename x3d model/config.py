@@ -162,10 +162,10 @@ EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
-SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_ptY_best.pth"
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
 
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
-PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_ptY_best.pth"
+PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
@@ -197,7 +197,7 @@ PREDICT_MIN_EVENT_SPAN_FRAMES = 40    # 구간 길이가 이보다 짧으면 깜
 # 평가할 가중치. 여러 학습 결과를 비교할 땐 환경변수로 골라 쓴다:
 #     EVAL_WEIGHTS=weights/hitandrun_s3d_..._ptN_0.31.pth python main.py --mode eval
 EVAL_WEIGHTS_PATH = (Path(os.environ["EVAL_WEIGHTS"]) if os.getenv("EVAL_WEIGHTS")
-                     else _ROOT / "weights" / "hitandrun_x3d_ptY_best.pth")
+                     else _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth")
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 # 서비스 경로 평가에서 '검출'로 인정하는 시작 시점 허용 오차(초).
 # 이벤트가 라벨 start_f ± 이 값 안에서 시작해야 검출로 센다. 이벤트가 나오긴 했어도
