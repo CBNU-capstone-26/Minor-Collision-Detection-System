@@ -1405,7 +1405,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                                 style={p.preparing ? undefined : { width: `${p.pct}%` }}
                               />
                             </div>
-                            <span className="analysis-job-eta">약 {p.remain}초 남음</span>
+                            <span className="analysis-job-eta">
+                              {p.preparing ? "남은 시간 계산 중…" : `약 ${p.remain}초 남음`}
+                            </span>
                           </div>
                         );
                       })}
