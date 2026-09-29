@@ -143,6 +143,23 @@ TRAIN_BATCH_SIZE = 15  # 논문과 동일(Hwang&Lee 2024: batch 15). VRAM 부족
 TRAIN_NUM_EPOCHS = 100
 TRAIN_SPLIT_RATIO = 0.8
 TRAIN_EARLY_STOPPING_PATIENCE = 10
+
+# ---------- best 판단 지표 / 후보 저장 ----------
+# best 저장·LR 감소(ReduceLROnPlateau)·조기종료가 모두 아래 '판단 지표' 하나로 움직인다.
+#   판단 지표 = val_real 의 클래스 균형 손실 (충돌 평균 손실 + 비충돌 평균 손실) / 2
+#               의 최근 TRAIN_MONITOR_SMOOTH 에포크 평균
+# 왜 그냥 val_real loss 가 아닌가 (x3d-ptY 260922 학습 로그로 확인):
+#   · val_real 51클립 중 40개가 비충돌이라 그냥 손실의 78%가 '비충돌을 얼마나
+#     확신하느냐'로 정해진다. 실제로 26에포크(검출 9/11·오탐 1)가 33에포크
+#     (8/11·오탐 2)보다 둘 다 나았는데 손실이 높아 선택되지 않았다.
+#   · 한 에포크 값은 수렴 후에도 표준편차 0.013 으로 흔들려, 운 좋게 한 번 낮은
+#     에포크가 뽑힌다. 평균하면 흔들림이 약 √N 배 줄고, 대신 약 1에포크 늦게 반응한다.
+TRAIN_MONITOR_SMOOTH = 3
+# 후보: 판단 지표 상위 K개를 저장하되 서로 MIN_GAP 에포크 이상 떨어진 것만 남긴다
+# (붙어 있는 에포크는 사실상 같은 모델이라 비교할 의미가 없다). 1위는 best 와 같다.
+# 최종 선택은 학습 후, 학습에 안 쓴 영상으로 서비스 경로 평가를 돌려서 한다.
+TRAIN_TOPK_CANDIDATES = 3
+TRAIN_TOPK_MIN_GAP = 3
 TRAIN_LEARNING_RATE = 0.00003  # X3D-M 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
 # AdamW의 decoupled weight decay. ⚠️ Adam에 weight_decay를 주면 L2 페널티가
 # 적응적 학습률에 의해 파라미터마다 왜곡되므로, 정규화 목적이면 AdamW를 써야 한다.
