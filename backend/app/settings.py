@@ -22,8 +22,8 @@ class Settings:
     # capstone-26/backend/app/settings.py → parents[2] == capstone-26
     BASE_DIR: Path = Path(__file__).resolve().parents[2]
 
-    # MODEL_VARIANT=s3d|x3d|slowfast (기본 s3d)
-    MODEL_VARIANT: str = os.getenv("MODEL_VARIANT", "s3d").strip().lower()
+    # MODEL_VARIANT=s3d|x3d|slowfast (기본 x3d)
+    MODEL_VARIANT: str = os.getenv("MODEL_VARIANT", "x3d").strip().lower()
     if MODEL_VARIANT not in MODEL_VARIANT_DIRS:
         raise ValueError(
             f"MODEL_VARIANT='{MODEL_VARIANT}' 는 지원하지 않습니다. "

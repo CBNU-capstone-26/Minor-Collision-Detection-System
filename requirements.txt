@@ -31,7 +31,7 @@
 #       --index-url https://download.pytorch.org/whl/cpu torch==2.12.0 torchvision==0.27.0
 #   cd backend && ../venv311/bin/python -m uvicorn app.main:app --port 8000
 #   cd backend && ../venv311/bin/celery -A app.worker worker --concurrency=1
-#     (x3d 로 서비스하려면: MODEL_VARIANT=x3d ../venv311/bin/celery -A app.worker worker ...)
+#     (서비스 기본 백본은 x3d. s3d 로 바꾸려면: MODEL_VARIANT=s3d ../venv311/bin/celery -A app.worker worker ...)
 #   cd ui && npm install && npm run dev
 #
 # torch/torchvision 은 PyTorch 전용 인덱스에서 받아야 하므로 별도 스텝으로 설치합니다.
@@ -43,8 +43,9 @@
 #   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.12.0 torchvision==0.27.0
 #
 # macOS: 위 torch 명령 그대로 사용 가능(맥은 CPU 휠이 기본).
-# GPU(CUDA)로 추론하려면 --index-url 을 https://download.pytorch.org/whl/cu121 등으로 바꾸고
-# model/config.py 의 INFER_DEVICE_TYPE="cuda" 로 설정하세요.
+# GPU(CUDA)로 추론하려면 --index-url 을 https://download.pytorch.org/whl/cu121 등으로 바꾸세요.
+# 서비스 백본 폴더(기본 x3d model/)의 config.py 는 INFER_DEVICE_TYPE="cuda" 라 GPU 가 있으면
+# 그대로 쓰고, 없으면 경고를 찍고 CPU 로 자동 전환한다.
 # ================================================================
 
 # ---- 웹 (FastAPI) ----
@@ -74,8 +75,9 @@ tqdm==4.68.1
 # ※ torch/torchvision 은 위 '별도 스텝'으로 이미 설치됨. YOLO11x 가중치는 첫 실행 시 자동 다운로드.
 ultralytics>=8.3.0  # YOLO11 지원(8.3.0+). matplotlib·pyyaml·scipy 등 의존성 함께 설치됨
 
-# ---- X3D 백본 (MODEL_VARIANT=x3d 로 서비스할 때) ----
-# s3d(기본)만 쓰면 불필요. 설치 시 fvcore·iopath·av 등이 함께 설치된다.
+# ---- X3D 백본 (서비스 기본 백본) ----
+# x3d_m 모델 정의를 제공한다. MODEL_VARIANT=s3d 로만 쓸 땐 불필요.
+# 설치 시 fvcore·iopath·av 등이 함께 설치된다.
 pytorchvideo==0.1.5
 
 # ---- 테스트/스크립트용 ----
