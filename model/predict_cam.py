@@ -21,7 +21,8 @@ activation = {}
 # 진행도(0.0~1.0) 구간 배분 — 단계마다 '실제' 진행도를 보고해 UI가 가짜 추정을
 # 쓰지 않게 한다(가짜 추정 → 실제값 전환 시 진행바가 뒤로 점프하는 문제 방지).
 PROG_DECODE_END = 0.25    # 프레임 디코딩/크롭
-PROG_PRESCREEN_END = 0.30  # 광학흐름 사전선별
+PROG_FLOW_END = 0.30      # 광학흐름(충격 시점 판정용)
+PROG_COARSE_END = 0.60    # 거친 탐색(10프레임 간격)
 PROG_INFER_END = 0.95     # S3D 윈도우 추론
 # 0.95~1.0 = 사고구간 CAM 클립 렌더링
 
@@ -386,46 +387,39 @@ def predict_hit_and_run_final(
             out_video.release()
 
 
-def _flow_prescreen_suspicious(
+def _flow_magnitude_series(
     processed_frames,
     clip_length,
     roi=None,
-    threshold_factor=config.PREDICT_FLOW_THRESHOLD_FACTOR,
-    pad=config.PREDICT_FLOW_PRESCREEN_PAD,
     sample_step=config.PREDICT_FLOW_SAMPLE_STEP,
-    max_ratio=config.PREDICT_FLOW_MAX_SUSPICIOUS_RATIO,
 ):
-    """[2단계 1단계] 피해차 크롭(processed_frames, 224 RGB)에서 옵티컬 플로우
-    크기 시계열을 만들어 '사고 의심 프레임'의 불리언 배열을 반환한다.
+    """피해차 크롭(processed_frames, 224 RGB)의 옵티컬 플로우 크기 시계열.
+    이벤트 안에서 '충격 시점'(움직임이 가장 큰 프레임)을 고르는 데 쓴다.
 
     - 이미 RAM에 있는 크롭 프레임을 쓰므로 추가 영상 디코딩이 없다.
-    - 크롭은 r=1이라 피해차가 대부분을 차지 → 크롭 전체 평균 플로우가 사실상
-      마스크 플로우. 접근/통과 차량이 크롭에 들어오면 스파이크 → 고재현율.
-    - 임계값 τ=median+factor·std(강건). τ 초과 지점을 ±pad로 팽창.
-    - 의심 비율이 max_ratio를 넘거나 계산 실패 시 '전체 True'로 폴백(정확도 우선).
+    - 예전엔 이 시계열의 기준선으로 사전선별도 했지만, 미세 충돌은 움직임이 평소
+      흔들림과 구분되지 않아 걸러졌다 → 선별은 모델 거친 탐색으로 바꿨다.
 
     Args:
         roi: (x1,y1,x2,y2) — 224 크롭 좌표계에서의 '피해차 bbox' 영역.
             주면 이 영역만의 플로우 시계열(mag_roi)을 함께 만든다.
 
     Returns:
-        (suspicious, mag_crop, mag_roi)
-        suspicious: np.bool_ 배열 (len == len(processed_frames)) — 사전선별용
-        mag_crop  : 크롭 전체 평균 플로우 시계열 (사전선별 판단에 사용)
-        mag_roi   : 피해차 bbox 영역만의 플로우 시계열 (충격 '시점' 판정에 사용)
-                    roi가 없거나 계산 실패 시 None
+        (mag_crop, mag_roi) — 영상이 너무 짧거나 계산 실패 시 (None, None)
+        mag_crop: 크롭 전체 평균 플로우 시계열 (mag_roi 가 없을 때 대신 사용)
+        mag_roi : 피해차 bbox 영역만의 플로우 시계열 (충격 '시점' 판정에 사용)
+                  roi가 없으면 None
 
     ⚠️ 두 시계열을 분리하는 이유(실측 근거):
        크롭은 정사각형이라 차량 위아래에 여백이 생기고, **가해차량이 그 여백을
        통과할 때의 모션이 피해차의 미세 흔들림을 압도**한다. 크롭 전체 argmax로
        충격 시점을 잡으면 접촉이 아니라 '가해차량 진입'을 가리킨다
        (실차 CCTV 실측: bbox 한정 피크와 -52 / +105 프레임까지 어긋남).
-       → 선별은 넓게(고재현율), 시점 판정은 좁게(bbox 한정).
+       → 시점 판정은 좁게(bbox 한정) 본다.
     """
     n = len(processed_frames)
-    all_true = np.ones(n, dtype=bool)
     if n < clip_length + 2:
-        return all_true, None, None  # 너무 짧으면 전체 스캔
+        return None, None
     try:
         grays = [cv2.cvtColor(f, cv2.COLOR_RGB2GRAY) for f in processed_frames]
         step = max(1, int(sample_step))
@@ -444,23 +438,9 @@ def _flow_prescreen_suspicious(
                 sub = fmag[ry1:ry2, rx1:rx2]
                 mag_roi[prev_i + 1:i + 1] = float(sub.mean()) if sub.size else m
             prev_i = i
-        med = float(np.median(mag))
-        std = float(mag.std())
-        tau = med + threshold_factor * std
-        suspicious = mag > tau
-        if suspicious.any():
-            # ±pad 프레임 팽창(스파이크로 끝나는 윈도우까지 평가되도록)
-            idx = np.where(suspicious)[0]
-            dilated = np.zeros(n, dtype=bool)
-            for j in idx:
-                dilated[max(0, j - pad):min(n, j + pad + 1)] = True
-            suspicious = dilated
-        ratio = suspicious.mean()
-        if ratio == 0.0 or ratio > max_ratio:
-            return all_true, mag, mag_roi  # 후보 없음/과다 → 전체 스캔 폴백
-        return suspicious, mag, mag_roi
+        return mag, mag_roi
     except Exception:
-        return all_true, None, None  # 실패하면 안전하게 전체 스캔
+        return None, None  # 실패하면 충격 시점은 이벤트 시작으로 대신한다
 
 
 def predict_events_and_clips(
@@ -475,7 +455,10 @@ def predict_events_and_clips(
     window_stride=config.PREDICT_WINDOW_STRIDE,
     clip_pad_frames=15,
     progress_callback=None,
-    use_flow_prescreen=config.PREDICT_USE_FLOW_PRESCREEN,
+    use_coarse_scan=config.PREDICT_USE_COARSE_SCAN,
+    coarse_step=config.PREDICT_COARSE_STEP,
+    coarse_prob=config.PREDICT_COARSE_PROB,
+    coarse_pad=config.PREDICT_COARSE_PAD,
     render_clips=True,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
@@ -489,6 +472,8 @@ def predict_events_and_clips(
         bbox (tuple|list): 대상 차량 좌표 (xmin, ymin, xmax, ymax) — 원본 해상도 기준
         output_dir (str|Path): 클립 저장 폴더
         clip_pad_frames (int): 구간 앞뒤로 덧붙일 여유 프레임 수
+        use_coarse_scan (bool): True면 거친 탐색(coarse_step 간격) 후 P(A) >
+            coarse_prob 인 창 주변 ±coarse_pad 만 촘촘히 본다. False면 전체 스캔.
         render_clips (bool): False면 CAM 클립을 만들지 않고 이벤트 목록만 돌려준다
             (clip_path=None). 평가에서 '서비스와 동일한 경로'로 이벤트를 뽑을 때
             쓴다 — 렌더링은 평가에 불필요하고 가장 느린 단계다.
@@ -575,16 +560,13 @@ def predict_events_and_clips(
         events = []          # [{'start_frame','end_frame'}, ...]
         # frame_idx → (heatmap_bbox, prob) (사고로 예측된 프레임만)
         accident_overlays = {}
-        # window_idx → pred_class (S3D를 실제로 실행한 윈도우만)
+        # window_idx → pred_class / P(A) (3D-CNN을 실제로 실행한 윈도우만)
         window_pred = {}
+        window_pA = {}
 
         num_windows = full_video_tensor.size(1) - (clip_length - 1)
         window_starts = list(range(0, max(0, num_windows), window_stride))
 
-        # [2단계 1단계] 광학흐름 사전선별: '사고 의심 프레임'으로 끝나는 윈도우만
-        # S3D로 평가한다. 나머지는 비사고(class 0)로 간주(선별기가 고재현율이므로
-        # 실제 충돌은 반드시 스파이크 근처에 있음). 멀티-아워 영상에서 S3D 호출을
-        # 대폭 줄인다. 선별 실패/과다 시 helper가 '전체 True'를 돌려 전체스캔 폴백.
         # 피해차 bbox를 224 크롭 좌표계로 환산 → 충격 '시점' 판정 전용 ROI.
         # (정사각 크롭 여백을 지나는 가해차량 모션에 시점이 끌려가지 않게 한다)
         _cw = max(1, rx2 - rx1)
@@ -596,68 +578,82 @@ def predict_events_and_clips(
             max(1, min(resize[0], int((bx2 - rx1) * _sx))),
             max(1, min(resize[1], int((by2 - ry1) * _sy))),
         )
-        # 플로우 시계열은 '충격 시점(피크)' 산출에도 쓰므로 항상 계산한다(224 크롭이라 저렴).
-        suspicious, flow_mag, flow_mag_roi = _flow_prescreen_suspicious(
+        flow_mag, flow_mag_roi = _flow_magnitude_series(
             processed_frames, clip_length, roi=_roi)
-        if not use_flow_prescreen:
-            suspicious = np.ones(len(processed_frames), dtype=bool)
-        n_frames_susp = len(suspicious)
-        eval_window_starts = [
-            w for w in window_starts
-            if suspicious[min(w + clip_length - 1, n_frames_susp - 1)]]
-        if not eval_window_starts:
-            eval_window_starts = window_starts  # 방어적: 하나도 없으면 전체
-        print(f"[2단계] 사전선별: 전체 {len(window_starts)} 윈도우 → "
-              f"S3D 평가 {len(eval_window_starts)}개 "
-              f"({100.0 * len(eval_window_starts) / max(1, len(window_starts)):.0f}%)")
         if progress_callback is not None:
-            progress_callback(PROG_PRESCREEN_END)
+            progress_callback(PROG_FLOW_END)
 
-        # Phase A: 선별된 윈도우에만 S3D 실행 (예측/확률/CAM 저장)
-        with torch.inference_mode():
-            for batch_start in range(0, len(eval_window_starts), infer_batch_size):
-                # 실제 추론 진행도 보고 (사전선별 종료~추론 종료 구간에 매핑)
-                if progress_callback is not None:
-                    frac = batch_start / max(1, len(eval_window_starts))
-                    progress_callback(
-                        PROG_PRESCREEN_END
-                        + (PROG_INFER_END - PROG_PRESCREEN_END) * frac)
-                batch_window_starts = eval_window_starts[
-                    batch_start:batch_start + infer_batch_size]
-                clips = torch.stack(
-                    [full_video_tensor[:, i:i + clip_length, :, :]
-                     for i in batch_window_starts])
-                if is_channels_last_3d_supported(device):
-                    clips = clips.contiguous(
-                        memory_format=torch.channels_last_3d)
+        def _run_windows(starts, prog_lo, prog_hi):
+            """starts 의 창들을 3D-CNN 에 넣어 예측·P(A)·CAM 을 채운다."""
+            with torch.inference_mode():
+                for batch_start in range(0, len(starts), infer_batch_size):
+                    # 실제 추론 진행도 보고 (prog_lo~prog_hi 구간에 매핑)
+                    if progress_callback is not None:
+                        frac = batch_start / max(1, len(starts))
+                        progress_callback(prog_lo + (prog_hi - prog_lo) * frac)
+                    batch_window_starts = starts[
+                        batch_start:batch_start + infer_batch_size]
+                    clips = torch.stack(
+                        [full_video_tensor[:, i:i + clip_length, :, :]
+                         for i in batch_window_starts])
+                    if is_channels_last_3d_supported(device):
+                        clips = clips.contiguous(
+                            memory_format=torch.channels_last_3d)
 
-                outputs = model(clips)
-                probs = F.softmax(outputs, dim=1)
-                pred_classes = outputs.argmax(dim=1)
-                feat_maps = activation['inception5b']
+                    outputs = model(clips)
+                    probs = F.softmax(outputs, dim=1)
+                    pred_classes = outputs.argmax(dim=1)
+                    feat_maps = activation['inception5b']
 
-                for offset, window_idx in enumerate(batch_window_starts):
-                    frame_idx = window_idx + clip_length - 1
-                    pred_class = int(pred_classes[offset].item())
-                    prob = probs[offset, pred_class].item()
-                    window_pred[window_idx] = pred_class
+                    for offset, window_idx in enumerate(batch_window_starts):
+                        frame_idx = window_idx + clip_length - 1
+                        pred_class = int(pred_classes[offset].item())
+                        prob = probs[offset, pred_class].item()
+                        window_pred[window_idx] = pred_class
+                        window_pA[window_idx] = probs[offset, 1].item()
 
-                    if pred_class == 1:
-                        feat_map = feat_maps[offset]
-                        weight = model.head_conv.weight[pred_class]
-                        cam = F.relu(torch.sum(weight * feat_map, dim=0))
-                        cam_2d = torch.mean(cam, dim=0)
-                        cam_min, cam_max = cam_2d.min(), cam_2d.max()
-                        cam_2d = (cam_2d - cam_min) / (cam_max - cam_min + 1e-8)
-                        cam_np = (cam_2d * 255).byte().cpu().numpy()
-                        heatmap = cv2.applyColorMap(cam_np, cv2.COLORMAP_JET)
-                        heatmap = cv2.resize(heatmap, (rx2 - rx1, ry2 - ry1))
-                        # 정사각 히트맵에서 '원본 bbox'에 해당하는 부분만 잘라 저장
-                        heatmap_bbox = heatmap[
-                            max(0, by1 - ry1):(by2 - ry1),
-                            max(0, bx1 - rx1):(bx2 - rx1),
-                        ]
-                        accident_overlays[frame_idx] = (heatmap_bbox, prob)
+                        if pred_class == 1:
+                            feat_map = feat_maps[offset]
+                            weight = model.head_conv.weight[pred_class]
+                            cam = F.relu(torch.sum(weight * feat_map, dim=0))
+                            cam_2d = torch.mean(cam, dim=0)
+                            cam_min, cam_max = cam_2d.min(), cam_2d.max()
+                            cam_2d = (cam_2d - cam_min) / (cam_max - cam_min + 1e-8)
+                            cam_np = (cam_2d * 255).byte().cpu().numpy()
+                            heatmap = cv2.applyColorMap(cam_np, cv2.COLORMAP_JET)
+                            heatmap = cv2.resize(heatmap, (rx2 - rx1, ry2 - ry1))
+                            # 정사각 히트맵에서 '원본 bbox'에 해당하는 부분만 잘라 저장
+                            heatmap_bbox = heatmap[
+                                max(0, by1 - ry1):(by2 - ry1),
+                                max(0, bx1 - rx1):(bx2 - rx1),
+                            ]
+                            accident_overlays[frame_idx] = (heatmap_bbox, prob)
+
+        # [2단계] 거친 탐색 → 의심 구간만 촘촘히 (멀티-아워 영상에서 3D-CNN 호출을 줄인다)
+        #   1) coarse_step 프레임 간격의 창만 먼저 본다(영상 끝 창도 포함).
+        #   2) P(A) > coarse_prob 인 창 주변 ±coarse_pad 프레임의 창을 모두 본다.
+        #   3) 끝까지 안 본 창은 비사고(0)로 간주한다(아래 Phase B).
+        # 선별을 모델 자신으로 하므로 '모델이 잡는 충돌'이 선별 때문에 빠지지 않는다.
+        # (예전 광학흐름 선별은 움직임이 작은 미세 충돌을 걸렀다 — config 주석 참고)
+        k = max(1, int(round(coarse_step / window_stride))) if use_coarse_scan else 1
+        coarse = window_starts[::k]
+        if coarse[-1] != window_starts[-1]:
+            coarse.append(window_starts[-1])
+        _run_windows(coarse, PROG_FLOW_END,
+                     PROG_COARSE_END if k > 1 else PROG_INFER_END)
+        hot = [w for w in coarse if window_pA[w] > coarse_prob]
+        refine = []
+        if k > 1 and hot:
+            near = np.zeros(window_starts[-1] + 1, dtype=bool)
+            for h in hot:
+                near[max(0, h - coarse_pad):h + coarse_pad + 1] = True
+            refine = [w for w in window_starts
+                      if near[w] and w not in window_pred]
+            _run_windows(refine, PROG_COARSE_END, PROG_INFER_END)
+        print(f"[2단계] 거친 탐색 {len(coarse)}개(간격 {k * window_stride}) → "
+              f"의심 {len(hot)}개 주변 {len(refine)}개 추가 | 전체 "
+              f"{len(window_starts)} 윈도우 중 3D-CNN 평가 {len(window_pred)}개 "
+              f"({100.0 * len(window_pred) / max(1, len(window_starts)):.0f}%)")
 
         # Phase B: 전체 윈도우 순서대로 상태머신(S→A→S)으로 이벤트 구간 확정.
         # 평가 안 한 윈도우는 비사고(0)로 간주한다.
@@ -684,12 +680,14 @@ def predict_events_and_clips(
         # 순서가 중요하다: 먼저 병합해야 '한 충돌의 조각들'이 하나로 합쳐져 길이를
         # 회복하고, 그 뒤 남은 고립된 단발 깜빡임만 길이필터로 제거된다.
         _n_raw = len(events)
+        # 병합 간격은 초 단위 설정을 이 영상의 fps로 환산한다(fps 10~60 이 섞여 있음)
+        merge_gap_frames = int(round(fps * config.PREDICT_EVENT_MERGE_GAP_SEC))
         if events:
             events.sort(key=lambda e: e['start_frame'])
             merged = [events[0]]
             for ev in events[1:]:
                 gap = ev['start_frame'] - merged[-1]['end_frame']
-                if gap <= config.PREDICT_EVENT_MERGE_GAP_FRAMES:
+                if gap <= merge_gap_frames:
                     merged[-1]['end_frame'] = max(
                         merged[-1]['end_frame'], ev['end_frame'])
                 else:
