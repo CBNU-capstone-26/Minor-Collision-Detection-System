@@ -25,7 +25,7 @@ INFER_DEVICE_TYPE = "cuda"    # 예측·평가(추론) 전용 디바이스
 # ---------- 공통 설정 ----------
 DATA_DIR = _ROOT / "data" / "train"
 # 이 폴더가 학습/추론하는 백본 이름. 가중치 파일명에 붙어 모델을 구분한다.
-MODEL_NAME = "s3d"
+MODEL_NAME = "x3d"
 MODEL_NUM_CLASSES = 2
 CLIP_LENGTH = 30
 RESIZE = (224, 224)
@@ -114,7 +114,7 @@ USE_AMP = True
 USE_CHANNELS_LAST = True
 
 # ---------- 사전학습 / 입력 정규화 ----------
-# 백본은 torchvision S3D. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
+# 백본은 pytorchvideo X3D-M. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
 # (사전학습은 파라미터 '초기값'만 바꾸므로 모델 크기·추론 속도는 동일)
 # 사전학습 사용 여부. 환경변수로 덮어써서 같은 코드로 A/B를 돌릴 수 있다:
 #     PRETRAINED=0 python main.py --mode train      (scratch 학습)
@@ -123,9 +123,12 @@ USE_CHANNELS_LAST = True
 PRETRAINED = os.getenv("PRETRAINED", "1").strip().lower() not in ("0", "false", "no")
 # 결과물이 서로 덮어쓰이지 않도록 사전학습 여부를 파일명에 박는다(ptY/ptN).
 PRETRAIN_TAG = "ptY" if PRETRAINED else "ptN"
-# 입력 정규화 통계 — S3D Kinetics-400 사전학습과 동일한 값 사용 (전이 효율 최대화)
-NORM_MEAN = (0.43216, 0.394666, 0.37645)
-NORM_STD = (0.22803, 0.22145, 0.216989)
+# 입력 정규화 통계 — Kinetics-400 사전학습과 동일한 값 사용 (전이 효율 최대화)
+# ⚠️ pytorchvideo 계열(X3D/SlowFast)은 torchvision(S3D)과 통계가 다르다.
+#    pytorchvideo 기본값: transforms/transforms_factory.py 의 video_mean/video_std.
+#    학습과 추론이 반드시 같은 값을 써야 하므로 여기서 일괄 관리한다.
+NORM_MEAN = (0.45, 0.45, 0.45)
+NORM_STD = (0.225, 0.225, 0.225)
 
 # ---------- 학습 전용 ----------
 # 학습 '작업용' 경로. 학습 중 best 가중치를 해당 파일로 갱신 저장했놓고, 학습 종료 시
@@ -157,7 +160,7 @@ TRAIN_MONITOR_SMOOTH = 3
 # 최종 선택은 학습 후, 학습에 안 쓴 영상으로 서비스 경로 평가를 돌려서 한다.
 TRAIN_TOPK_CANDIDATES = 3
 TRAIN_TOPK_MIN_GAP = 3
-TRAIN_LEARNING_RATE = 0.00003  # S3D 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
+TRAIN_LEARNING_RATE = 0.00003  # X3D-M 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
 # AdamW의 decoupled weight decay. ⚠️ Adam에 weight_decay를 주면 L2 페널티가
 # 적응적 학습률에 의해 파라미터마다 왜곡되므로, 정규화 목적이면 AdamW를 써야 한다.
 #
@@ -175,13 +178,11 @@ TRAIN_LOG_DIR = _ROOT / "outputs" / "trainlogs"
 EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
-_DEFAULT_WEIGHTS_PATH = _ROOT.parent / "s3d_2026-09-11_best.pth"
-_WEIGHTS_PATH = Path(os.environ.get("HITANDRUN_WEIGHTS_PATH", _DEFAULT_WEIGHTS_PATH)).expanduser()
-# 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 S3D 구조(.pth)여야 한다.
-SERVICE_WEIGHTS_PATH = _WEIGHTS_PATH
+# 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
 
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
-PREDICT_WEIGHTS_PATH = _WEIGHTS_PATH
+PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
@@ -244,7 +245,7 @@ PREDICT_MIN_EVENT_SPAN_FRAMES = 35
 # 평가할 가중치. 여러 학습 결과를 비교할 땐 환경변수로 골라 쓴다:
 #     EVAL_WEIGHTS=weights/hitandrun_s3d_..._ptN_0.31.pth python main.py --mode eval
 EVAL_WEIGHTS_PATH = (Path(os.environ["EVAL_WEIGHTS"]) if os.getenv("EVAL_WEIGHTS")
-                     else _WEIGHTS_PATH)
+                     else _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth")
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 # 서비스 경로 평가에서 '검출'로 인정하는 시작 시점 허용 오차(초).
 # 이벤트가 라벨 start_f ± 이 값 안에서 시작해야 검출로 센다. 이벤트가 나오긴 했어도

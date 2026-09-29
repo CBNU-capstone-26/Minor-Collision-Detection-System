@@ -25,7 +25,7 @@ INFER_DEVICE_TYPE = "cuda"    # 예측·평가(추론) 전용 디바이스
 # ---------- 공통 설정 ----------
 DATA_DIR = _ROOT / "data" / "train"
 # 이 폴더가 학습/추론하는 백본 이름. 가중치 파일명에 붙어 모델을 구분한다.
-MODEL_NAME = "s3d"
+MODEL_NAME = "slowfast"
 MODEL_NUM_CLASSES = 2
 CLIP_LENGTH = 30
 RESIZE = (224, 224)
@@ -114,7 +114,7 @@ USE_AMP = True
 USE_CHANNELS_LAST = True
 
 # ---------- 사전학습 / 입력 정규화 ----------
-# 백본은 torchvision S3D. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
+# 백본은 pytorchvideo SlowFast-R50. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
 # (사전학습은 파라미터 '초기값'만 바꾸므로 모델 크기·추론 속도는 동일)
 # 사전학습 사용 여부. 환경변수로 덮어써서 같은 코드로 A/B를 돌릴 수 있다:
 #     PRETRAINED=0 python main.py --mode train      (scratch 학습)
@@ -123,9 +123,12 @@ USE_CHANNELS_LAST = True
 PRETRAINED = os.getenv("PRETRAINED", "1").strip().lower() not in ("0", "false", "no")
 # 결과물이 서로 덮어쓰이지 않도록 사전학습 여부를 파일명에 박는다(ptY/ptN).
 PRETRAIN_TAG = "ptY" if PRETRAINED else "ptN"
-# 입력 정규화 통계 — S3D Kinetics-400 사전학습과 동일한 값 사용 (전이 효율 최대화)
-NORM_MEAN = (0.43216, 0.394666, 0.37645)
-NORM_STD = (0.22803, 0.22145, 0.216989)
+# 입력 정규화 통계 — Kinetics-400 사전학습과 동일한 값 사용 (전이 효율 최대화)
+# ⚠️ pytorchvideo 계열(X3D/SlowFast)은 torchvision(S3D)과 통계가 다르다.
+#    pytorchvideo 기본값: transforms/transforms_factory.py 의 video_mean/video_std.
+#    학습과 추론이 반드시 같은 값을 써야 하므로 여기서 일괄 관리한다.
+NORM_MEAN = (0.45, 0.45, 0.45)
+NORM_STD = (0.225, 0.225, 0.225)
 
 # ---------- 학습 전용 ----------
 # 학습 '작업용' 경로. 학습 중 best 가중치를 해당 파일로 갱신 저장했놓고, 학습 종료 시
@@ -140,24 +143,7 @@ TRAIN_BATCH_SIZE = 15  # 논문과 동일(Hwang&Lee 2024: batch 15). VRAM 부족
 TRAIN_NUM_EPOCHS = 100
 TRAIN_SPLIT_RATIO = 0.8
 TRAIN_EARLY_STOPPING_PATIENCE = 10
-
-# ---------- best 판단 지표 / 후보 저장 ----------
-# best 저장·LR 감소(ReduceLROnPlateau)·조기종료가 모두 아래 '판단 지표' 하나로 움직인다.
-#   판단 지표 = val_real 의 클래스 균형 손실 (충돌 평균 손실 + 비충돌 평균 손실) / 2
-#               의 최근 TRAIN_MONITOR_SMOOTH 에포크 평균
-# 왜 그냥 val_real loss 가 아닌가 (x3d-ptY 260922 학습 로그로 확인):
-#   · val_real 51클립 중 40개가 비충돌이라 그냥 손실의 78%가 '비충돌을 얼마나
-#     확신하느냐'로 정해진다. 실제로 26에포크(검출 9/11·오탐 1)가 33에포크
-#     (8/11·오탐 2)보다 둘 다 나았는데 손실이 높아 선택되지 않았다.
-#   · 한 에포크 값은 수렴 후에도 표준편차 0.013 으로 흔들려, 운 좋게 한 번 낮은
-#     에포크가 뽑힌다. 평균하면 흔들림이 약 √N 배 줄고, 대신 약 1에포크 늦게 반응한다.
-TRAIN_MONITOR_SMOOTH = 3
-# 후보: 판단 지표 상위 K개를 저장하되 서로 MIN_GAP 에포크 이상 떨어진 것만 남긴다
-# (붙어 있는 에포크는 사실상 같은 모델이라 비교할 의미가 없다). 1위는 best 와 같다.
-# 최종 선택은 학습 후, 학습에 안 쓴 영상으로 서비스 경로 평가를 돌려서 한다.
-TRAIN_TOPK_CANDIDATES = 3
-TRAIN_TOPK_MIN_GAP = 3
-TRAIN_LEARNING_RATE = 0.00003  # S3D 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
+TRAIN_LEARNING_RATE = 0.00003  # SlowFast-R50 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
 # AdamW의 decoupled weight decay. ⚠️ Adam에 weight_decay를 주면 L2 페널티가
 # 적응적 학습률에 의해 파라미터마다 왜곡되므로, 정규화 목적이면 AdamW를 써야 한다.
 #
@@ -175,76 +161,43 @@ TRAIN_LOG_DIR = _ROOT / "outputs" / "trainlogs"
 EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
-_DEFAULT_WEIGHTS_PATH = _ROOT.parent / "s3d_2026-09-11_best.pth"
-_WEIGHTS_PATH = Path(os.environ.get("HITANDRUN_WEIGHTS_PATH", _DEFAULT_WEIGHTS_PATH)).expanduser()
-# 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 S3D 구조(.pth)여야 한다.
-SERVICE_WEIGHTS_PATH = _WEIGHTS_PATH
+# 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 SlowFast-R50 래퍼 구조(.pth)여야 한다.
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_slowfast_converted.pth"
 
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
-PREDICT_WEIGHTS_PATH = _WEIGHTS_PATH
+PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_slowfast_converted.pth"
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
 PREDICT_INFER_BATCH_SIZE = 2 # batch size 2로 바꾸었음(배기원)
-# 슬라이딩 윈도우 간격(프레임). 서비스는 GPU 추론을 가정하므로 모든 위치를 본다(1).
-# stride 5 는 CPU 추론 시절의 절충값이었다(창 수 1/5 → 속도 5배).
-# ⚠️ 아래 PREDICT_MIN_EVENT_SPAN_FRAMES(35)는 stride 1 기준 값이다. stride 를 바꾸면
-#    '창 몇 개짜리 이벤트까지 지우는가'가 달라지므로 함께 다시 봐야 한다.
-#    (stride 1: 연속 A 창 7개 미만이면 삭제 / stride 5: 2개 미만이면 삭제)
-# ※ UI 의 예상시간은 실제 진행률로 계산하므로 이 값과 무관하다
-#   (App.jsx 의 estimatedSec 은 만들기만 하고 쓰이지 않는다).
-PREDICT_WINDOW_STRIDE = 1
+PREDICT_WINDOW_STRIDE = 5  # CPU 추론 절충값 (윈도우 83% 중첩 → 정확도 거의 유지 + 속도↑). GPU면 1로 낮춰 정확도↑
+# ⚠️ 이 값을 바꾸면 ui/src/App.jsx 의 예상시간 공식(totalFrames/stride)도 같이 맞춰야 함
 
-# ---------- 2단계 파이프라인: 모델 거친 탐색 → 의심 구간만 촘촘히 ----------
-# 30분~1시간 영상의 모든 창(stride 1)을 3D-CNN 에 넣으면 느리다. 그래서
-#   1) PREDICT_COARSE_STEP 프레임 간격의 창만 먼저 모델로 본다(거친 탐색 = 전체의 1/10).
-#   2) P(A) > PREDICT_COARSE_PROB 인 창 주변 ±PREDICT_COARSE_PAD 프레임의 창을 모두 본다.
-#   3) 끝까지 안 본 창은 비충돌로 간주한다.
-# 예전엔 광학흐름 크기로 선별했는데, 미세 충돌은 충돌 중 움직임이 평소 흔들림과 구분되지
-# 않아 기준선을 어떻게 잡아도 걸러졌다(ReA_0023: 흐름 최대 0.33 < 기준선 0.42 라 평가조차
-# 안 됐지만, 모델은 P(A) 0.72~0.96 으로 잡는다). 모델로 선별하면 '모델이 잡을 수 있는
-# 충돌'이 선별 때문에 빠지지 않는다.
-# 시뮬레이션(27개 영상, stride 5 확률 근사, 병합 3초·최소 길이 35):
-#   전체 스캔 충돌 14/16·오탐 클립 4 / 거친 탐색 10간격 14/16·4 (같음)
-#   / 흐름 3·MAD(긴 영상 가정, 폴백 없음) 12/16.
-#   비충돌 11개 중 6개는 P(A)>0.3 이 한 번도 없어 거친 탐색 10%로 끝났다(평균 10% + 24%).
-# ⚠️ 연속 A 창 10개 이상인 충돌은 거친 탐색 창을 반드시 하나 품으므로 놓치지 않는다.
-#    빠질 수 있는 건 7~9창(최소 길이 35를 겨우 넘는)짜리이면서 주변 P(A)도 0.3 이하인
-#    경우뿐이다. 0.3 은 A 판정(0.5)보다 낮춰 약한 신호도 줍기 위한 값.
-# ⚠️ 긴 영상에서 실제로 몇 %를 보는지는 서버 로그의 '[2단계] 거친 탐색 … N%' 줄로 확인.
-PREDICT_USE_COARSE_SCAN = True
-PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임). stride 의 배수로 맞춰 쓴다
-PREDICT_COARSE_PROB = 0.3      # 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다
-PREDICT_COARSE_PAD = CLIP_LENGTH  # 의심 창 주변 ±pad 프레임의 창을 모두 평가
-PREDICT_FLOW_SAMPLE_STEP = 2   # 충격 시점 판정용 광학흐름 계산 프레임 간격(속도)
+# ---------- 2단계 파이프라인: 광학흐름 사전선별 ----------
+# 멀티-아워 영상 대비: 피해차 크롭 영역의 옵티컬 플로우로 '사고 의심 시점'만
+# 먼저 뽑고, 무거운 3D-CNN은 그 근처 윈도우에만 실행한다(고재현율 그물→CNN 확정).
+# 검증: 라벨된 충돌 5/5에서 플로우 피크가 충돌구간과 일치, 현저도 10~797x.
+PREDICT_USE_FLOW_PRESCREEN = True
+PREDICT_FLOW_THRESHOLD_FACTOR = 2.0   # τ=median+factor·std. 낮을수록 고재현율(후보↑)
+PREDICT_FLOW_PRESCREEN_PAD = CLIP_LENGTH  # 스파이크 주변 ±pad 프레임 윈도우까지 평가
+PREDICT_FLOW_SAMPLE_STEP = 2          # 선별 단계 플로우 계산 프레임 간격(속도)
+PREDICT_FLOW_MAX_SUSPICIOUS_RATIO = 0.8  # 의심 프레임이 이 비율 초과면 전체스캔 폴백
 
 # ---------- 이벤트 후처리 (분할 방지 / 깜빡임 제거) ----------
 # 모델 판정이 A→S→A로 깜빡이면 한 충돌이 여러 이벤트로 쪼개진다(실측: 실차 영상
 # 1건이 6개로 분할). 아래 두 단계로 정리한다. 순서는 '병합 → 길이필터'.
 #   1) 간격이 가까운 이벤트는 같은 사고로 보고 병합
 #   2) 그래도 너무 짧은(단발 깜빡임) 이벤트는 제거
-# 병합 간격은 '초'로 정하고 영상 fps로 프레임 환산한다. 사용자에게 중요한 건 충돌이
-# '시작된 지점'이고, 몇 초 안에 또 판정이 나오면 같은 사고의 연속으로 보는 게 자연스럽다.
-# 프레임으로 고정하면 fps(10~60)에 따라 같은 값이 9초~1.5초로 달라진다.
-# 3초 = 30fps 기준 90프레임. (이전 값: 45프레임 ≈ 1.5초)
-PREDICT_EVENT_MERGE_GAP_SEC = 3.0
-# 최소 길이 — 이벤트 길이 = 28 + (A 로 판정된 연속 창 수)  [stride 1 기준]
-#   · 창이 30프레임이라 A 창이 1개만 있어도 29프레임이다. 그래서 29 이하로 두면 필터를
-#     끈 것과 같다.
-#   · 이벤트 길이는 '충돌이 실제로 지속된 시간'이 아니다. 짧은 충돌도 그 장면을 담는
-#     창이 30개라, 모델이 잡으면 여러 창이 연속으로 A가 된다.
-#   · 실측(x3d-ptY 33ep, 선별 끔): 진짜 충돌 14건의 연속 A 창 수 30~220, 단발 오탐 약 5.
-#     35(연속 7창)와 40(12창)은 이 데이터에서 결과가 같았다. 약하게 잡힌 미세 충돌은
-#     연속 창이 30보다 짧을 수 있어, 놓치지 않는 쪽으로 여유를 둔 35를 쓴다.
-#   · 초가 아니라 프레임으로 둔다 — 창 길이가 fps와 무관하게 30프레임이기 때문.
-#   (이전 값 40: 옛 모델로 stride 1 에서 '단발 29f / 지속 48f 이상' 사이를 자른 값)
-PREDICT_MIN_EVENT_SPAN_FRAMES = 35
+# 근거(실측 stride=1, 구간길이 프레임): 단일 윈도우 깜빡임=29프레임에 몰려 있고,
+# 지속 검출은 48프레임 이상에 분포 → 그 사이인 40으로 컷.
+PREDICT_EVENT_MERGE_GAP_FRAMES = 45   # 이벤트 간 간격 ≤ 45면 하나로 병합(≈1.5초)
+PREDICT_MIN_EVENT_SPAN_FRAMES = 40    # 구간 길이가 이보다 짧으면 깜빡임으로 보고 제거
 
 # ---------- 실제영상 정확도 평가 전용 ----------
 # 평가할 가중치. 여러 학습 결과를 비교할 땐 환경변수로 골라 쓴다:
 #     EVAL_WEIGHTS=weights/hitandrun_s3d_..._ptN_0.31.pth python main.py --mode eval
 EVAL_WEIGHTS_PATH = (Path(os.environ["EVAL_WEIGHTS"]) if os.getenv("EVAL_WEIGHTS")
-                     else _WEIGHTS_PATH)
+                     else _ROOT / "weights" / "hitandrun_slowfast_converted.pth")
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 # 서비스 경로 평가에서 '검출'로 인정하는 시작 시점 허용 오차(초).
 # 이벤트가 라벨 start_f ± 이 값 안에서 시작해야 검출로 센다. 이벤트가 나오긴 했어도

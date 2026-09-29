@@ -31,7 +31,7 @@ def _evaluate_folder_impl(
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
 
-    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(S3D Kinetics-400)
+    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(Kinetics-400)
     mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD,
@@ -308,7 +308,7 @@ def evaluate_service_path(
 ):
     """서비스가 실제로 쓰는 predict_events_and_clips 로 평가한다.
 
-    위쪽 평가는 거친 탐색 선별·이벤트 상태머신·병합/길이필터를 건너뛰고 '영상에
+    위쪽 평가는 flow 사전선별·이벤트 상태머신·병합/길이필터를 건너뛰고 '영상에
     A 윈도우가 하나라도 있는가'만 본다(논문과 같은 영상 단위 지표). 여기서는
     같은 함수를 클립 렌더링만 끄고 호출해, 사용자가 실제로 받는 이벤트를 라벨과
     대조한다.
@@ -327,7 +327,7 @@ def evaluate_service_path(
     in_train = _training_video_names()
 
     print("\n" + "=" * 60)
-    print("[서비스 경로 평가]  거친 탐색 선별 + 상태머신 + 병합/길이필터 포함")
+    print("[서비스 경로 평가]  prescreen + 상태머신 + 병합/길이필터 포함")
     print("=" * 60)
 
     rows = []

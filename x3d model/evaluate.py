@@ -31,7 +31,7 @@ def _evaluate_folder_impl(
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
 
-    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(S3D Kinetics-400)
+    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(Kinetics-400)
     mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD,
