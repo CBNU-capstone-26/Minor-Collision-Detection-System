@@ -76,6 +76,36 @@ def get_task_status(
     )
 
 
+@router.post("/tasks/{task_id}/cancel", response_model=api_schemas.TaskStatusOut)
+def cancel_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    task = db.get(db_models.AnalysisTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    if task.status in ["PENDING", "PROCESSING"]:
+        task.status = "CANCELLED"
+        if task.celery_task_id:
+            try:
+                from app.worker import celery_app
+                celery_app.control.revoke(task.celery_task_id, terminate=True)
+            except Exception:
+                pass
+        db.commit()
+    events = db.query(db_models.CrashEvent).filter(
+        db_models.CrashEvent.task_id == task.id).all()
+    return api_schemas.TaskStatusOut(
+        task_id=task.id,
+        status=task.status,
+        progress=None,
+        error_message="사용자가 작업을 취소함",
+        events=[to_event_out(e) for e in events],
+    )
+
+
+
 @router.get("/videos/{video_id}/events",
             response_model=list[api_schemas.EventOut])
 def list_events(

@@ -20,7 +20,7 @@ export function clearAuth() {
   localStorage.removeItem(USER_KEY);
 }
 
-async function request(path, { method = "GET", body, isForm = false } = {}) {
+async function request(path, { method = "GET", body, isForm = false, signal } = {}) {
   const headers = {};
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -29,7 +29,7 @@ async function request(path, { method = "GET", body, isForm = false } = {}) {
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
   }
-  const res = await fetch(`/api${path}`, { method, headers, body: payload });
+  const res = await fetch(`/api${path}`, { method, headers, body: payload, signal });
   if (!res.ok) {
     let detail = `요청 실패 (${res.status})`;
     try {
@@ -78,6 +78,9 @@ export function normalizeVideo(v) {
 export const api = {
   signup: (data) => request("/auth/signup", { method: "POST", body: data }),
   login: (data) => request("/auth/login", { method: "POST", body: data }),
+  getMe: () => request("/auth/me"),
+  updateMe: (data) => request("/auth/me", { method: "PUT", body: data }),
+  changePassword: (data) => request("/auth/change-password", { method: "POST", body: data }),
 
   // ---------- 영상 ----------
   listVideos: async (days) => {
@@ -101,14 +104,17 @@ export const api = {
     request(`/videos/${videoId}/events`, { method: "DELETE" }),
 
   // ---------- 분석 ----------
-  detectVehicles: (videoId, timestampSec = 0) =>
+  detectVehicles: (videoId, timestampSec = 0, signal) =>
     request(`/videos/${videoId}/detect-vehicles?timestamp_sec=${timestampSec}`, {
       method: "POST",
+      signal,
     }),
-  analyze: (videoId, bbox) =>
-    request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox }),
+  analyze: (videoId, bbox, signal) =>
+    request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox, signal }),
   taskStatus: (taskId) => request(`/tasks/${taskId}`),
+  cancelTask: (taskId) => request(`/tasks/${taskId}/cancel`, { method: "POST" }),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,
 };
+
 
 
