@@ -4,7 +4,17 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 from app.settings import settings
 
-engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+
+def normalize_database_url(url: str) -> str:
+    """SQLAlchemy가 Supabase PostgreSQL URL을 psycopg로 열도록 정규화한다."""
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url.removeprefix("postgres://")
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url.removeprefix("postgresql://")
+    return url
+
+
+engine = create_engine(normalize_database_url(settings.DATABASE_URL), pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

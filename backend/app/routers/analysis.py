@@ -1,6 +1,6 @@
 """분석 요청 / 태스크 상태 / 이벤트·클립 조회 라우터."""
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
@@ -8,6 +8,7 @@ from app import db_models, api_schemas
 from app.auth_guard import get_current_user
 from app.settings import settings
 from app.routers.videos import to_event_out, _get_owned_video
+from app.object_storage import LocalObjectStorage, get_storage
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -58,12 +59,52 @@ def get_task_status(
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.task_id == task.id).all()
+
+    # 처리 중이면 Celery 상태(Redis)에서 실제 추론 진행도(%)를 읽어온다.
+    progress = None
+    if task.status == "PROCESSING" and task.celery_task_id:
+        from app.worker import celery_app
+        res = celery_app.AsyncResult(task.celery_task_id)
+        if res.state == "PROGRESS" and isinstance(res.info, dict):
+            progress = res.info.get("percent")
+
     return api_schemas.TaskStatusOut(
         task_id=task.id,
         status=task.status,
+        progress=progress,
         error_message=task.error_message,
         events=[to_event_out(e) for e in events],
     )
+
+
+@router.post("/tasks/{task_id}/cancel", response_model=api_schemas.TaskStatusOut)
+def cancel_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    task = db.get(db_models.AnalysisTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    if task.status in ["PENDING", "PROCESSING"]:
+        task.status = "CANCELLED"
+        if task.celery_task_id:
+            try:
+                from app.worker import celery_app
+                celery_app.control.revoke(task.celery_task_id, terminate=True)
+            except Exception:
+                pass
+        db.commit()
+    events = db.query(db_models.CrashEvent).filter(
+        db_models.CrashEvent.task_id == task.id).all()
+    return api_schemas.TaskStatusOut(
+        task_id=task.id,
+        status=task.status,
+        progress=None,
+        error_message="사용자가 작업을 취소함",
+        events=[to_event_out(e) for e in events],
+    )
+
 
 
 @router.get("/videos/{video_id}/events",
@@ -86,7 +127,11 @@ def get_event_clip(event_id: int, db: Session = Depends(get_db)):
     event = db.get(db_models.CrashEvent, event_id)
     if event is None or not event.cam_heatmap_path:
         raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")
-    path = settings.abs_path(event.cam_heatmap_path)
-    if not path.exists():
+    storage = get_storage()
+    if not storage.exists(event.cam_heatmap_path):
         raise HTTPException(status_code=404, detail="클립 파일이 없습니다.")
-    return FileResponse(str(path), media_type="video/mp4")
+    if not isinstance(storage, LocalObjectStorage):
+        return RedirectResponse(storage.presigned_url(event.cam_heatmap_path))
+    path = storage.local_path(event.cam_heatmap_path)
+    media_type = "video/webm" if str(path).endswith(".webm") else "video/mp4"
+    return FileResponse(str(path), media_type=media_type)

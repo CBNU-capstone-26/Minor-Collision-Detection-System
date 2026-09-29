@@ -3,10 +3,14 @@
 torch/opencv/모델 임포트는 모두 **태스크 내부에서 지연 로딩**한다.
 → FastAPI 웹 프로세스는 ML 의존성 없이도 이 모듈을 임포트(.delay 호출)할 수 있다.
 """
+import tempfile
+from pathlib import Path
+
 from app.worker import celery_app
 from app.settings import settings
 from app.db_connection import SessionLocal
 from app import db_models
+from app.object_storage import LocalObjectStorage, get_storage, materialize
 
 # 워커 프로세스당 모델 1회 로드 후 재사용
 _model = None
@@ -37,7 +41,7 @@ def _get_model():
     model.load_state_dict(state_dict)
     model.eval()
     _model = model
-    print(f"[worker] 모델 로드 완료 (device={device}, weights={model_config.SERVICE_WEIGHTS_PATH})")
+    print(f"[worker] 모델 로드 완료 (device={device})")
     return _model
 
 
@@ -58,12 +62,45 @@ def run_prediction_task(self, task_id: int):
 
         from predict_cam import predict_events_and_clips
 
-        results = predict_events_and_clips(
-            model,
-            video_path=settings.abs_path(video.video_path),
-            bbox=(task.bbox_xmin, task.bbox_ymin, task.bbox_xmax, task.bbox_ymax),
-            output_dir=settings.CLIP_DIR,
-        )
+        # 추론 진행도를 Celery 상태(Redis)에 기록 → /tasks 엔드포인트가 읽어 프론트에 전달.
+        # pass-1(윈도우 추론)을 0~95%로 매핑(마지막 5%는 클립 렌더/마무리 몫).
+        _last_pct = {"v": -1}
+
+        def _on_progress(frac):
+            pct = int(frac * 95)
+            if pct != _last_pct["v"]:      # 정수 % 바뀔 때만 기록(과도한 갱신 방지)
+                _last_pct["v"] = pct
+                self.update_state(state="PROGRESS", meta={"percent": pct})
+
+        storage = get_storage()
+        with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as video_path:
+            if isinstance(storage, LocalObjectStorage):
+                output_dir = settings.CLIP_DIR
+                output_context = None
+            else:
+                output_context = tempfile.TemporaryDirectory(prefix="analysis-clips-")
+                output_dir = Path(output_context.name)
+
+            try:
+                results = predict_events_and_clips(
+                    model,
+                    video_path=video_path,
+                    bbox=(task.bbox_xmin, task.bbox_ymin, task.bbox_xmax, task.bbox_ymax),
+                    output_dir=output_dir,
+                    progress_callback=_on_progress,
+                )
+
+                for r in results:
+                    clip_path = Path(r["clip_path"])
+                    if isinstance(storage, LocalObjectStorage):
+                        clip_key = settings.rel_path(clip_path)
+                    else:
+                        clip_key = f"clips/{clip_path.name}"
+                        storage.upload_path(clip_path, clip_key, content_type="video/mp4")
+                    r["storage_key"] = clip_key
+            finally:
+                if output_context is not None:
+                    output_context.cleanup()
 
         for r in results:
             db.add(db_models.CrashEvent(
@@ -74,7 +111,7 @@ def run_prediction_task(self, task_id: int):
                 end_timestamp_sec=r["end_sec"],
                 end_frame_number=r["end_frame"],
                 crash_prob=r["crash_prob"],
-                cam_heatmap_path=settings.rel_path(r["clip_path"]),
+                cam_heatmap_path=r["storage_key"],
             ))
 
         task.status = "SUCCESS"

@@ -1,4 +1,5 @@
 import os
+import glob
 import cv2
 import numpy as np
 import torch
@@ -31,8 +32,10 @@ class HitAndRunDataset(Dataset):
         self.std = torch.tensor(
             config.NORM_STD, dtype=torch.float32).view(3, 1, 1, 1)
 
-        self.file_names = sorted(f.rsplit('.', 1)[0] for f in os.listdir(
-            data_dir) if f.endswith('.mp4'))
+        # data_dir 하위 폴더(rcdata/realdata 등)까지 재귀적으로 mp4를 수집한다.
+        # → 최상위에 파일이 있어도(기존 방식) 하위 폴더에 있어도 모두 포함.
+        self.mp4_paths = sorted(
+            glob.glob(os.path.join(str(data_dir), '**', '*.mp4'), recursive=True))
         self.samples = self._build_index()
 
     def __len__(self):
@@ -40,9 +43,10 @@ class HitAndRunDataset(Dataset):
 
     def _build_index(self):
         samples = []
-        for file_name in self.file_names:
-            mp4_path = os.path.join(self.data_dir, f"{file_name}.mp4")
-            txt_path = os.path.join(self.data_dir, f"{file_name}.txt")
+        for mp4_path in self.mp4_paths:
+            # txt는 같은 경로의 확장자만 바꾼 것 (rcdata/realdata 어디든 동일 규칙)
+            txt_path = os.path.splitext(mp4_path)[0] + ".txt"
+            file_name = os.path.splitext(os.path.basename(mp4_path))[0]
             bboxes, action = self._parse_annotation(txt_path)
 
             if action is not None:

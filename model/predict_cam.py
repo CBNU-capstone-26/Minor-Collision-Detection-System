@@ -1,5 +1,7 @@
 import os
 import queue
+import shutil
+import subprocess
 import threading
 import cv2
 import torch
@@ -10,8 +12,45 @@ from pathlib import Path
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported
 
+# 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
+_FFMPEG = shutil.which("ffmpeg")
+
 
 activation = {}
+
+
+def _open_clip_writer(dest_stem, fps, size):
+    """클립을 mp4v 임시본에 렌더할 VideoWriter를 연다. 반환: (writer, rendered_path).
+
+    최종 브라우저 호환 변환(H.264/mp4)은 _finalize_clip이 담당한다.
+    """
+    rendered = f"{dest_stem}.render.mp4"
+    writer = cv2.VideoWriter(rendered, cv2.VideoWriter_fourcc(*"mp4v"), fps, size)
+    return writer, rendered
+
+
+def _finalize_clip(rendered_path, dest_stem):
+    """mp4v 임시본을 H.264/mp4(yuv420p+faststart)로 재인코딩해 최종 경로(str)를 반환.
+
+    시스템 ffmpeg(libx264)가 **필수**다. H.264/mp4로 통일해야 브라우저·OS(크롬·파폭·
+    사파리·iOS)를 가리지 않고 재생되기 때문. ffmpeg가 없으면 명확한 에러를 낸다.
+    """
+    if not _FFMPEG:
+        try:
+            os.remove(rendered_path)
+        except OSError:
+            pass
+        raise RuntimeError(
+            "ffmpeg가 설치되어 있지 않습니다 — 브라우저 호환 클립(H.264) 생성에 필요합니다. "
+            "시스템에 설치하세요: sudo apt install -y ffmpeg (또는 brew install ffmpeg)")
+    final = f"{dest_stem}.mp4"
+    subprocess.run(
+        [_FFMPEG, "-y", "-loglevel", "error", "-i", rendered_path,
+         "-c:v", "libx264", "-pix_fmt", "yuv420p",
+         "-movflags", "+faststart", final],
+        check=True)
+    os.remove(rendered_path)
+    return final
 
 
 def get_activation(name):
@@ -71,102 +110,6 @@ def _draw_state_label(frame, state):
     cv2.rectangle(frame, (10, 10), (90, 65), (0, 0, 0), -1)
     cv2.putText(frame, label, (20, 57),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.8, color, 3)
-
-
-def _window_motion_score(frames, start, clip_length):
-    """224x224 crop 윈도우 안의 순간 변화량을 robust하게 계산한다.
-
-    주차장 접촉 사고는 전체 윈도우 평균보다 짧은 충격성 변화가 중요하다.
-    따라서 전체 평균 대신 상위 변화량들의 평균을 사용해 순간 움직임을 덜 희석한다.
-    """
-    end = min(len(frames), start + clip_length)
-    if end - start < 2:
-        return 0.0
-
-    diffs = []
-    prev_gray = cv2.cvtColor(frames[start], cv2.COLOR_RGB2GRAY)
-    for frame in frames[start + 1:end]:
-        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        diffs.append(float(cv2.absdiff(gray, prev_gray).mean()))
-        prev_gray = gray
-    if not diffs:
-        return 0.0
-    top_k = max(1, int(np.ceil(len(diffs) * 0.25)))
-    return float(np.mean(sorted(diffs, reverse=True)[:top_k]))
-
-
-def _event_representative_prob(probs):
-    """단일 spike 대신 상위 몇 개 평균으로 구간 대표 확률을 안정화한다."""
-    if not probs:
-        return None
-    top_k = min(3, len(probs))
-    return float(np.mean(sorted(probs, reverse=True)[:top_k]))
-
-
-def _build_accident_events(
-    window_records,
-    fps,
-    min_windows,
-    max_gap_windows,
-    min_duration_sec,
-):
-    """확률/움직임을 통과한 윈도우를 연속 구간으로 묶고 짧은 구간을 제거한다."""
-    events = []
-    active = None
-    gap_count = 0
-
-    for record in window_records:
-        if record["is_candidate"]:
-            if active is None:
-                active = {
-                    "start_frame": record["window_idx"],
-                    "end_frame": record["frame_idx"],
-                    "window_count": 1,
-                    "probs": [record["accident_prob"]],
-                    "motion_scores": [record["motion_score"]],
-                }
-            else:
-                active["end_frame"] = record["frame_idx"]
-                active["window_count"] += 1
-                active["probs"].append(record["accident_prob"])
-                active["motion_scores"].append(record["motion_score"])
-            gap_count = 0
-            continue
-
-        if active is None:
-            continue
-
-        gap_count += 1
-        if gap_count <= max_gap_windows:
-            continue
-
-        _append_event_if_valid(events, active, fps, min_windows, min_duration_sec)
-        active = None
-        gap_count = 0
-
-    if active is not None:
-        _append_event_if_valid(events, active, fps, min_windows, min_duration_sec)
-
-    return events
-
-
-def _append_event_if_valid(events, event, fps, min_windows, min_duration_sec):
-    duration_sec = max(0.0, (event["end_frame"] - event["start_frame"] + 1) / fps)
-    crash_prob = _event_representative_prob(event["probs"])
-    is_strong_single_window = (
-        event["window_count"] == 1
-        and crash_prob is not None
-        and crash_prob >= getattr(config, "ACCIDENT_HIGH_PROB_THRESHOLD", 0.90)
-    )
-    if event["window_count"] < min_windows and not is_strong_single_window:
-        return
-    if duration_sec < min_duration_sec:
-        if not is_strong_single_window:
-            return
-
-    event["crash_prob"] = crash_prob
-    event["motion_score"] = float(np.mean(event["motion_scores"])) if event["motion_scores"] else 0.0
-    events.append(event)
 
 
 def predict_hit_and_run_final(
@@ -269,8 +212,9 @@ def predict_hit_and_run_final(
         orig_h, orig_w = original_full_frames[0].shape[:2]
         out_path = output_dir / f'final_{os.path.basename(video_path)}'
         os.makedirs(out_path.parent, exist_ok=True)
-        out_video = cv2.VideoWriter(
-            str(out_path), cv2.VideoWriter_fourcc(*'avc1'), 30.0, (orig_w, orig_h))
+        out_stem = str(out_path.with_suffix(""))
+        out_video, out_rendered = _open_clip_writer(
+            out_stem, 30.0, (orig_w, orig_h))
 
         write_queue = queue.Queue(maxsize=64)
         writer_thread = threading.Thread(
@@ -280,8 +224,11 @@ def predict_hit_and_run_final(
         )
         writer_thread.start()
 
-        v_nx1, v_ny1 = max(0, rx1), max(0, ry1)
-        v_nx2, v_ny2 = min(orig_w, rx2), min(orig_h, ry2)
+        # CAM 오버레이·박스를 정사각 크롭이 아니라 '원본 bbox' 크기로 그린다.
+        # (변수명 v_n*는 유지하되 좌표를 원본 bbox 기준으로 정의 — 이후 rectangle/
+        #  putText/heatmap 슬라이싱이 모두 자동으로 원본 bbox 영역을 사용하게 됨)
+        v_nx1, v_ny1 = max(0, target_bbox[0]), max(0, target_bbox[1])
+        v_nx2, v_ny2 = min(orig_w, target_bbox[2]), min(orig_h, target_bbox[3])
 
         # 첫 (clip_length - 1)개 프레임: 아직 예측 전 → 상태 S로 출력
         for i in range(min(clip_length - 1, len(original_full_frames))):
@@ -364,8 +311,10 @@ def predict_hit_and_run_final(
                     roi = final_frame[v_ny1:v_ny2, v_nx1:v_nx2]
 
                     if pred_class == 1:
+                        # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 맞춤
+                        hm = cv2.resize(heatmap_valid, (roi.shape[1], roi.shape[0]))
                         final_frame[v_ny1:v_ny2, v_nx1:v_nx2] = cv2.addWeighted(
-                            roi, 0.6, heatmap_valid, 0.4, 0)
+                            roi, 0.6, hm, 0.4, 0)
                         bbox_color = (0, 0, 255)
                         conf_text = f"Accident ({conf:.1f}%)"
                     else:
@@ -403,6 +352,8 @@ def predict_hit_and_run_final(
         writer_thread.join()
         out_video.release()
         out_video = None
+        # 브라우저 호환 최종본(H.264/mp4)으로 변환
+        out_path = _finalize_clip(out_rendered, out_stem)
 
         # 결과 출력
         print(f"\n분석 완료! 결과 파일: {out_path}")
@@ -439,13 +390,7 @@ def predict_events_and_clips(
     infer_batch_size=config.PREDICT_INFER_BATCH_SIZE,
     window_stride=config.PREDICT_WINDOW_STRIDE,
     clip_pad_frames=15,
-    accident_prob_threshold=config.ACCIDENT_PROB_THRESHOLD,
-    accident_min_windows=config.ACCIDENT_MIN_WINDOWS,
-    accident_max_gap_windows=config.ACCIDENT_MAX_GAP_WINDOWS,
-    accident_min_duration_sec=config.ACCIDENT_MIN_DURATION_SEC,
-    accident_motion_threshold=config.ACCIDENT_MOTION_THRESHOLD,
-    accident_high_prob_threshold=config.ACCIDENT_HIGH_PROB_THRESHOLD,
-    accident_high_prob_motion_threshold=config.ACCIDENT_HIGH_PROB_MOTION_THRESHOLD,
+    progress_callback=None,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -519,12 +464,16 @@ def predict_events_and_clips(
 
         full_video_tensor = _frames_to_video_tensor(processed_frames).to(device)
 
-        v_nx1, v_ny1 = max(0, rx1), max(0, ry1)
-        v_nx2, v_ny2 = min(orig_w, rx2), min(orig_h, ry2)
+        # 원본 bbox 영역(프레임 경계로 클램프) — CAM 오버레이·박스를 사용자가 지정한
+        # 실제 bbox 크기로 그리기 위해 사용한다(정사각 크롭 크기가 아님).
+        bx1, by1 = max(0, target_bbox[0]), max(0, target_bbox[1])
+        bx2, by2 = min(orig_w, target_bbox[2]), min(orig_h, target_bbox[3])
 
-        # ── 추론: 윈도우별 예측 + 사고 후보 프레임의 CAM 히트맵 캐싱 ─────────
-        window_records = []
-        # frame_idx → (heatmap_valid, prob) (후처리를 통과한 사고 후보 프레임만)
+        # ── 추론: 윈도우별 예측 + 사고 프레임의 CAM 히트맵 캐싱 ──────────────
+        events = []          # [{'start_frame','end_frame'}, ...]
+        prev_state = 0
+        event_start = None
+        # frame_idx → (heatmap_valid, prob) (사고로 예측된 프레임만)
         accident_overlays = {}
 
         num_windows = full_video_tensor.size(1) - (clip_length - 1)
@@ -532,6 +481,9 @@ def predict_events_and_clips(
 
         with torch.inference_mode():
             for batch_start in range(0, len(window_starts), infer_batch_size):
+                # 실제 추론 진행도 보고 (처리한 윈도우 비율, 0.0~1.0)
+                if progress_callback is not None:
+                    progress_callback(batch_start / max(1, len(window_starts)))
                 batch_window_starts = window_starts[
                     batch_start:batch_start + infer_batch_size]
                 clips = torch.stack(
@@ -543,41 +495,27 @@ def predict_events_and_clips(
 
                 outputs = model(clips)
                 probs = F.softmax(outputs, dim=1)
+                pred_classes = outputs.argmax(dim=1)
                 feat_maps = activation['inception5b']
 
                 for offset, window_idx in enumerate(batch_window_starts):
                     frame_idx = window_idx + clip_length - 1
-                    accident_prob = float(probs[offset, 1].item())
-                    motion_score = _window_motion_score(
-                        processed_frames,
-                        window_idx,
-                        clip_length,
-                    )
-                    is_motion_candidate = (
-                        accident_prob >= accident_prob_threshold
-                        and motion_score >= accident_motion_threshold
-                    )
-                    is_high_prob_candidate = (
-                        accident_prob >= accident_high_prob_threshold
-                        and motion_score >= accident_high_prob_motion_threshold
-                    )
-                    is_candidate = is_motion_candidate or is_high_prob_candidate
-                    window_records.append({
-                        'window_idx': window_idx,
-                        'frame_idx': frame_idx,
-                        'accident_prob': accident_prob,
-                        'motion_score': motion_score,
-                        'is_candidate': is_candidate,
-                        'candidate_reason': (
-                            'prob_motion' if is_motion_candidate else
-                            'high_prob' if is_high_prob_candidate else
-                            None
-                        ),
-                    })
+                    pred_class = int(pred_classes[offset].item())
+                    prob = probs[offset, pred_class].item()
 
-                    if is_candidate:
+                    # 이벤트 상태 전환 감지 (S→A 시작 / A→S 종료)
+                    if prev_state == 0 and pred_class == 1:
+                        event_start = window_idx
+                    elif prev_state == 1 and pred_class == 0:
+                        if event_start is not None:
+                            events.append({'start_frame': event_start,
+                                           'end_frame': frame_idx - 1})
+                            event_start = None
+                    prev_state = pred_class
+
+                    if pred_class == 1:
                         feat_map = feat_maps[offset]
-                        weight = model.head_conv.weight[1]
+                        weight = model.head_conv.weight[pred_class]
                         cam = F.relu(torch.sum(weight * feat_map, dim=0))
                         cam_2d = torch.mean(cam, dim=0)
                         cam_min, cam_max = cam_2d.min(), cam_2d.max()
@@ -585,37 +523,17 @@ def predict_events_and_clips(
                         cam_np = (cam_2d * 255).byte().cpu().numpy()
                         heatmap = cv2.applyColorMap(cam_np, cv2.COLORMAP_JET)
                         heatmap = cv2.resize(heatmap, (rx2 - rx1, ry2 - ry1))
-                        heatmap_valid = heatmap[
-                            v_ny1 - ry1:(v_ny1 - ry1) + (v_ny2 - v_ny1),
-                            v_nx1 - rx1:(v_nx1 - rx1) + (v_nx2 - v_nx1),
+                        # 정사각 히트맵에서 '원본 bbox'에 해당하는 부분만 잘라 저장
+                        heatmap_bbox = heatmap[
+                            max(0, by1 - ry1):(by2 - ry1),
+                            max(0, bx1 - rx1):(bx2 - rx1),
                         ]
-                        accident_overlays[frame_idx] = (heatmap_valid, accident_prob)
+                        accident_overlays[frame_idx] = (heatmap_bbox, prob)
 
-        events = _build_accident_events(
-            window_records,
-            fps,
-            accident_min_windows,
-            accident_max_gap_windows,
-            accident_min_duration_sec,
-        )
-        if window_records:
-            max_prob = max(record['accident_prob'] for record in window_records)
-            max_motion = max(record['motion_score'] for record in window_records)
-            candidate_count = sum(1 for record in window_records if record['is_candidate'])
-            high_prob_count = sum(
-                1 for record in window_records
-                if record.get('candidate_reason') == 'high_prob'
-            )
-            print(
-                "[predict_events_and_clips] "
-                f"windows={len(window_records)}, candidates={candidate_count}, "
-                f"high_prob_candidates={high_prob_count}, "
-                f"max_accident_prob={max_prob:.3f}, max_motion={max_motion:.2f}, "
-                f"prob_threshold={accident_prob_threshold:.2f}, "
-                f"motion_threshold={accident_motion_threshold:.2f}, "
-                f"high_prob_threshold={accident_high_prob_threshold:.2f}, "
-                f"high_prob_motion_threshold={accident_high_prob_motion_threshold:.2f}"
-            )
+        # 영상 끝까지 A 상태가 유지된 경우 이벤트 닫기
+        if prev_state == 1 and event_start is not None:
+            events.append({'start_frame': event_start,
+                           'end_frame': real_frame_count - 1})
 
         # ── 2패스: 이벤트 구간 프레임만 영상에서 다시 읽어 CAM 클립 렌더링 ──────
         # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
@@ -629,12 +547,14 @@ def predict_events_and_clips(
                 clip_start = max(0, start_f - clip_pad_frames)
                 clip_end = min(real_frame_count - 1, end_f + clip_pad_frames)
 
-                crash_prob = ev.get('crash_prob')
+                # 구간 대표 확률 = 구간 내 사고 프레임 확률의 최댓값
+                probs_in_event = [p for f, (_, p) in accident_overlays.items()
+                                  if start_f <= f <= end_f]
+                crash_prob = max(probs_in_event) if probs_in_event else None
 
-                clip_path = output_dir / f'{base_name}_event{ev_idx}.mp4'
-                writer = cv2.VideoWriter(
-                    str(clip_path), cv2.VideoWriter_fourcc(*'avc1'),
-                    fps, (orig_w, orig_h))
+                clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
+                writer, rendered_path = _open_clip_writer(
+                    clip_stem, fps, (orig_w, orig_h))
 
 
                 # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
@@ -648,18 +568,22 @@ def predict_events_and_clips(
                         last_heatmap = accident_overlays[f][0]
                     in_event = start_f <= f <= end_f
                     if in_event and last_heatmap is not None:
-                        roi = frame[v_ny1:v_ny2, v_nx1:v_nx2]
-                        frame[v_ny1:v_ny2, v_nx1:v_nx2] = cv2.addWeighted(
-                            roi, 0.6, last_heatmap, 0.4, 0)
-                        cv2.rectangle(frame, (v_nx1, v_ny1),
-                                      (v_nx2, v_ny2), (0, 0, 255), 3)
+                        roi = frame[by1:by2, bx1:bx2]
+                        # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
+                        hm = cv2.resize(last_heatmap, (roi.shape[1], roi.shape[0]))
+                        frame[by1:by2, bx1:bx2] = cv2.addWeighted(
+                            roi, 0.6, hm, 0.4, 0)
+                        cv2.rectangle(frame, (bx1, by1),
+                                      (bx2, by2), (0, 0, 255), 3)
                         _draw_state_label(frame, 1)
                     else:
-                        cv2.rectangle(frame, (v_nx1, v_ny1),
-                                      (v_nx2, v_ny2), (0, 255, 0), 2)
+                        cv2.rectangle(frame, (bx1, by1),
+                                      (bx2, by2), (0, 255, 0), 2)
                         _draw_state_label(frame, 0)
                     writer.write(frame)
                 writer.release()
+                # 브라우저 호환 최종본(H.264/mp4)으로 변환
+                clip_path = _finalize_clip(rendered_path, clip_stem)
 
                 results.append({
                     'start_frame': start_f,

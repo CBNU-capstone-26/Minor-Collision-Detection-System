@@ -1,5 +1,6 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
 import shutil
+import tempfile
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 from pathlib import Path
@@ -7,25 +8,20 @@ from pathlib import Path
 from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, UploadFile, Query,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
 from app import db_models, api_schemas
 from app.auth_guard import get_current_user
 from app.settings import settings
+from app.object_storage import LocalObjectStorage, get_storage, materialize
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
-_vehicle_bbox_detector = None
-_yolo_fallback_detector = None
-_yolo_seg_bbox_refiner = None
 
 
 # ---------- 직렬화 헬퍼 ----------
 def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
-    has_clip = bool(ev.cam_heatmap_path)
-    if has_clip:
-        has_clip = settings.abs_path(ev.cam_heatmap_path).exists()
     return api_schemas.EventOut(
         id=ev.id,
         timestamp_sec=ev.timestamp_sec,
@@ -33,7 +29,7 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_timestamp_sec=ev.end_timestamp_sec,
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
-        has_clip=has_clip,
+        has_clip=bool(ev.cam_heatmap_path),
     )
 
 
@@ -78,6 +74,8 @@ def upload_video(
 ):
     ext = Path(file.filename).suffix or ".mp4"
     stored_name = f"{uuid4().hex}{ext}"
+    storage = get_storage()
+    object_key = f"uploads/{stored_name}"
     dest = settings.UPLOAD_DIR / stored_name
     with open(dest, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -97,13 +95,17 @@ def upload_video(
     video = db_models.Video(
         user_id=user.id,
         video_name=file.filename,
-        video_path=settings.rel_path(dest),
+        video_path=object_key,
         recording_date=rec_date,
         width=width,
         height=height,
         fps=fps,
         total_frames=total_frames,
     )
+    if not isinstance(storage, LocalObjectStorage):
+        storage.upload_path(dest, object_key, content_type=file.content_type or "video/mp4")
+        dest.unlink(missing_ok=True)
+
     db.add(video)
     db.commit()
     db.refresh(video)
@@ -154,7 +156,7 @@ def delete_video(
         db_models.CrashEvent.video_id == video_id).all()
     for ev in events:
         if ev.cam_heatmap_path:
-            settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+            get_storage().delete(ev.cam_heatmap_path)
         db.delete(ev)
 
     # 2) analysis_tasks 행 삭제
@@ -163,8 +165,9 @@ def delete_video(
         db.delete(task)
 
     # 3) 원본 영상 + 썸네일 파일 삭제
-    settings.abs_path(video.video_path).unlink(missing_ok=True)
-    (settings.THUMBNAIL_DIR / f"{Path(video.video_path).stem}.jpg").unlink(missing_ok=True)
+    storage = get_storage()
+    storage.delete(video.video_path)
+    storage.delete(f"thumbnails/{Path(video.video_path).stem}.jpg")
 
     # 4) 영상 행 삭제
     db.delete(video)
@@ -189,7 +192,7 @@ def delete_crash_event(
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
 
     if event.cam_heatmap_path:
-        settings.abs_path(event.cam_heatmap_path).unlink(missing_ok=True)
+        get_storage().delete(event.cam_heatmap_path)
 
     db.delete(event)
     db.commit()
@@ -210,7 +213,7 @@ def clear_all_crash_events(
     count = len(events)
     for ev in events:
         if ev.cam_heatmap_path:
-            settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+            get_storage().delete(ev.cam_heatmap_path)
         db.delete(ev)
     db.commit()
     return {"deleted_count": count}
@@ -223,9 +226,12 @@ def stream_video(video_id: int, db: Session = Depends(get_db)):
     video = db.get(db_models.Video, video_id)
     if video is None:
         raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
-    path = settings.abs_path(video.video_path)
-    if not path.exists():
+    storage = get_storage()
+    if not storage.exists(video.video_path):
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
+    if not isinstance(storage, LocalObjectStorage):
+        return RedirectResponse(storage.presigned_url(video.video_path))
+    path = storage.local_path(video.video_path)
     # FileResponse는 HTTP Range 요청(영상 탐색)을 지원한다.
     return FileResponse(str(path), media_type="video/mp4")
 
@@ -237,20 +243,31 @@ def video_thumbnail(video_id: int, db: Session = Depends(get_db)):
     if video is None:
         raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
 
-    thumb = settings.THUMBNAIL_DIR / f"{Path(video.video_path).stem}.jpg"
-    if not thumb.exists():
-        src = settings.abs_path(video.video_path)
-        if not src.exists():
-            raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
+    storage = get_storage()
+    thumb_key = f"thumbnails/{Path(video.video_path).stem}.jpg"
+    if storage.exists(thumb_key):
+        if not isinstance(storage, LocalObjectStorage):
+            return RedirectResponse(storage.presigned_url(thumb_key))
+        return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
+
+    if not storage.exists(video.video_path):
+        raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
+    with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as src:
         import cv2  # 지연 임포트
         cap = cv2.VideoCapture(str(src))
         ok, frame = cap.read()  # 첫 프레임 (BGR)
         cap.release()
         if not ok:
             raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
-        cv2.imwrite(str(thumb), frame)
+        with tempfile.NamedTemporaryFile(suffix=".jpg") as temp_thumb:
+            import cv2
+            if not cv2.imwrite(temp_thumb.name, frame):
+                raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
+            storage.upload_path(temp_thumb.name, thumb_key, content_type="image/jpeg")
 
-    return FileResponse(str(thumb), media_type="image/jpeg")
+    if not isinstance(storage, LocalObjectStorage):
+        return RedirectResponse(storage.presigned_url(thumb_key))
+    return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
 
 
 @router.post("/{video_id}/detect-vehicles", response_model=api_schemas.VehicleDetectionResponse)
@@ -260,34 +277,21 @@ def detect_vehicles_in_video(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
-    """RT-DETR 모델로 지정 시각 프레임의 차량을 탐지하여 BBOX JSON을 DB에 저장하고 반환합니다."""
+    """YOLO 모델로 지정 시각 프레임의 차량을 탐지하여 BBOX JSON을 DB에 저장하고 반환합니다."""
     import json
-    import sys
-    global _vehicle_bbox_detector, _yolo_fallback_detector, _yolo_seg_bbox_refiner
 
     video = _get_owned_video(video_id, db, user)
-    src_path = settings.abs_path(video.video_path)
-    if not src_path.exists():
+    storage = get_storage()
+    if not storage.exists(video.video_path):
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
 
-    annotation_dir = str(settings.BASE_DIR / "annotation")
-    if annotation_dir not in sys.path:
-        sys.path.insert(0, annotation_dir)
-
+    # 차량 탐지 모듈은 지연 임포트 — ultralytics/torch를 웹 프로세스 시작 시 로드하지 않도록.
     try:
-        from auto_bbox_transformer_dino import (
+        from app.vehicle_detector import (
             DEFAULT_RTDETR_MODEL,
-            DEFAULT_TRANSFORMER_MAX_ASPECT_RATIO,
-            DEFAULT_TRANSFORMER_MIN_AREA_RATIO,
-            DEFAULT_TRANSFORMER_MIN_ASPECT_RATIO,
-            DEFAULT_TRANSFORMER_MIN_HEIGHT,
-            DEFAULT_TRANSFORMER_MIN_WIDTH,
-            DEFAULT_YOLO_SEG_MODEL,
             DEFAULT_YOLO_MODEL,
-            RTDETRVehicleBBoxDetector,
-            YoloFallbackVehicleBBoxDetector,
-            YoloSegBBoxRefiner,
-            merge_dino_yolo_detections,
+            DEFAULT_YOLO_SEG_MODEL,
+            get_hybrid_detector,
             read_source_frame,
         )
     except Exception as err:
@@ -297,75 +301,26 @@ def detect_vehicles_in_video(
     frame_index = max(0, min(frame_index, max(0, video.total_frames - 1)))
 
     try:
-        frame = read_source_frame(src_path, frame_index=frame_index)
+        with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as src_path:
+            frame = read_source_frame(src_path, frame_index=frame_index)
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
-    transformer_error = None
-    transformer_detections = []
-    yolo_detections = []
-    detector_mode = "rtdetr"
-
     try:
-        if _vehicle_bbox_detector is None:
-            rtdetr_model_path = settings.BASE_DIR / DEFAULT_RTDETR_MODEL
-            _vehicle_bbox_detector = RTDETRVehicleBBoxDetector(
-                model_path=str(rtdetr_model_path),
-                conf=0.20,
-                min_area_ratio=DEFAULT_TRANSFORMER_MIN_AREA_RATIO,
-                min_width=DEFAULT_TRANSFORMER_MIN_WIDTH,
-                min_height=DEFAULT_TRANSFORMER_MIN_HEIGHT,
-                min_aspect_ratio=DEFAULT_TRANSFORMER_MIN_ASPECT_RATIO,
-                max_aspect_ratio=DEFAULT_TRANSFORMER_MAX_ASPECT_RATIO,
-                device="cpu",
-            )
-        transformer_detections = _vehicle_bbox_detector.detect_frame(frame)
+        def model_path(name: str) -> str:
+            local_path = settings.BASE_DIR / name
+            return str(local_path) if local_path.exists() else name
+
+        detector = get_hybrid_detector(
+            rtdetr_path=model_path(DEFAULT_RTDETR_MODEL),
+            yolo_path=model_path(DEFAULT_YOLO_MODEL),
+            yolo_seg_path=model_path(DEFAULT_YOLO_SEG_MODEL),
+        )
+        detection_result = detector.detect_frame(frame)
+        detections = detection_result.detections
+        detector_mode = detection_result.mode
     except Exception as err:
-        transformer_error = err
-
-    try:
-        yolo_model_path = settings.BASE_DIR / DEFAULT_YOLO_MODEL
-        if _yolo_fallback_detector is None:
-            _yolo_fallback_detector = YoloFallbackVehicleBBoxDetector(
-                model_path=str(yolo_model_path),
-                conf=0.25,
-                min_area=100,
-            )
-        yolo_detections = _yolo_fallback_detector.detect_frame(frame)
-    except Exception as err:
-        if transformer_error is not None:
-            raise HTTPException(
-                status_code=500,
-                detail=f"RT-DETR 차량 탐지 실패 후 YOLO fallback도 실패했습니다: {transformer_error} / {err}",
-            )
-
-    if transformer_detections and yolo_detections:
-        detections = merge_dino_yolo_detections(transformer_detections, yolo_detections)
-        detector_mode = "hybrid"
-    elif transformer_detections:
-        detections = transformer_detections
-        detector_mode = "rtdetr"
-    elif yolo_detections:
-        detections = yolo_detections
-        detector_mode = "yolo_fallback"
-    elif transformer_error is not None:
-        raise HTTPException(status_code=500, detail=f"RT-DETR 차량 탐지 중 오류: {transformer_error}")
-    else:
-        detections = []
-
-    if detections:
-        try:
-            if _yolo_seg_bbox_refiner is None:
-                yolo_seg_model_path = settings.BASE_DIR / DEFAULT_YOLO_SEG_MODEL
-                _yolo_seg_bbox_refiner = YoloSegBBoxRefiner(
-                    model_path=str(yolo_seg_model_path),
-                    conf=0.25,
-                    min_area=100,
-                )
-            detections = _yolo_seg_bbox_refiner.refine_frame(frame, detections)
-            detector_mode = f"{detector_mode}_seg"
-        except Exception as err:
-            print(f"[detect_vehicles_in_video] YOLO-seg bbox refinement skipped: {err}")
+        raise HTTPException(status_code=500, detail=f"하이브리드 차량 탐지 중 오류: {err}")
 
     detected_list = []
     for idx, det in enumerate(detections):
@@ -378,6 +333,26 @@ def detect_vehicles_in_video(
             "source": det.source,
         })
 
+    # [디버그] 서비스가 실제로 탐지한 결과를 이미지로 저장 (outputs/) — 눈으로 확인용.
+    #   탐지에 쓴 원본 프레임에 bbox(#번호·클래스·신뢰도)를 그려 저장한다.
+    try:
+        import cv2
+        dbg = frame.copy()
+        for item in detected_list:
+            x1, y1, x2, y2 = item["bbox"]
+            cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            label = f'#{item["id"] + 1} {item["class_name"]} {round(item["confidence"] * 100)}%'
+            cv2.putText(dbg, label, (x1, max(y1 - 4, 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        out_dir = settings.BASE_DIR / "outputs"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        base = Path(video.video_name).stem
+        out_img = out_dir / f"detect_{base}_f{frame_index}.jpg"
+        cv2.imwrite(str(out_img), dbg)
+        print(f"[detect] 결과 이미지 저장: {out_img}  (탐지 {len(detected_list)}대, 프레임 {frame.shape[1]}x{frame.shape[0]})")
+    except Exception as _dbg_err:  # 디버그 저장 실패는 탐지 응답에 영향 없음
+        print(f"[detect] 결과 이미지 저장 실패(무시): {_dbg_err}")
+
     json_str = json.dumps(detected_list, ensure_ascii=False)
     video.detected_vehicles = json_str
     db.commit()
@@ -385,8 +360,8 @@ def detect_vehicles_in_video(
     return api_schemas.VehicleDetectionResponse(
         video_id=video.id,
         total_detected=len(detected_list),
-        detector_mode=detector_mode,
         detected_vehicles=[
             api_schemas.DetectedVehicleBox(**item) for item in detected_list
         ],
+        detector_mode=detector_mode,
     )
