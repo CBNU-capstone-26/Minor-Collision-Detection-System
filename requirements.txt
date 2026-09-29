@@ -31,6 +31,7 @@
 #       --index-url https://download.pytorch.org/whl/cpu torch==2.12.0 torchvision==0.27.0
 #   cd backend && ../venv311/bin/python -m uvicorn app.main:app --port 8000
 #   cd backend && ../venv311/bin/celery -A app.worker worker --concurrency=1
+#     (x3d 로 서비스하려면: MODEL_VARIANT=x3d ../venv311/bin/celery -A app.worker worker ...)
 #   cd ui && npm install && npm run dev
 #
 # torch/torchvision 은 PyTorch 전용 인덱스에서 받아야 하므로 별도 스텝으로 설치합니다.
@@ -72,6 +73,10 @@ tqdm==4.68.1
 # ---- 차량 자동탐지 (라이브 서비스 /detect-vehicles; YOLO11) ----
 # ※ torch/torchvision 은 위 '별도 스텝'으로 이미 설치됨. YOLO11x 가중치는 첫 실행 시 자동 다운로드.
 ultralytics>=8.3.0  # YOLO11 지원(8.3.0+). matplotlib·pyyaml·scipy 등 의존성 함께 설치됨
+
+# ---- X3D 백본 (MODEL_VARIANT=x3d 로 서비스할 때) ----
+# s3d(기본)만 쓰면 불필요. 설치 시 fvcore·iopath·av 등이 함께 설치된다.
+pytorchvideo==0.1.5
 
 # ---- 테스트/스크립트용 ----
 requests==2.34.2

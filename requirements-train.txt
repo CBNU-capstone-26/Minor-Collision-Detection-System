@@ -1,16 +1,30 @@
 # ================================================================
-# requirement-train.txt
-# 물피도주 감지 "모델 학습 · 추론" 전용 Python 환경 (model/ 패키지)
-# 재현 검증 환경: Python 3.11.15
+# requirements-train.txt
+# 물피도주 감지 "모델 학습 · 추론" 전용 Python 환경 (model/ · x3d model/)
+# 재현 검증 환경: Python 3.11.15 (로컬 CPU) / Python 3.10 (학습 서버 GPU, RTX 3080)
 #
-# 이 파일은 ML 코드(model/ 의 train / predict / eval)만 실행하기 위한 최소 의존성입니다.
+# 이 파일은 ML 코드(train / predict / eval)만 실행하기 위한 최소 의존성입니다.
 # 웹 서비스(FastAPI·Celery·MySQL·Redis)는 포함하지 않습니다 → 그건 루트 requirements.txt 사용.
 # ================================================================
 #
 # -- 무엇을 위한 파일인가 -----------------------------------------
-#   python -m model.main --mode train     # 학습
-#   python -m model.main --mode predict   # 단일 영상 CAM 예측
-#   python -m model.main --mode eval      # 폴더 정확도 평가
+#   백본마다 폴더가 따로 있고, 그 폴더 안에서 실행한다(폴더명에 공백이 있어 -m 불가).
+#   사용 백본: model/(s3d), x3d model/(x3d-m)  ※ slowfast model/ 은 사용 안 함
+#     (cd "x3d model" && PRETRAINED=1 python3 -u main.py --mode train)    # 학습
+#     (cd "x3d model" && EVAL_WEIGHTS=../weights/<파일> python3 -u main.py --mode eval)
+#     (cd "x3d model" && python3 -u main.py --mode predict)                # 단일 영상 CAM
+#     (cd "x3d model" && python3 ../check_probs.py ../weights/<파일>)      # 검증셋 확률 분포
+#     (cd "x3d model" && python3 trainplot.py ../outputs/trainlogs/*.csv)  # 학습 곡선 그래프
+#   ※ 파이프(| tee)로 로그를 받을 땐 -u 를 붙여야 출력이 바로 보인다(버퍼링).
+#
+# -- 학습 서버 준비: tmux (시스템 패키지 — pip 이 아님) --------------
+#   학습은 몇 시간 걸리는데, SSH 가 끊기면 그 셸에서 돌던 학습도 같이 죽는다.
+#   tmux 세션 안에서 돌리면 접속이 끊겨도 학습은 계속되고 나중에 다시 붙을 수 있다.
+#     sudo apt install tmux
+#     tmux new -s train          # 세션을 만들고 그 안에서 학습 명령 실행
+#     Ctrl+b 를 누른 뒤 d        # 세션에서 빠져나오기 (학습은 계속 돈다)
+#     tmux attach -t train       # 다시 붙어서 진행 확인
+#     tmux ls                    # 세션 목록
 #
 # -- torch / torchvision 은 아래 별도 스텝으로 설치 ----------------
 #   PyTorch 전용 인덱스에서 받아야 하므로 이 파일에 넣지 않습니다.
@@ -25,22 +39,23 @@
 #       (nvidia-smi 의 'CUDA Version' 확인 → cu121 / cu124 / cu126 / cu128 …)
 #       pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision
 #     → torch·torchvision 짝은 pip이 자동 해결 (cu121이면 2.5.1 + 0.20.1)
-#     → model/config.py 의 TRAIN_DEVICE_TYPE="cuda"
+#     → config.py 의 TRAIN_DEVICE_TYPE="cuda"
 #
 #   • 추론(CPU, 서비스/로컬 검증):
 #       pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-#     → model/config.py 의 INFER_DEVICE_TYPE="cpu"
+#     → config.py 의 INFER_DEVICE_TYPE 은 "cuda" 로 되어 있지만, GPU가 없으면
+#       경고를 찍고 CPU로 자동 전환되므로 그대로 둬도 된다.
 #     (로컬 검증 시 실제 설치본: torch 2.12.0+cpu / torchvision 0.27.0+cpu)
 #
 # -- 설치 순서 (로컬, CPU 추론 기준) -------------------------------
 #   uv venv --python 3.11 venv311
-#   uv pip install --python venv311 -r requirement-train.txt
+#   uv pip install --python venv311 -r requirements-train.txt
 #   uv pip install --python venv311 \
 #       --index-url https://download.pytorch.org/whl/cpu torch==2.12.0 torchvision==0.27.0
 #
 #   (일반 venv/pip)
 #   python3.11 -m venv venv311 && source venv311/bin/activate
-#   pip install -r requirement-train.txt
+#   pip install -r requirements-train.txt
 #   pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 # ================================================================
 
@@ -56,3 +71,13 @@ numpy>=1.24                         # 수치 연산 (Python 3.10 → 2.2.x, 3.11
 opencv-python-headless>=4.8         # cv2: 프레임 디코딩·크롭·CAM 오버레이·클립 렌더링
 pillow>=10.0                        # PIL: 데이터 증강(색상 지터 등) 시 이미지 변환
 tqdm>=4.65                          # 평가 진행률 표시
+
+# ---- X3D 백본 (x3d model/) ----
+# x3d_m 모델 정의와 Kinetics-400 사전학습 가중치를 제공한다. s3d 만 쓸 땐 불필요.
+# PyPI 최신이 0.1.5(2022)이며 fvcore·iopath·av 가 함께 설치된다.
+# 로컬 검증: pytorchvideo 0.1.5 + torchvision 0.27.0 에서 x3d 학습·추론 정상 동작.
+pytorchvideo>=0.1.5
+
+# ---- 학습 곡선 그래프 (trainplot.py — 학습 중 매 에포크 PNG 생성) ----
+# 없으면 그래프만 건너뛰고 학습은 계속된다. 로컬 검증: 3.11.1
+matplotlib>=3.7
