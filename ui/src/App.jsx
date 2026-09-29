@@ -965,9 +965,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       setSelectedVideo((prev) =>
         prev
           ? {
-              ...prev,
-              events: prev.events.filter((ev) => ev.id !== eventId),
-            }
+            ...prev,
+            events: prev.events.filter((ev) => ev.id !== eventId),
+          }
           : null
       );
       setVideos((prev) =>
@@ -1569,34 +1569,34 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               paginatedVideos.map((video) => {
                 const isSelected = selectedForDelete.includes(video.id);
                 return (
-                <div
-                  key={video.id}
-                  className={`video-card ${deleteMode ? "delete-mode" : ""} ${isSelected ? "delete-selected" : ""}`}
-                  onClick={() =>
-                    deleteMode ? toggleDeleteSelect(video.id) : handleWatchVideo(video)
-                  }
-                >
-                  <div className="video-thumbnail">
-                    {/* 영상 첫 프레임 썸네일 */}
-                    <img
-                      className="video-thumbnail-img"
-                      src={api.thumbnailUrl(video.id)}
-                      alt={`${video.date} ${video.camera} 썸네일`}
-                      loading="lazy"
-                      onError={(e) => { e.currentTarget.style.display = "none"; }}
-                    />
-                    <span className="event-count-badge">이벤트 {video.events.length}건</span>
-                    {deleteMode && (
-                      <span className={`delete-check ${isSelected ? "checked" : ""}`}>
-                        {isSelected ? "✓" : ""}
-                      </span>
-                    )}
+                  <div
+                    key={video.id}
+                    className={`video-card ${deleteMode ? "delete-mode" : ""} ${isSelected ? "delete-selected" : ""}`}
+                    onClick={() =>
+                      deleteMode ? toggleDeleteSelect(video.id) : handleWatchVideo(video)
+                    }
+                  >
+                    <div className="video-thumbnail">
+                      {/* 영상 첫 프레임 썸네일 */}
+                      <img
+                        className="video-thumbnail-img"
+                        src={api.thumbnailUrl(video.id)}
+                        alt={`${video.date} ${video.camera} 썸네일`}
+                        loading="lazy"
+                        onError={(e) => { e.currentTarget.style.display = "none"; }}
+                      />
+                      <span className="event-count-badge">이벤트 {video.events.length}건</span>
+                      {deleteMode && (
+                        <span className={`delete-check ${isSelected ? "checked" : ""}`}>
+                          {isSelected ? "✓" : ""}
+                        </span>
+                      )}
+                    </div>
+                    <div className="video-info">
+                      <h3>{getVideoDisplayTitle(video, videos)}</h3>
+                      <p>영상 길이: {formatTime(video.duration)}</p>
+                    </div>
                   </div>
-                  <div className="video-info">
-                    <h3>{getVideoDisplayTitle(video, videos)}</h3>
-                    <p>영상 길이: {formatTime(video.duration)}</p>
-                  </div>
-                </div>
                 );
               })
             )}
@@ -1666,99 +1666,99 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
             {/* 영상(player) 컬럼에 맞춰 정렬되는 오른쪽 영역 */}
             <div className="watch-header-right">
-            {/* 탐지하기 + 수동 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
-            <div className="watch-header-actions">
-            <button
-              className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
-              disabled={isAnalyzing}
-              onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
-              title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다" : "YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"}
-            >
-              {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
-            </button>
-
-            <button
-              className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
-              disabled={isAnalyzing}
-              onClick={() => {
-                if (selectionMode === "manual") {
-                  handleEndDesignateMode();
-                } else {
-                  handleStartManualDesignate();
-                }
-              }}
-              title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "수동 지정 모드 종료" : "직접 드래그하여 차량 지정")}
-            >
-              {selectionMode === "manual" ? "수동 지정 종료" : "수동 차량 지정"}
-            </button>
-
-            {selectionMode !== "none" && (
-              <button
-                className="mode-exit-btn"
-                onClick={handleEndDesignateMode}
-                title="모든 지정 모드 해제"
-              >
-                ✕ 모드 해제
-              </button>
-            )}
-
-
-
-            {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
-            <div className="detect-btn-wrapper">
-              {isAnalyzing ? (
+              {/* 탐지하기 + 수동 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
+              <div className="watch-header-actions">
                 <button
-                  className="detect-run-btn analyzing-cancel-btn"
+                  className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
+                  disabled={isAnalyzing}
+                  onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
+                  title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다" : "YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"}
+                >
+                  {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
+                </button>
+
+                <button
+                  className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
+                  disabled={isAnalyzing}
                   onClick={() => {
-                    const currentJob = analyzingJobs.find((j) => j.videoId === selectedVideo?.id);
-                    handleCancelAnalysis(currentJob?.taskId);
+                    if (selectionMode === "manual") {
+                      handleEndDesignateMode();
+                    } else {
+                      handleStartManualDesignate();
+                    }
                   }}
-                  title="진행 중인 사고 감지 분석을 취소합니다"
+                  title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "수동 지정 모드 종료" : "직접 드래그하여 차량 지정")}
                 >
-                  🛑 사고감지 취소
+                  {selectionMode === "manual" ? "수동 지정 종료" : "수동 차량 지정"}
                 </button>
-              ) : (
-                <button
-                  className="detect-run-btn"
-                  onClick={handleDetectClick}
-                  title="선택한 차량의 사고예상 구간 탐지"
-                >
-                  사고감지 실행
-                </button>
-              )}
 
-              {showDetectConfirm && (
-                <>
-                  <div
-                    className="detect-popover-overlay"
-                    onClick={() => setShowDetectConfirm(false)}
-                  />
-                  <div className="detect-popover">
-                    <p className="detect-popover-text">
-                      현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?
-                    </p>
-                    <div className="detect-popover-actions">
-                      <button className="detect-popover-run" onClick={runDetection}>
-                        실행
-                      </button>
-                      <button
-                        className="detect-popover-cancel"
+                {selectionMode !== "none" && (
+                  <button
+                    className="mode-exit-btn"
+                    onClick={handleEndDesignateMode}
+                    title="모든 지정 모드 해제"
+                  >
+                    ✕ 모드 해제
+                  </button>
+                )}
+
+
+
+                {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
+                <div className="detect-btn-wrapper">
+                  {isAnalyzing ? (
+                    <button
+                      className="detect-run-btn analyzing-cancel-btn"
+                      onClick={() => {
+                        const currentJob = analyzingJobs.find((j) => j.videoId === selectedVideo?.id);
+                        handleCancelAnalysis(currentJob?.taskId);
+                      }}
+                      title="진행 중인 사고 감지 분석을 취소합니다"
+                    >
+                      🛑 사고감지 취소
+                    </button>
+                  ) : (
+                    <button
+                      className="detect-run-btn"
+                      onClick={handleDetectClick}
+                      title="선택한 차량의 사고예상 구간 탐지"
+                    >
+                      사고감지 실행
+                    </button>
+                  )}
+
+                  {showDetectConfirm && (
+                    <>
+                      <div
+                        className="detect-popover-overlay"
                         onClick={() => setShowDetectConfirm(false)}
-                      >
-                        뒤로가기
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            </div>
+                      />
+                      <div className="detect-popover">
+                        <p className="detect-popover-text">
+                          현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?
+                        </p>
+                        <div className="detect-popover-actions">
+                          <button className="detect-popover-run" onClick={runDetection}>
+                            실행
+                          </button>
+                          <button
+                            className="detect-popover-cancel"
+                            onClick={() => setShowDetectConfirm(false)}
+                          >
+                            뒤로가기
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
 
-            <div className="watch-header-metadata">
-              <span className="metadata-item"><strong>카메라:</strong> {selectedVideo.camera}</span>
-              <span className="metadata-item"><strong>녹화 영상:</strong> {getVideoDisplayTitle(selectedVideo, videos)} ({selectedVideo.startTime})</span>
-              <span className="metadata-item"><strong>총 이벤트:</strong> {selectedVideo.events.length}건 감지됨</span>
-            </div>
+              <div className="watch-header-metadata">
+                <span className="metadata-item"><strong>카메라:</strong> {selectedVideo.camera}</span>
+                <span className="metadata-item"><strong>녹화 영상:</strong> {getVideoDisplayTitle(selectedVideo, videos)} ({selectedVideo.startTime})</span>
+                <span className="metadata-item"><strong>총 이벤트:</strong> {selectedVideo.events.length}건 감지됨</span>
+              </div>
             </div>
           </div>
 
@@ -1870,7 +1870,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                           const videos = videosByDate[dateText] ?? [];
                           const hasVideo = videos.length > 0;
                           const isSelectedDate = (selectedCalendarDate ?? selectedVideo.date) === dateText;
-                          
+
                           // 영상의 총 이벤트 건수를 합산하여 강도를 계산
                           const totalEvents = videos.reduce((acc, v) => acc + v.events.length, 0);
 
@@ -2866,7 +2866,7 @@ export default function App() {
       api.getMe().then((u) => {
         setCurrentUser(u);
         saveAuth(getToken(), u);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     const timer = setTimeout(() => {
       setIsInitializing(false);
