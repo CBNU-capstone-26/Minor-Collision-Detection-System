@@ -31,6 +31,7 @@ function LoginPage({ onLogin }) {
   const [pw, setPw] = useState("");
   const [error, setError] = useState("");
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isSignupOpen, setIsSignupOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async () => {
@@ -196,10 +197,118 @@ function LoginPage({ onLogin }) {
             </div>
 
             <button className="login-submit-btn" onClick={handleLogin}>로그인</button>
-            <button className="login-signup-btn" onClick={() => navigate("/signup")}>회원가입</button>
+            <button
+              className="login-signup-btn"
+              onClick={() => {
+                setIsLoginOpen(false);
+                setIsSignupOpen(true);
+              }}
+            >
+              회원가입
+            </button>
           </div>
         </div>
       )}
+
+      {isSignupOpen && <SignupModal onClose={() => setIsSignupOpen(false)} onBackToLogin={() => {
+        setIsSignupOpen(false);
+        setIsLoginOpen(true);
+      }} />}
+    </div>
+  );
+}
+
+function SignupModal({ onClose, onBackToLogin }) {
+  const [form, setForm] = useState({
+    username: "",
+    name: "",
+    email: "",
+    password: "",
+    passwordConfirm: "",
+  });
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const update = (key) => (e) =>
+    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const handleSignup = async () => {
+    setError("");
+    if (!form.username || !form.name || !form.password) {
+      setError("아이디, 이름, 비밀번호는 필수입니다.");
+      return;
+    }
+    if (form.password !== form.passwordConfirm) {
+      setError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+    try {
+      await api.signup({
+        username: form.username,
+        name: form.name,
+        email: form.email || null,
+        password: form.password,
+      });
+      setDone(true);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  return (
+    <div className="login-modal-overlay" onClick={onClose}>
+      <div className="login-modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title" onClick={(e) => e.stopPropagation()}>
+        <button className="login-modal-close" onClick={onClose} aria-label="회원가입 창 닫기">×</button>
+        <p className="public-kicker">CREATE ACCOUNT</p>
+        <h2 id="signup-modal-title">회원가입</h2>
+        <p className="login-modal-description">SIOT 영상 분석 대시보드 계정을 생성합니다.</p>
+
+        {done ? (
+          <div className="signup-complete-state">
+            <strong>가입이 완료되었습니다.</strong>
+            <span>이제 로그인하여 대시보드를 확인할 수 있습니다.</span>
+            <button className="login-submit-btn" onClick={onBackToLogin}>로그인하러 가기</button>
+          </div>
+        ) : (
+          <>
+            <div className="signup-modal-grid">
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-name">이름 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-name" type="text" placeholder="이름을 입력하세요" value={form.name} onChange={update("name")} autoFocus />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-email">이메일</label>
+                <div className="input-group">
+                  <input id="signup-email" type="email" placeholder="이메일을 입력하세요" value={form.email} onChange={update("email")} autoCapitalize="off" autoCorrect="off" />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-username">아이디 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-username" type="text" placeholder="로그인에 사용할 아이디" value={form.username} onChange={update("username")} autoCapitalize="off" autoCorrect="off" />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-password">비밀번호 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-password" type="password" placeholder="비밀번호를 입력하세요" value={form.password} onChange={update("password")} />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-password-confirm">비밀번호 확인 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-password-confirm" type="password" placeholder="비밀번호를 한 번 더 입력하세요" value={form.passwordConfirm} onChange={update("passwordConfirm")} />
+                </div>
+              </div>
+            </div>
+            {error && <p className="login-error-text">{error}</p>}
+            <button className="login-submit-btn" onClick={handleSignup}>가입하기</button>
+            <button className="login-signup-btn" onClick={onBackToLogin}>로그인으로 돌아가기</button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

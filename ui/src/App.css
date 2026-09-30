@@ -5903,18 +5903,34 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 }
 
 .public-login-page {
-  --public-ink: #17251f;
-  --public-muted: #68736d;
-  --public-line: #dfe5de;
-  --public-paper: #f4f6f0;
-  --public-panel: #e3e8df;
-  --public-green: #b8f34a;
-  --public-green-dark: #426b18;
+  --public-ink: #1f2937;
+  --public-muted: #64748b;
+  --public-line: #e2e8f0;
+  --public-paper: #ffffff;
+  --public-panel: #f1f5f9;
+  --public-solid: #0f172a;
+  --public-on-solid: #ffffff;
+  --public-green: #3b82f6;
+  --public-green-dark: #1d4ed8;
+  --public-accent-rgb: 59, 130, 246;
   min-height: 100vh;
   overflow: hidden;
   background: var(--public-paper);
   color: var(--public-ink);
   font-family: "Plus Jakarta Sans", "Pretendard", "Noto Sans KR", sans-serif;
+}
+
+body.dark-mode .public-login-page {
+  --public-ink: #e2e8f0;
+  --public-muted: #7e91a6;
+  --public-line: #1a2a3c;
+  --public-paper: #080d14;
+  --public-panel: #0d1520;
+  --public-solid: #0a111a;
+  --public-on-solid: #f8fafc;
+  --public-green: #00e699;
+  --public-green-dark: #059669;
+  --public-accent-rgb: 0, 230, 153;
 }
 
 .public-navbar {
@@ -5954,7 +5970,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   width: 31px;
   height: 31px;
   border-radius: 9px;
-  background: var(--public-ink);
+  background: var(--public-solid);
   color: var(--public-green);
   font-size: 16px;
   letter-spacing: 0;
@@ -6006,7 +6022,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 }
 
 .public-login-trigger:hover {
-  background: var(--public-ink);
+  background: var(--public-solid);
   color: var(--public-green);
 }
 
@@ -6065,10 +6081,10 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   gap: 30px;
   min-height: 52px;
   padding: 0 20px 0 22px;
-  border: 1px solid var(--public-ink);
+  border: 1px solid var(--public-solid);
   border-radius: 10px;
-  background: var(--public-ink);
-  color: #ffffff;
+  background: var(--public-solid);
+  color: var(--public-on-solid);
   font: inherit;
   font-size: 13px;
   font-weight: 800;
@@ -6083,7 +6099,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   height: 28px;
   border-radius: 50%;
   background: var(--public-green);
-  color: var(--public-ink);
+  color: var(--public-solid);
 }
 
 .public-primary-btn:hover {
@@ -6106,8 +6122,8 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 .public-hero-panel {
   position: relative;
   padding: 18px;
-  background: var(--public-ink);
-  color: #f4f6f0;
+  background: var(--public-solid);
+  color: var(--public-on-solid);
   box-shadow: 18px 18px 0 var(--public-green);
   transform: rotate(1.4deg);
 }
@@ -6133,22 +6149,26 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   min-height: 310px;
   margin: 16px 0;
   overflow: hidden;
-  border: 1px solid rgba(184, 243, 74, 0.35);
-  background: #28352d;
+  border: 1px solid rgba(var(--public-accent-rgb), 0.35);
+  background: var(--public-panel);
+}
+
+body.dark-mode .public-scan-road {
+  background: #1a2a3c;
 }
 
 .public-scan-grid {
   position: absolute;
   inset: 0;
   opacity: 0.32;
-  background-image: linear-gradient(rgba(184, 243, 74, 0.22) 1px, transparent 1px), linear-gradient(90deg, rgba(184, 243, 74, 0.22) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(var(--public-accent-rgb), 0.22) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--public-accent-rgb), 0.22) 1px, transparent 1px);
   background-size: 34px 34px;
 }
 
 .public-scan-road {
   position: absolute;
   inset: 24% 18% 0;
-  background: #536056;
+  background: #cbd5e1;
   clip-path: polygon(24% 0, 76% 0, 100% 100%, 0 100%);
 }
 
@@ -6158,13 +6178,13 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   height: 70px;
   border: 2px solid rgba(255, 255, 255, 0.64);
   border-radius: 9px;
-  background: #d8ded3;
-  box-shadow: inset 0 -12px 0 rgba(23, 37, 31, 0.25);
+  background: #f8fafc;
+  box-shadow: inset 0 -12px 0 rgba(15, 23, 42, 0.18);
 }
 
 .car-one { left: 31%; top: 14%; transform: rotate(8deg); }
 .car-two { right: 26%; top: 36%; transform: rotate(-7deg); background: var(--public-green); }
-.car-three { left: 47%; bottom: 9%; transform: rotate(3deg); background: #a9b3a8; }
+.car-three { left: 47%; bottom: 9%; transform: rotate(3deg); background: #cbd5e1; }
 
 .public-detection-box {
   position: absolute;
@@ -6351,7 +6371,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(23, 37, 31, 0.74);
+  background: rgba(15, 23, 42, 0.74);
   backdrop-filter: blur(8px);
 }
 
@@ -6359,8 +6379,8 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   position: relative;
   width: min(420px, 100%);
   padding: 38px;
-  border: 1px solid rgba(184, 243, 74, 0.4);
-  background: #f7f8f4;
+  border: 1px solid rgba(var(--public-accent-rgb), 0.4);
+  background: var(--public-paper);
   box-shadow: 14px 14px 0 var(--public-green);
   animation: public-modal-in 0.22s ease-out;
 }
@@ -6400,6 +6420,46 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   font-size: 13px;
 }
 
+.signup-modal-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.signup-modal-grid .input-group {
+  min-width: 0;
+}
+
+.signup-field-label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--public-ink);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.signup-field-label span {
+  color: var(--public-green-dark);
+}
+
+.signup-complete-state {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--public-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.signup-complete-state strong {
+  color: var(--public-green-dark);
+  font-size: 18px;
+}
+
+.signup-complete-state .login-submit-btn {
+  margin-top: 18px;
+}
+
 .login-modal .input-group input {
   border: 1px solid var(--public-line);
   background: #ffffff;
@@ -6416,7 +6476,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 }
 
 .login-modal .login-submit-btn {
-  background: var(--public-ink);
+  background: var(--public-solid);
 }
 
 .login-modal .login-submit-btn:hover {
@@ -6564,4 +6624,5 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
     padding: 32px 22px 24px;
     box-shadow: 0 -6px 0 var(--public-green);
   }
+
 }
