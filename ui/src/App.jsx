@@ -18,7 +18,7 @@ function AppLoadingScreen() {
         <div className="cosmic-glow-limb" />
       </div>
       <div className="app-splash-content">
-        <h1 className="app-splash-title">SIOT</h1>
+        <img className="app-splash-logo" src="/siot-logo-loading.svg" alt="SIOT" />
         <p className="app-splash-subtitle">주차 사고 이벤트 감지 시스템</p>
         <div className="app-splash-spinner-ring" />
       </div>
@@ -50,8 +50,7 @@ function LoginPage({ onLogin }) {
     <div className="public-login-page">
       <header className="public-navbar">
         <button className="public-brand" onClick={() => navigate("/login")}>
-          <span className="public-brand-mark">S</span>
-          <span>SIOT</span>
+          <img className="public-brand-logo" src="/siot-logo.svg" alt="SIOT" />
         </button>
         <div className="public-nav-meta">
           <span className="public-nav-label">Parking incident intelligence</span>
@@ -65,7 +64,7 @@ function LoginPage({ onLogin }) {
         <section className="public-hero">
           <div className="public-hero-copy">
             <p className="public-kicker">CCTV EVENT REVIEW / 01</p>
-            <h1>사고가 지나간 뒤에도,<br /><em>확인은 남아야 하니까.</em></h1>
+            <h1>관리자가 모든 영상을<br /><em>보지 않아도, AI가 먼저 찾습니다.</em></h1>
             <p className="public-hero-description">
               물피도주 의심 장면을 영상 속에서 찾아내고, 날짜와 이벤트 단위로 정리합니다.
               흩어진 CCTV 기록을 확인 가능한 사고 데이터로 바꾸는 모니터링 시스템입니다.
@@ -105,55 +104,38 @@ function LoginPage({ onLogin }) {
           <div><strong>01</strong><span>영상 업로드</span></div>
           <div><strong>02</strong><span>의심 장면 분석</span></div>
           <div><strong>03</strong><span>사건별 확인</span></div>
-          <p>기억과 추측이 아닌, 남아 있는 영상으로 확인합니다.</p>
+          <p>AI가 영상을 먼저 훑고, 관리자는 필요한 장면에 집중합니다.</p>
         </section>
 
         <section className="public-insight-section" id="why-siot">
           <div className="public-section-heading">
-            <p className="public-kicker">WHY SIOT EXISTS</p>
-            <h2>통계가 보여주는 건<br /><em>확인의 공백</em>입니다.</h2>
+            <p className="public-kicker">RECENT HIT-AND-RUN TREND</p>
+            <h2>반복되는 물피도주,<br /><em>AI 선별이 필요한 이유</em></h2>
             <p>
-              물피도주 사건은 사고 순간보다 사고 이후의 확인 과정에서 시간이 걸립니다.
-              아래 공식 통계와 뉴스 흐름을 출발점으로, SIOT는 현장 영상의 공백을 줄입니다.
+              공개된 지역 경찰 통계와 최근 보도에서 확인되는 흐름을 한눈에 정리했습니다.
+              SIOT는 수많은 CCTV 영상 중 확인이 필요한 순간을 먼저 좁혀 관리자의 시간을 줄입니다.
             </p>
           </div>
-          <div className="public-stat-grid">
-            <a className="public-stat-card" href="https://kosis.kr/search/search.do?query=%EB%AC%BC%ED%94%BC%EB%8F%84%EC%A3%BC" target="_blank" rel="noreferrer">
-              <span className="public-stat-index">SOURCE / 01</span>
-              <strong>KOSIS</strong>
-              <span>교통사고·범죄 관련 공식 통계를 확인합니다.</span>
-              <b>통계 원문 보기 ↗</b>
-            </a>
-            <a className="public-stat-card accent" href="https://taas.koroad.or.kr/sta/acs/exs/typical.do?menuId=WEB_KMP" target="_blank" rel="noreferrer">
-              <span className="public-stat-index">SOURCE / 02</span>
-              <strong>TAAS</strong>
-              <span>도로교통공단 사고 분석 데이터로 흐름을 살핍니다.</span>
-              <b>사고 통계 보기 ↗</b>
-            </a>
-            <a className="public-stat-card" href="https://www.police.go.kr/www/open/publice/publice0203.jsp" target="_blank" rel="noreferrer">
-              <span className="public-stat-index">SOURCE / 03</span>
-              <strong>POLICE DATA</strong>
-              <span>경찰청 공개자료에서 사건의 맥락을 확인합니다.</span>
-              <b>공개자료 보기 ↗</b>
-            </a>
-          </div>
-        </section>
-
-        <section className="public-news-section">
-          <div className="public-section-heading compact">
-            <p className="public-kicker">IN THE NEWS</p>
-            <h2>관련 이슈를<br /><em>더 읽어보기</em></h2>
-          </div>
-          <div className="public-news-list">
-            <a href="https://search.naver.com/search.naver?where=news&query=%EB%AC%BC%ED%94%BC%EB%8F%84%EC%A3%BC%20CCTV" target="_blank" rel="noreferrer">
-              <span>01 / NEWS SEARCH</span><strong>물피도주와 CCTV 증거 관련 최신 기사</strong><b>↗</b>
-            </a>
-            <a href="https://search.naver.com/search.naver?where=news&query=%EC%A3%BC%EC%B0%A8%EC%9E%A5%20%EC%A0%91%EC%B4%89%EC%82%AC%EA%B3%A0%20%EB%8F%84%EC%A3%BC" target="_blank" rel="noreferrer">
-              <span>02 / NEWS SEARCH</span><strong>주차장 접촉사고·도주 사례 기사</strong><b>↗</b>
-            </a>
-            <a href="https://news.google.com/search?q=%EB%AC%BC%ED%94%BC%EB%8F%84%EC%A3%BC%20CCTV&hl=ko&gl=KR&ceid=KR%3Ako" target="_blank" rel="noreferrer">
-              <span>03 / NEWS SEARCH</span><strong>물피도주 CCTV 이슈 Google 뉴스</strong><b>↗</b>
-            </a>
+          <div className="public-trend-table-wrap">
+            <div className="public-trend-table-heading">
+              <span>INDICATOR</span><span>OBSERVED DATA</span><span>WHAT IT MEANS</span>
+            </div>
+            <div className="public-trend-row highlight">
+              <strong>전국 / 2024</strong>
+              <b>약 7만 건</b>
+              <span>경찰청 교통 단속 통계를 인용한 2024년 연간 신고 접수 규모</span>
+            </div>
+            <div className="public-trend-row">
+              <strong>광주 / 2021</strong>
+              <b>약 9,600건</b>
+              <span>지역 경찰 집계 기준 하루 약 25건꼴로 발생한 사고 후 미조치</span>
+            </div>
+            <div className="public-trend-row">
+              <strong>확보 시간</strong>
+              <b>2~4주</b>
+              <span>주차장 CCTV는 덮어쓰기 전에 필요한 구간을 먼저 확보해야 함</span>
+            </div>
+            <small className="public-trend-source">출처: 2026.06.18 로톡뉴스의 경찰청 교통 단속 통계 2024 인용 보도, 2022.10.24 광주방송의 광주경찰 집계 보도. CCTV 보존 기간은 로톡뉴스 안내를 참고했습니다.</small>
           </div>
         </section>
       </main>
@@ -1518,7 +1500,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       {/* 상단 네비게이션 바 */}
       <header className="top-navbar">
         <div className="nav-section nav-left">
-          <button className="nav-logo nav-home-btn" onClick={handleBackToHome}>SIOT</button>
+          <button className="nav-logo nav-home-btn" onClick={handleBackToHome} aria-label="SIOT 홈으로 이동">
+            <img src="/siot-logo.svg" alt="SIOT" />
+          </button>
           <div className="nav-search-bar">
             <span className="search-icon">🔍</span>
             <input

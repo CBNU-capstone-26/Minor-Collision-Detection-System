@@ -6049,17 +6049,18 @@ body.dark-mode .public-login-page {
 .public-hero h1,
 .public-section-heading h2 {
   margin: 0;
-  font-size: clamp(40px, 5vw, 76px);
-  line-height: 1.03;
-  letter-spacing: -0.04em;
-  font-weight: 850;
+  font-family: "Pretendard", "Noto Sans KR", sans-serif;
+  font-size: clamp(36px, 4.2vw, 58px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 750;
 }
 
 .public-hero h1 em,
 .public-section-heading h2 em {
   color: var(--public-green-dark);
-  font-family: Georgia, "Times New Roman", serif;
-  font-weight: 400;
+  font-family: inherit;
+  font-weight: 800;
 }
 
 .public-hero-description {
@@ -6425,6 +6426,49 @@ body.dark-mode .public-scan-road {
   flex-direction: column;
 }
 
+.app-splash-logo {
+  display: block;
+  width: min(320px, 72vw);
+  height: auto;
+}
+
+.public-brand {
+  min-height: 34px;
+}
+
+.public-brand-logo {
+  display: block;
+  width: 82px;
+  height: 34px;
+  object-fit: contain;
+  background: transparent;
+}
+
+.nav-logo {
+  width: 88px;
+  height: 36px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.nav-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+body.dark-mode .public-brand-logo,
+body.dark-mode .nav-logo img {
+  content: url("/siot-logo-dark.svg");
+}
+
+body.dark-mode .nav-logo {
+  background: #0a111a;
+}
+
 .signup-modal-grid .input-group {
   min-width: 0;
 }
@@ -6440,6 +6484,62 @@ body.dark-mode .public-scan-road {
 
 .signup-field-label span {
   color: var(--public-green-dark);
+}
+
+.public-trend-table-wrap {
+  border-top: 2px solid var(--public-ink);
+}
+
+.public-trend-table-heading,
+.public-trend-row {
+  display: grid;
+  grid-template-columns: 0.85fr 0.8fr 1.35fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.public-trend-table-heading {
+  min-height: 42px;
+  border-bottom: 1px solid var(--public-line);
+  color: var(--public-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+
+.public-trend-row {
+  min-height: 86px;
+  border-bottom: 1px solid var(--public-line);
+  color: var(--public-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.public-trend-row strong {
+  color: var(--public-ink);
+  font-size: 12px;
+}
+
+.public-trend-row b {
+  color: var(--public-green-dark);
+  font-size: 19px;
+  letter-spacing: -0.03em;
+}
+
+.public-trend-row.highlight {
+  background: rgba(var(--public-accent-rgb), 0.1);
+}
+
+.public-trend-row.highlight b {
+  color: var(--public-green-dark);
+}
+
+.public-trend-source {
+  display: block;
+  padding-top: 14px;
+  color: var(--public-muted);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .signup-complete-state {
@@ -6528,7 +6628,7 @@ body.dark-mode .public-scan-road {
   }
 
   .public-hero h1 {
-    font-size: 42px;
+    font-size: 36px;
   }
 
   .public-hero-description {
@@ -6598,6 +6698,23 @@ body.dark-mode .public-scan-road {
 
   .public-stat-card strong {
     margin-top: 28px;
+  }
+
+  .public-trend-table-heading {
+    display: none;
+  }
+
+  .public-trend-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    min-height: 0;
+    padding: 18px 14px;
+  }
+
+  .public-trend-row b {
+    font-size: 22px;
   }
 
   .public-news-list a {
