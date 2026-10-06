@@ -33,13 +33,18 @@ def _get_model():
 
     # 추론 디바이스(config.INFER_DEVICE_TYPE) 사용 — 서비스 워커는 기본 CPU
     device = get_device(model_config.INFER_DEVICE_TYPE)
-    model = HitAndRun3DCNN(num_classes=model_config.MODEL_NUM_CLASSES).to(device)
-    if is_channels_last_3d_supported(device) and model_config.USE_CHANNELS_LAST:
-        model = model.to(memory_format=torch.channels_last_3d)
     # 배포 가중치 경로는 model/config.py 에서 관리 (SERVICE_WEIGHTS_PATH)
     state_dict = torch.load(
         str(model_config.SERVICE_WEIGHTS_PATH), map_location="cpu", weights_only=True)
-    model.load_state_dict(state_dict)
+    if settings.MODEL_VARIANT == "legacy" and "blocks.0.multipathway_blocks.0.conv.weight" in state_dict:
+        from slowfast_service import SlowFastService
+        model = SlowFastService(state_dict, model_config.MODEL_NUM_CLASSES)
+    else:
+        model = HitAndRun3DCNN(num_classes=model_config.MODEL_NUM_CLASSES)
+        model.load_state_dict(state_dict)
+    model = model.to(device)
+    if is_channels_last_3d_supported(device) and model_config.USE_CHANNELS_LAST:
+        model = model.to(memory_format=torch.channels_last_3d)
     model.eval()
     _model = model
     print(f"[worker] 모델 로드 완료 — {getattr(model_config, 'MODEL_NAME', '?')} "

@@ -19,6 +19,7 @@ load_dotenv(_BASE_DIR / "backend" / ".env")
 #    한 백본만 올릴 수 있다. 다른 백본을 쓰려면 워커를 따로 띄운다.
 MODEL_VARIANT_DIRS = {
     "s3d": "model",
+    "legacy": "legacy model",
     "x3d": "x3d model",
     "slowfast": "slowfast model",
 }
@@ -28,8 +29,8 @@ class Settings:
     # capstone-26/backend/app/settings.py → parents[2] == capstone-26
     BASE_DIR: Path = Path(__file__).resolve().parents[2]
 
-    # MODEL_VARIANT=s3d|x3d|slowfast (기본 s3d)
-    MODEL_VARIANT: str = os.getenv("MODEL_VARIANT", "s3d").strip().lower()
+    # MODEL_VARIANT=legacy|s3d|x3d|slowfast (기존 로컬 모델 기본값 유지)
+    MODEL_VARIANT: str = os.getenv("MODEL_VARIANT", "legacy").strip().lower()
     if MODEL_VARIANT not in MODEL_VARIANT_DIRS:
         raise ValueError(
             f"MODEL_VARIANT='{MODEL_VARIANT}' 는 지원하지 않습니다. "
@@ -44,7 +45,7 @@ class Settings:
 
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "mysql+pymysql://root:rootpassword@127.0.0.1:3306/capstone_db",
+        "mysql+pymysql://root:rootpassword@127.0.0.1:3307/capstone_db",
     )
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 

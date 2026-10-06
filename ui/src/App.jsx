@@ -18,7 +18,7 @@ function AppLoadingScreen() {
         <div className="cosmic-glow-limb" />
       </div>
       <div className="app-splash-content">
-        <h1 className="app-splash-title">SIOT</h1>
+        <img className="app-splash-logo" src="/siot-logo-loading.svg" alt="SIOT" />
         <p className="app-splash-subtitle">주차 사고 이벤트 감지 시스템</p>
         <div className="app-splash-spinner-ring" />
       </div>
@@ -27,10 +27,11 @@ function AppLoadingScreen() {
 }
 
 function LoginPage({ onLogin }) {
-
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [error, setError] = useState("");
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isSignupOpen, setIsSignupOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async () => {
@@ -46,59 +47,249 @@ function LoginPage({ onLogin }) {
   };
 
   return (
-    <div className="login-layout">
-      <div className="login-left-panel">
-        <div className="brand-content">
-          <div className="brand-badge">Parking Scratch Detection</div>
-          <h1>주차 사고 이벤트 확인 시스템</h1>
-          <p>
-            CCTV 영상에서 주차된 차량 접촉사고 의심 이벤트를 감지하고
-            날짜별로 정리하여 확인할 수 있는 웹서비스 시스템입니다.
-          </p>
-        </div>
-      </div>
-
-      <div className="login-right-panel">
-        <div className="login-form-wrapper">
-          <h2>로그인</h2>
-
-          <div className="input-group">
-            <input
-              type="text"
-              placeholder="아이디"
-              value={id}
-              onChange={(e) => setId(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            />
-          </div>
-
-          <div className="input-group">
-            <input
-              type="password"
-              placeholder="비밀번호"
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            />
-          </div>
-
-          {error && <p className="login-error-text">{error}</p>}
-
-          <div className="login-options">
-            <label className="remember-me">
-              <input type="checkbox" /> Remember me
-            </label>
-            <a href="#none" className="support-link">Support</a>
-          </div>
-
-          <button className="login-submit-btn" onClick={handleLogin}>로그인</button>
-          <button
-            className="login-signup-btn"
-            onClick={() => navigate("/signup")}
-          >
-            회원가입
+    <div className="public-login-page">
+      <header className="public-navbar">
+        <button className="public-brand" onClick={() => navigate("/login")}>
+          <img className="public-brand-logo" src="/siot-logo.svg" alt="SIOT" />
+        </button>
+        <div className="public-nav-meta">
+          <span className="public-nav-label">Parking incident intelligence</span>
+          <button className="public-login-trigger" onClick={() => setIsLoginOpen(true)}>
+            LOGIN <span aria-hidden="true">↗</span>
           </button>
         </div>
+      </header>
+
+      <main className="public-main">
+        <section className="public-hero">
+          <div className="public-hero-copy">
+            <p className="public-kicker">CCTV EVENT REVIEW / 01</p>
+            <h1>관리자가 모든 영상을<br /><em>보지 않아도, AI가 먼저 찾습니다.</em></h1>
+            <p className="public-hero-description">
+              물피도주 의심 장면을 영상 속에서 찾아내고, 날짜와 이벤트 단위로 정리합니다.
+              흩어진 CCTV 기록을 확인 가능한 사고 데이터로 바꾸는 모니터링 시스템입니다.
+            </p>
+            <div className="public-hero-actions">
+              <button className="public-primary-btn" onClick={() => setIsLoginOpen(true)}>
+                대시보드 열기 <span aria-hidden="true">→</span>
+              </button>
+              <a className="public-text-link" href="#why-siot">왜 필요한가 <span aria-hidden="true">↓</span></a>
+            </div>
+          </div>
+
+          <div className="public-hero-panel" aria-label="SIOT 분석 흐름">
+            <div className="public-panel-topline">
+              <span>LIVE REVIEW SYSTEM</span>
+              <span className="public-live-dot">● ONLINE</span>
+            </div>
+            <div className="public-scan-frame">
+              <div className="public-scan-grid" />
+              <div className="public-scan-road">
+                <span className="public-car car-one" />
+                <span className="public-car car-two" />
+                <span className="public-car car-three" />
+              </div>
+              <div className="public-detection-box box-one"><span>VEHICLE 01</span></div>
+              <div className="public-detection-box box-two"><span>EVENT CHECK</span></div>
+              <div className="public-scan-caption">FRAME 004281 / CAMERA C1</div>
+            </div>
+            <div className="public-panel-footer">
+              <span>의심 구간 감지</span>
+              <strong>→ 날짜별 이벤트로 정리</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="public-proof-strip" aria-label="SIOT 핵심 기능">
+          <div><strong>01</strong><span>영상 업로드</span></div>
+          <div><strong>02</strong><span>의심 장면 분석</span></div>
+          <div><strong>03</strong><span>사건별 확인</span></div>
+          <p>AI가 영상을 먼저 훑고, 관리자는 필요한 장면에 집중합니다.</p>
+        </section>
+
+        <section className="public-insight-section" id="why-siot">
+          <div className="public-section-heading">
+            <p className="public-kicker">RECENT HIT-AND-RUN TREND</p>
+            <h2>반복되는 물피도주,<br /><em>AI 선별이 필요한 이유</em></h2>
+            <p>
+              공개된 지역 경찰 통계와 최근 보도에서 확인되는 흐름을 한눈에 정리했습니다.
+              SIOT는 수많은 CCTV 영상 중 확인이 필요한 순간을 먼저 좁혀 관리자의 시간을 줄입니다.
+            </p>
+          </div>
+          <div className="public-trend-table-wrap">
+            <div className="public-trend-table-heading">
+              <span>INDICATOR</span><span>OBSERVED DATA</span><span>WHAT IT MEANS</span>
+            </div>
+            <div className="public-trend-row highlight">
+              <strong>전국 / 2024</strong>
+              <b>약 7만 건</b>
+              <span>경찰청 교통 단속 통계를 인용한 2024년 연간 신고 접수 규모</span>
+            </div>
+            <div className="public-trend-row">
+              <strong>광주 / 2021</strong>
+              <b>약 9,600건</b>
+              <span>지역 경찰 집계 기준 하루 약 25건꼴로 발생한 사고 후 미조치</span>
+            </div>
+            <div className="public-trend-row">
+              <strong>확보 시간</strong>
+              <b>2~4주</b>
+              <span>주차장 CCTV는 덮어쓰기 전에 필요한 구간을 먼저 확보해야 함</span>
+            </div>
+            <small className="public-trend-source">출처: 2026.06.18 로톡뉴스의 경찰청 교통 단속 통계 2024 인용 보도, 2022.10.24 광주방송의 광주경찰 집계 보도. CCTV 보존 기간은 로톡뉴스 안내를 참고했습니다.</small>
+          </div>
+        </section>
+      </main>
+
+      {isLoginOpen && (
+        <div className="login-modal-overlay" onClick={() => setIsLoginOpen(false)}>
+          <div className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title" onClick={(e) => e.stopPropagation()}>
+            <button className="login-modal-close" onClick={() => setIsLoginOpen(false)} aria-label="로그인 창 닫기">×</button>
+            <p className="public-kicker">SECURE ACCESS</p>
+            <h2 id="login-modal-title">대시보드 로그인</h2>
+            <p className="login-modal-description">분석된 영상과 사고 의심 이벤트를 확인하세요.</p>
+
+            <div className="input-group">
+              <input
+                type="text"
+                placeholder="아이디"
+                value={id}
+                onChange={(e) => setId(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                autoFocus
+              />
+            </div>
+
+            <div className="input-group">
+              <input
+                type="password"
+                placeholder="비밀번호"
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              />
+            </div>
+
+            {error && <p className="login-error-text">{error}</p>}
+
+            <div className="login-options">
+              <label className="remember-me">
+                <input type="checkbox" /> Remember me
+              </label>
+              <a href="#none" className="support-link">Support</a>
+            </div>
+
+            <button className="login-submit-btn" onClick={handleLogin}>로그인</button>
+            <button
+              className="login-signup-btn"
+              onClick={() => {
+                setIsLoginOpen(false);
+                setIsSignupOpen(true);
+              }}
+            >
+              회원가입
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isSignupOpen && <SignupModal onClose={() => setIsSignupOpen(false)} onBackToLogin={() => {
+        setIsSignupOpen(false);
+        setIsLoginOpen(true);
+      }} />}
+    </div>
+  );
+}
+
+function SignupModal({ onClose, onBackToLogin }) {
+  const [form, setForm] = useState({
+    username: "",
+    name: "",
+    email: "",
+    password: "",
+    passwordConfirm: "",
+  });
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const update = (key) => (e) =>
+    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const handleSignup = async () => {
+    setError("");
+    if (!form.username || !form.name || !form.password) {
+      setError("아이디, 이름, 비밀번호는 필수입니다.");
+      return;
+    }
+    if (form.password !== form.passwordConfirm) {
+      setError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+    try {
+      await api.signup({
+        username: form.username,
+        name: form.name,
+        email: form.email || null,
+        password: form.password,
+      });
+      setDone(true);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  return (
+    <div className="login-modal-overlay" onClick={onClose}>
+      <div className="login-modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title" onClick={(e) => e.stopPropagation()}>
+        <button className="login-modal-close" onClick={onClose} aria-label="회원가입 창 닫기">×</button>
+        <p className="public-kicker">CREATE ACCOUNT</p>
+        <h2 id="signup-modal-title">회원가입</h2>
+        <p className="login-modal-description">SIOT 영상 분석 대시보드 계정을 생성합니다.</p>
+
+        {done ? (
+          <div className="signup-complete-state">
+            <strong>가입이 완료되었습니다.</strong>
+            <span>이제 로그인하여 대시보드를 확인할 수 있습니다.</span>
+            <button className="login-submit-btn" onClick={onBackToLogin}>로그인하러 가기</button>
+          </div>
+        ) : (
+          <>
+            <div className="signup-modal-grid">
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-name">이름 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-name" type="text" placeholder="이름을 입력하세요" value={form.name} onChange={update("name")} autoFocus />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-email">이메일</label>
+                <div className="input-group">
+                  <input id="signup-email" type="email" placeholder="이메일을 입력하세요" value={form.email} onChange={update("email")} autoCapitalize="off" autoCorrect="off" />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-username">아이디 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-username" type="text" placeholder="로그인에 사용할 아이디" value={form.username} onChange={update("username")} autoCapitalize="off" autoCorrect="off" />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-password">비밀번호 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-password" type="password" placeholder="비밀번호를 입력하세요" value={form.password} onChange={update("password")} />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-password-confirm">비밀번호 확인 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-password-confirm" type="password" placeholder="비밀번호를 한 번 더 입력하세요" value={form.passwordConfirm} onChange={update("passwordConfirm")} />
+                </div>
+              </div>
+            </div>
+            {error && <p className="login-error-text">{error}</p>}
+            <button className="login-submit-btn" onClick={handleSignup}>가입하기</button>
+            <button className="login-signup-btn" onClick={onBackToLogin}>로그인으로 돌아가기</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -680,10 +871,98 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const videoElRef = useRef(null); // 실제 <video> 엘리먼트 (원본 해상도 환산용)
   const [showBBoxPanel, setShowBBoxPanel] = useState(false);
 
-  // YOLO 차량 자동 탐지 및 마우스 Hover 관련 상태
+  // RT-DETR 차량 자동 탐지 및 마우스 Hover 관련 상태
   const [isDetectingVehicles, setIsDetectingVehicles] = useState(false);
-  const [detectedBoxes, setDetectedBoxes] = useState([]); // [{ id, class_name, confidence, bbox: [x1,y1,x2,y2] }]
+  const [detectedBoxes, setDetectedBoxes] = useState([]); // [{ id, class_name, confidence, bbox: [x1,y1,x2,y2], source }]
+  const [detectorMode, setDetectorMode] = useState(null);
   const [hoveredDetectedBox, setHoveredDetectedBox] = useState(null);
+
+  const getRenderedVideoLayout = () => {
+    const overlayEl = bboxOverlayRef.current;
+    const videoEl = videoElRef.current;
+    if (!overlayEl) return null;
+
+    const rect = overlayEl.getBoundingClientRect();
+    const videoWidth = selectedVideo?.width || videoEl?.videoWidth || rect.width;
+    const videoHeight = selectedVideo?.height || videoEl?.videoHeight || rect.height;
+    if (!videoWidth || !videoHeight || !rect.width || !rect.height) return null;
+
+    const containerAspect = rect.width / rect.height;
+    const videoAspect = videoWidth / videoHeight;
+    let renderWidth = rect.width;
+    let renderHeight = rect.height;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (videoAspect > containerAspect) {
+      renderHeight = renderWidth / videoAspect;
+      offsetY = (rect.height - renderHeight) / 2;
+    } else {
+      renderWidth = renderHeight * videoAspect;
+      offsetX = (rect.width - renderWidth) / 2;
+    }
+
+    return { rect, videoWidth, videoHeight, renderWidth, renderHeight, offsetX, offsetY };
+  };
+
+  const videoBoxToDisplayBox = (bbox) => {
+    const layout = getRenderedVideoLayout();
+    if (!layout) return null;
+    const [x1, y1, x2, y2] = bbox;
+    const scaleX = layout.renderWidth / layout.videoWidth;
+    const scaleY = layout.renderHeight / layout.videoHeight;
+    return {
+      xmin: Math.round(layout.offsetX + x1 * scaleX),
+      ymin: Math.round(layout.offsetY + y1 * scaleY),
+      xmax: Math.round(layout.offsetX + x2 * scaleX),
+      ymax: Math.round(layout.offsetY + y2 * scaleY),
+    };
+  };
+
+  const displayPointToVideoPoint = (clientX, clientY) => {
+    const layout = getRenderedVideoLayout();
+    if (!layout) return null;
+    const displayX = clientX - layout.rect.left;
+    const displayY = clientY - layout.rect.top;
+    if (
+      displayX < layout.offsetX ||
+      displayX > layout.offsetX + layout.renderWidth ||
+      displayY < layout.offsetY ||
+      displayY > layout.offsetY + layout.renderHeight
+    ) {
+      return null;
+    }
+    return {
+      x: ((displayX - layout.offsetX) * layout.videoWidth) / layout.renderWidth,
+      y: ((displayY - layout.offsetY) * layout.videoHeight) / layout.renderHeight,
+    };
+  };
+
+  const clampDisplayPointToVideoArea = (clientX, clientY) => {
+    const layout = getRenderedVideoLayout();
+    if (!layout) return null;
+    const displayX = clientX - layout.rect.left;
+    const displayY = clientY - layout.rect.top;
+    return {
+      x: Math.round(Math.max(layout.offsetX, Math.min(displayX, layout.offsetX + layout.renderWidth))),
+      y: Math.round(Math.max(layout.offsetY, Math.min(displayY, layout.offsetY + layout.renderHeight))),
+    };
+  };
+
+  const displayBoxToVideoBox = (box) => {
+    const layout = getRenderedVideoLayout();
+    if (!layout) return null;
+    const xmin = Math.max(layout.offsetX, Math.min(box.xmin, layout.offsetX + layout.renderWidth));
+    const ymin = Math.max(layout.offsetY, Math.min(box.ymin, layout.offsetY + layout.renderHeight));
+    const xmax = Math.max(layout.offsetX, Math.min(box.xmax, layout.offsetX + layout.renderWidth));
+    const ymax = Math.max(layout.offsetY, Math.min(box.ymax, layout.offsetY + layout.renderHeight));
+    return {
+      bbox_xmin: Math.round(((xmin - layout.offsetX) * layout.videoWidth) / layout.renderWidth),
+      bbox_ymin: Math.round(((ymin - layout.offsetY) * layout.videoHeight) / layout.renderHeight),
+      bbox_xmax: Math.round(((xmax - layout.offsetX) * layout.videoWidth) / layout.renderWidth),
+      bbox_ymax: Math.round(((ymax - layout.offsetY) * layout.videoHeight) / layout.renderHeight),
+    };
+  };
 
 
   // 사고감지 실행 / 분석 관련 상태
@@ -1023,6 +1302,27 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setHoveredDetectedBox(null);
   };
 
+  const detectorModeLabel = {
+    yolo: "YOLO11",
+    dino: "DINO",
+    rtdetr: "RT-DETR",
+    yolo_fallback: "YOLO 보강",
+    hybrid: "RT-DETR + YOLO",
+    rtdetr_seg: "RT-DETR + Seg",
+    yolo_fallback_seg: "YOLO + Seg",
+    hybrid_seg: "RT-DETR + YOLO + Seg",
+  };
+
+  const detectorSourceLabel = (source) => {
+    if (!source) return "YOLO11";
+    if (source === "yolo_seg") return "YOLO + Seg";
+    if (source === "rtdetr_seg") return "RT-DETR + Seg";
+    if (source === "yolo") return "YOLO";
+    if (source === "rtdetr") return "RT-DETR";
+    return "DINO";
+  };
+
+  // RT-DETR 우선 + YOLO fallback 차량 탐지 실행
   // YOLO 차량 탐지 취소
   const handleCancelDetectVehicles = () => {
     if (detectAbortControllerRef.current) {
@@ -1043,21 +1343,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
     setSelectionMode("auto");
     setIsDetectingVehicles(true);
-    showToast("YOLO 모델로 차량을 탐지 중입니다...", "info");
-
+    setDetectorMode(null);
+    showToast("YOLO11로 차량을 탐지 중입니다...", "info");
     const controller = new AbortController();
     detectAbortControllerRef.current = controller;
 
     try {
       const res = await api.detectVehicles(selectedVideo.id, currentTime, controller.signal);
       const list = res.detected_vehicles || [];
+      const mode = res.detector_mode || "yolo";
       setDetectedBoxes(list);
+      setDetectorMode(mode);
       setIsBBoxMode(true);
       setShowBBoxPanel(true);
       if (list.length === 0) {
         showToast("탐지된 차량이 없습니다. 수동 차량 지정을 이용해 주세요.", "warning");
       } else {
-        showToast(`${list.length}대의 차량이 탐지되었습니다! 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`, "success");
+        const modeText = detectorModeLabel[mode] || "자동";
+        showToast(`${modeText} 방식으로 ${list.length}대의 차량이 탐지되었습니다. 마우스를 올리면 표시되며 클릭 시 선택됩니다.`, "success");
       }
     } catch (err) {
       if (err.name === "AbortError") {
@@ -1151,19 +1454,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const box = bboxList[0];
     if (!box) return;
 
-    // 화면(오버레이) 좌표 → 원본 영상 해상도 픽셀 좌표 환산
-    // bboxList의 좌표는 오버레이 div 기준(레터박스 여백 포함)이므로,
-    // 그리기/선택과 동일한 레터박스 지오메트리로 되돌린다.
-    const geom = getVideoGeom();
-    const scale = geom ? geom.scale : 1;
-    const offX = geom ? geom.offsetX : 0;
-    const offY = geom ? geom.offsetY : 0;
-    const bbox = {
-      bbox_xmin: Math.round((box.xmin - offX) / scale),
-      bbox_ymin: Math.round((box.ymin - offY) / scale),
-      bbox_xmax: Math.round((box.xmax - offX) / scale),
-      bbox_ymax: Math.round((box.ymax - offY) / scale),
-    };
+    const bbox = displayBoxToVideoBox(box);
+    if (!bbox) {
+      showToast("영상 영역 좌표를 계산할 수 없습니다. 다시 시도해 주세요.", "error");
+      return;
+    }
 
     // 분석 시작: 지정 모드를 끄고 해당 영상을 '분석 중'으로 표시
     const analyzedId = selectedVideo.id;
@@ -1238,8 +1533,30 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const v = videoElRef.current;
     if (v) {
       v.currentTime = event.timestamp;
-      v.play();
+      v.play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {
+          setIsPlaying(false);
+          showToast("브라우저가 자동 재생을 막았습니다. 영상의 재생 버튼을 눌러 주세요.", "warning");
+        });
     }
+  };
+
+  const openEventVideo = (event) => {
+    seekToEvent(event);
+    if (!isSidebarOpen) {
+      setIsSidebarOpen(true);
+    }
+  };
+
+  const openEventClip = (event) => {
+    setCurrentEventId(event.id);
+    if (event.hasClip) {
+      setClipEvent(event);
+      return;
+    }
+    seekToEvent(event);
+    showToast("CAM 클립이 없어 원본 영상을 해당 시점으로 이동했습니다.", "info");
   };
 
   // 배속/볼륨을 실제 video에 반영
@@ -1316,7 +1633,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       {/* 상단 네비게이션 바 */}
       <header className="top-navbar">
         <div className="nav-section nav-left">
-          <button className="nav-logo nav-home-btn" onClick={handleBackToHome}>SIOT</button>
+          <button className="nav-logo nav-home-btn" onClick={handleBackToHome} aria-label="SIOT 홈으로 이동">
+            <img src="/siot-logo.svg" alt="SIOT" />
+          </button>
           <div className="nav-search-bar">
             <span className="search-icon">🔍</span>
             <input
@@ -1677,14 +1996,19 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             <div className="watch-header-right">
             {/* 탐지하기 + 수동 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
             <div className="watch-header-actions">
-            <button
-              className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
-              disabled={isAnalyzing}
-              onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
-              title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다" : "YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"}
-            >
-              {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
-            </button>
+              <button
+                className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
+                disabled={isAnalyzing}
+                onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
+                title="YOLO11로 현재 화면의 차량을 탐지합니다"
+              >
+                {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
+              </button>
+              {detectorMode && detectedBoxes.length > 0 && (
+                <span className={`detector-mode-badge mode-${detectorMode}`}>
+                  {detectorModeLabel[detectorMode] || "자동"}
+                </span>
+              )}
 
             <button
               className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
@@ -1808,7 +2132,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         <div
                           key={event.id}
                           className={`event-item ${currentEventId === event.id ? "active" : ""}`}
-                          onClick={() => setCurrentEventId(event.id)}
+                          onClick={() => openEventVideo(event)}
                         >
                           <div className="event-item-top">
                             <span className="event-time-pill">{formatTime(event.timestamp)}</span>
@@ -1820,12 +2144,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                                 className="event-play-icon-btn"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setCurrentEventId(event.id);
-                                  if (event.hasClip) {
-                                    setClipEvent(event);
-                                  } else {
-                                    showToast("이 이벤트의 CAM 클립이 아직 없습니다.", "warning");
-                                  }
+                                  openEventClip(event);
                                 }}
                                 aria-label={`${formatTime(event.timestamp)} 사고구간 CAM 클립 재생`}
                                 title="사고구간 CAM 클립 보기"
@@ -1945,7 +2264,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   <span className="bbox-guide-icon">{selectionMode === "auto" ? "🔍" : "🖱️"}</span>
                   <span>
                     {selectionMode === "auto"
-                      ? "YOLO 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다."
+                      ? `${detectorModeLabel[detectorMode] || "RT-DETR + YOLO"} 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`
                       : "수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요."}
                   </span>
                 </div>
@@ -1964,47 +2283,50 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   }}
                   onMouseDown={(e) => {
                     if (!isBBoxMode) return;
-                    if (selectionMode === "auto" && hoveredDetectedBox && getVideoGeom()) {
-                      const { scale, offsetX, offsetY } = getVideoGeom();
-                      const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
-                      const dispX1 = Math.round(offsetX + x1 * scale);
-                      const dispY1 = Math.round(offsetY + y1 * scale);
-                      const dispX2 = Math.round(offsetX + x2 * scale);
-                      const dispY2 = Math.round(offsetY + y2 * scale);
-
-                      setBboxList([{ id: Date.now(), xmin: dispX1, ymin: dispY1, xmax: dispX2, ymax: dispY2 }]);
-                      showToast(`${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
+                    if (selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && videoElRef.current) {
+                      const displayBox = videoBoxToDisplayBox(hoveredDetectedBox.bbox);
+                      if (!displayBox) return;
+                      setBboxList([{ id: Date.now(), ...displayBox }]);
+                      const sourceText = detectorSourceLabel(hoveredDetectedBox.source);
+                      showToast(`${sourceText} ${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
                       return;
                     }
                     if (selectionMode === "manual") {
-                      const rect = bboxOverlayRef.current.getBoundingClientRect();
-                      const x = Math.round(e.clientX - rect.left);
-                      const y = Math.round(e.clientY - rect.top);
+                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
+                      if (!point) return;
                       setIsDrawing(true);
-                      setCurrentDraw({ startX: x, startY: y, endX: x, endY: y });
+                      setCurrentDraw({ startX: point.x, startY: point.y, endX: point.x, endY: point.y });
                     }
                   }}
                   onMouseMove={(e) => {
                     if (!isBBoxMode) return;
-                    const rect = bboxOverlayRef.current.getBoundingClientRect();
 
                     if (selectionMode === "manual" && isDrawing) {
-                      const x = Math.round(e.clientX - rect.left);
-                      const y = Math.round(e.clientY - rect.top);
-                      setCurrentDraw((prev) => (prev ? { ...prev, endX: x, endY: y } : null));
+                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
+                      if (!point) return;
+                      setCurrentDraw((prev) => (prev ? { ...prev, endX: point.x, endY: point.y } : null));
                       return;
                     }
 
-                    if (selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom()) {
-                      const { scale, offsetX, offsetY } = getVideoGeom();
-                      // 화면(오버레이) 좌표 → 레터박스 여백 제거 → 원본 해상도 좌표
-                      const realX = (e.clientX - rect.left - offsetX) / scale;
-                      const realY = (e.clientY - rect.top - offsetY) / scale;
+                    if (selectionMode === "auto" && detectedBoxes.length > 0 && videoElRef.current) {
+                      const videoPoint = displayPointToVideoPoint(e.clientX, e.clientY);
+                      if (!videoPoint) {
+                        setHoveredDetectedBox(null);
+                        return;
+                      }
 
-                      const hit = detectedBoxes.find((box) => {
-                        const [x1, y1, x2, y2] = box.bbox;
-                        return realX >= x1 && realX <= x2 && realY >= y1 && realY <= y2;
-                      });
+                      const hit = detectedBoxes
+                        .filter((box) => {
+                          const [x1, y1, x2, y2] = box.bbox;
+                          return videoPoint.x >= x1 && videoPoint.x <= x2 && videoPoint.y >= y1 && videoPoint.y <= y2;
+                        })
+                        .sort((a, b) => {
+                          const [ax1, ay1, ax2, ay2] = a.bbox;
+                          const [bx1, by1, bx2, by2] = b.bbox;
+                          const areaA = Math.max(0, ax2 - ax1) * Math.max(0, ay2 - ay1);
+                          const areaB = Math.max(0, bx2 - bx1) * Math.max(0, by2 - by1);
+                          return areaA - areaB || b.confidence - a.confidence;
+                        })[0];
 
                       setHoveredDetectedBox(hit || null);
                     } else if (selectionMode !== "auto") {
@@ -2013,15 +2335,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   }}
                   onMouseUp={(e) => {
                     if (selectionMode === "manual" && isDrawing && currentDraw) {
-                      const rect = bboxOverlayRef.current.getBoundingClientRect();
-                      const x = Math.round(e.clientX - rect.left);
-                      const y = Math.round(e.clientY - rect.top);
-                      const xmin = Math.min(currentDraw.startX, x);
-                      const ymin = Math.min(currentDraw.startY, y);
-                      const xmax = Math.max(currentDraw.startX, x);
-                      const ymax = Math.max(currentDraw.startY, y);
-                      if (xmax - xmin > 5 && ymax - ymin > 5) {
-                        setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
+                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
+                      if (point) {
+                        const xmin = Math.min(currentDraw.startX, point.x);
+                        const ymin = Math.min(currentDraw.startY, point.y);
+                        const xmax = Math.max(currentDraw.startX, point.x);
+                        const ymax = Math.max(currentDraw.startY, point.y);
+                        if (xmax - xmin > 5 && ymax - ymin > 5) {
+                          setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
+                        }
                       }
                       setCurrentDraw(null);
                       setIsDrawing(false);
@@ -2108,73 +2430,23 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     );
                   })()}
 
-                  {/* YOLO 자동 탐지 모드: 탐지된 모든 bbox를 항상 표시 (진단용 #번호·클래스·신뢰도) */}
-                  {selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom() && (() => {
-                    const { scale, offsetX, offsetY } = getVideoGeom();
-                    return detectedBoxes.map((box) => {
-                      const [x1, y1, x2, y2] = box.bbox;
-                      const dispX1 = Math.round(offsetX + x1 * scale);
-                      const dispY1 = Math.round(offsetY + y1 * scale);
-                      const dispX2 = Math.round(offsetX + x2 * scale);
-                      const dispY2 = Math.round(offsetY + y2 * scale);
-                      const isHovered = hoveredDetectedBox && hoveredDetectedBox.id === box.id;
-                      return (
-                        <div
-                          key={box.id}
-                          style={{
-                            position: "absolute",
-                            left: dispX1,
-                            top: dispY1,
-                            width: Math.max(4, dispX2 - dispX1),
-                            height: Math.max(4, dispY2 - dispY1),
-                            border: `2px solid ${isHovered ? "#16a34a" : "rgba(34,197,94,0.7)"}`,
-                            boxSizing: "border-box",
-                            borderRadius: 2,
-                            pointerEvents: "none",
-                          }}
-                        >
-                          <span
-                            style={{
-                              position: "absolute",
-                              top: -17,
-                              left: -1,
-                              background: "rgba(22,163,74,0.9)",
-                              color: "#fff",
-                              fontSize: 11,
-                              lineHeight: "15px",
-                              padding: "0 4px",
-                              borderRadius: 3,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            #{box.id + 1} {box.class_name} {Math.round((box.confidence || 0) * 100)}%
-                          </span>
-                        </div>
-                      );
-                    });
-                  })()}
-
-                  {/* YOLO 자동 탐지 모드: 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
-                  {selectionMode === "auto" && hoveredDetectedBox && getVideoGeom() && (() => {
-                    const { scale, offsetX, offsetY } = getVideoGeom();
-                    const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
-                    const dispX1 = Math.round(offsetX + x1 * scale);
-                    const dispY1 = Math.round(offsetY + y1 * scale);
-                    const dispX2 = Math.round(offsetX + x2 * scale);
-                    const dispY2 = Math.round(offsetY + y2 * scale);
+                  {/* RT-DETR + YOLO fallback 자동 탐지 모드: 마우스 Hover 미리보기 */}
+                  {selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && (() => {
+                    const displayBox = videoBoxToDisplayBox(hoveredDetectedBox.bbox);
+                    if (!displayBox) return null;
 
                     return (
                       <div
                         className="bbox-hover-preview"
                         style={{
-                          left: dispX1,
-                          top: dispY1,
-                          width: Math.max(10, dispX2 - dispX1),
-                          height: Math.max(10, dispY2 - dispY1),
+                          left: displayBox.xmin,
+                          top: displayBox.ymin,
+                          width: Math.max(10, displayBox.xmax - displayBox.xmin),
+                          height: Math.max(10, displayBox.ymax - displayBox.ymin),
                         }}
                       >
                         <span className="bbox-hover-label">
-                          🚗 {hoveredDetectedBox.class_name} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
+                          🚗 {hoveredDetectedBox.class_name} · {detectorSourceLabel(hoveredDetectedBox.source)} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
                         </span>
                       </div>
                     );
@@ -2581,6 +2853,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 }
 
 function UploadModal({ onClose, onUploaded, onError }) {
+  const [useDrive, setUseDrive] = useState(false);
   const [filesList, setFilesList] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, currentName: "" });
@@ -2673,8 +2946,10 @@ function UploadModal({ onClose, onUploaded, onError }) {
     }
   };
 
+  if (useDrive) return <DriveUploadModal onClose={onClose} onUploaded={onUploaded} onError={onError} />;
+
   return (
-    <div className="settings-modal-overlay" onClick={onClose}>
+    <div className="settings-modal-overlay" onClick={uploading ? undefined : onClose}>
       <div className="upload-modal multi-upload-modal" onClick={(e) => e.stopPropagation()}>
         <div className="upload-modal-header">
           <div>
@@ -2684,7 +2959,10 @@ function UploadModal({ onClose, onUploaded, onError }) {
           <button className="clip-modal-close" onClick={onClose} disabled={uploading}>✕</button>
         </div>
 
+        <button type="button" className="add-more-files-btn" disabled={uploading} onClick={() => setUseDrive(true)}>Google Drive 링크로 가져오기</button>
+
         <input
+          disabled={uploading}
           ref={fileInputRef}
           type="file"
           accept="video/*"
@@ -2810,6 +3088,93 @@ function UploadModal({ onClose, onUploaded, onError }) {
           </button>
         </div>
 
+      </div>
+    </div>
+  );
+}
+
+
+function DriveUploadModal({ onClose, onUploaded, onError }) {
+  const [source, setSource] = useState("drive");
+  const [driveLink, setDriveLink] = useState("");
+  const [file, setFile] = useState(null);
+  const [recordingDate, setRecordingDate] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async () => {
+    if (source === "file" ? !file : !driveLink.trim()) {
+      onError(source === "file" ? "업로드할 영상 파일을 선택해 주세요." : "Drive 공유 링크를 입력해 주세요.");
+      return;
+    }
+    setUploading(true);
+    try {
+      if (source === "drive") {
+        await api.importDriveVideo(driveLink.trim(), recordingDate || null);
+      } else {
+        await api.uploadVideo(file, recordingDate || null);
+      }
+      onUploaded();
+    } catch (e) {
+      onError(`업로드 실패: ${e.message}`);
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="settings-modal-overlay" onClick={uploading ? undefined : onClose}>
+      <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>영상 업로드</h2>
+        <p className="tab-description">분석할 CCTV 녹화 영상을 업로드합니다.</p>
+
+        <div className="settings-form-group">
+          <label htmlFor="upload-source">가져오기 방식</label>
+          <select id="upload-source" value={source} disabled={uploading} onChange={(e) => setSource(e.target.value)}>
+            <option value="file">내 컴퓨터 파일</option>
+            <option value="drive">Google Drive 링크</option>
+          </select>
+        </div>
+        {source === "drive" ? (
+          <div className="settings-form-group">
+            <label htmlFor="drive-link">영상 공유 링크</label>
+            <input id="drive-link" type="url" value={driveLink} disabled={uploading}
+              placeholder="https://drive.google.com/file/d/.../view"
+              onChange={(e) => setDriveLink(e.target.value)} />
+            <p className="tab-description">‘링크가 있는 모든 사용자’가 다운로드 가능한 영상만 지원합니다. 최대 10GB.</p>
+            {uploading && <p role="status">Drive에서 영상을 가져오는 중입니다. 영상 크기에 따라 시간이 걸릴 수 있습니다.</p>}
+          </div>
+        ) : <div className="settings-form-group">
+          <label>영상 파일</label>
+          <input
+            type="file"
+            accept="video/*"
+            disabled={uploading}
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+          />
+        </div>}
+
+        <div className="settings-form-group">
+          <label>녹화 일자 (달력에서 선택)</label>
+          <input
+            type="date"
+            disabled={uploading}
+            value={recordingDate}
+            max={formatDate(new Date())}
+            onChange={(e) => setRecordingDate(e.target.value)}
+          />
+        </div>
+
+        <div className="upload-modal-actions">
+          <button
+            className="settings-save-btn"
+            onClick={handleUpload}
+            disabled={uploading}
+          >
+            {uploading ? "가져오는 중..." : source === "drive" ? "Drive에서 가져오기" : "업로드"}
+          </button>
+          <button className="upload-cancel-btn" onClick={onClose} disabled={uploading}>
+            취소
+          </button>
+        </div>
       </div>
     </div>
   );

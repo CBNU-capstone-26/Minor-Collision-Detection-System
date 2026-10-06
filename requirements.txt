@@ -55,17 +55,10 @@ pydantic==2.13.4
 pydantic-core==2.46.4
 python-multipart==0.0.32
 
-# ---- DB (MySQL local / PostgreSQL Supabase remote) ----
+# ---- DB (MySQL) ----
 sqlalchemy==2.0.50
 pymysql==1.2.0
-psycopg[binary]>=3.2.0
 cryptography==48.0.0
-
-# Local .env loading
-python-dotenv>=1.0.0
-
-# S3 호환 객체 저장소 (Cloudflare R2 등)
-boto3>=1.35.0
 
 # ---- 비동기 작업 (Celery + Redis) ----
 celery==5.6.3
@@ -76,6 +69,8 @@ opencv-python-headless==4.13.0.92
 numpy==2.4.6
 pillow==12.2.0
 tqdm==4.68.1
+transformers>=4.40
+ultralytics>=8.3
 
 # ---- 차량 자동탐지 (라이브 서비스 /detect-vehicles; YOLO11) ----
 # ※ torch/torchvision 은 위 '별도 스텝'으로 이미 설치됨. YOLO11x 가중치는 첫 실행 시 자동 다운로드.
@@ -87,3 +82,8 @@ pytorchvideo==0.1.5
 
 # ---- 테스트/스크립트용 ----
 requests==2.34.2
+
+# Database-Service: PostgreSQL / Supabase and S3-compatible storage
+psycopg[binary]>=3.2.0
+python-dotenv>=1.0.0
+boto3>=1.35.0

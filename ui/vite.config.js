@@ -13,7 +13,7 @@ export default defineConfig({
     proxy: {
       // 백엔드 FastAPI로 프록시 (개발 서버)
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8002',
         changeOrigin: true,
       },
     },

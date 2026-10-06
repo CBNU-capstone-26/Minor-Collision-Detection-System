@@ -29,7 +29,7 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_timestamp_sec=ev.end_timestamp_sec,
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
-        has_clip=bool(ev.cam_heatmap_path),
+        has_clip=bool(ev.cam_heatmap_path) and get_storage().exists(ev.cam_heatmap_path),
     )
 
 
@@ -110,6 +110,50 @@ def upload_video(
     db.commit()
     db.refresh(video)
     return to_video_out(video)
+
+
+@router.post("/import-drive", response_model=api_schemas.VideoOut)
+def import_drive_video(
+    link: str = Form(..., max_length=2048),
+    recording_date: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    from app.drive_import import download_drive_video
+    try:
+        rec_date = date.fromisoformat(recording_date) if recording_date else None
+    except ValueError:
+        raise HTTPException(400, "녹화일자 형식이 잘못되었습니다.")
+    dest = settings.UPLOAD_DIR / f"{uuid4().hex}.mp4"
+    storage = get_storage()
+    object_key = f"uploads/{dest.name}"
+    uploaded = False
+    try:
+        filename = download_drive_video(link, dest)
+        width, height, fps, total_frames = _extract_metadata(dest)
+        if total_frames <= 0 or width <= 0 or height <= 0:
+            raise HTTPException(400, "가져온 파일을 영상으로 읽을 수 없습니다.")
+        if not isinstance(storage, LocalObjectStorage):
+            storage.upload_path(dest, object_key, content_type="video/mp4")
+            uploaded = True
+        video = db_models.Video(
+            user_id=user.id, video_name=filename, video_path=object_key,
+            recording_date=rec_date, width=width, height=height, fps=fps,
+            total_frames=total_frames,
+        )
+        db.add(video)
+        db.flush()
+        result = to_video_out(video)
+        db.commit()
+        if uploaded:
+            dest.unlink(missing_ok=True)
+        return result
+    except Exception:
+        db.rollback()
+        dest.unlink(missing_ok=True)
+        if uploaded:
+            storage.delete(object_key)
+        raise
 
 
 @router.get("", response_model=list[api_schemas.VideoOut])
@@ -287,13 +331,7 @@ def detect_vehicles_in_video(
 
     # 차량 탐지 모듈은 지연 임포트 — ultralytics/torch를 웹 프로세스 시작 시 로드하지 않도록.
     try:
-        from app.vehicle_detector import (
-            DEFAULT_RTDETR_MODEL,
-            DEFAULT_YOLO_MODEL,
-            DEFAULT_YOLO_SEG_MODEL,
-            get_hybrid_detector,
-            read_source_frame,
-        )
+        from app.vehicle_detector import get_detector, read_source_frame
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"차량 탐지 모듈 로드 실패: {err}")
 
@@ -306,21 +344,22 @@ def detect_vehicles_in_video(
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"프레임 추출 실패: {err}")
 
-    try:
-        def model_path(name: str) -> str:
-            local_path = settings.BASE_DIR / name
-            return str(local_path) if local_path.exists() else name
+    # YOLO11x(detection) + 동적 imgsz(상한 1536) + 낮은 conf + 야간 전처리
+    # → 원거리/야간/부분가림 회수율 강화. detection 모델이라 마스크 없이
+    #   YOLO detection bbox를 그대로 사용한다. 동적 imgsz는 프레임 해상도에
+    #   맞춰 입력 크기를 정해 고해상도 정보손실/저해상도 낭비를 함께 줄인다.
+    # 탐지기는 get_detector로 프로세스당 1회만 로드·재사용(매 요청 재로드 오버헤드 제거).
+    model_path = str(settings.BASE_DIR / "yolo11x.pt")
+    if not Path(model_path).exists():
+        model_path = "yolo11x.pt"  # 파일 없으면 ultralytics가 자동 다운로드
 
-        detector = get_hybrid_detector(
-            rtdetr_path=model_path(DEFAULT_RTDETR_MODEL),
-            yolo_path=model_path(DEFAULT_YOLO_MODEL),
-            yolo_seg_path=model_path(DEFAULT_YOLO_SEG_MODEL),
-        )
-        detection_result = detector.detect_frame(frame)
-        detections = detection_result.detections
-        detector_mode = detection_result.mode
+    try:
+        detector = get_detector(
+            model_path=model_path, conf=0.15, imgsz=1536,
+            enhance_night=True, dynamic_imgsz=True, imgsz_min=640)
+        detections = detector.detect_frame(frame)
     except Exception as err:
-        raise HTTPException(status_code=500, detail=f"하이브리드 차량 탐지 중 오류: {err}")
+        raise HTTPException(status_code=500, detail=f"YOLO 차량 탐지 중 오류: {err}")
 
     detected_list = []
     for idx, det in enumerate(detections):
@@ -330,7 +369,6 @@ def detect_vehicles_in_video(
             "class_name": det.class_name,
             "confidence": round(det.confidence, 4),
             "bbox": [x1, y1, x2, y2],
-            "source": det.source,
         })
 
     # [디버그] 서비스가 실제로 탐지한 결과를 이미지로 저장 (outputs/) — 눈으로 확인용.
@@ -363,5 +401,4 @@ def detect_vehicles_in_video(
         detected_vehicles=[
             api_schemas.DetectedVehicleBox(**item) for item in detected_list
         ],
-        detector_mode=detector_mode,
     )

@@ -95,6 +95,12 @@ export const api = {
     if (recordingDate) form.append("recording_date", recordingDate);
     return request("/videos", { method: "POST", body: form, isForm: true });
   },
+  importDriveVideo: (link, recordingDate) => {
+    const form = new FormData();
+    form.append("link", link);
+    if (recordingDate) form.append("recording_date", recordingDate);
+    return request("/videos/import-drive", { method: "POST", body: form, isForm: true });
+  },
   streamUrl: (id) => `/api/videos/${id}/stream`,
   thumbnailUrl: (id) => `/api/videos/${id}/thumbnail`,
   deleteVideo: (id) => request(`/videos/${id}`, { method: "DELETE" }),
@@ -115,6 +121,3 @@ export const api = {
   cancelTask: (taskId) => request(`/tasks/${taskId}/cancel`, { method: "POST" }),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,
 };
-
-
-

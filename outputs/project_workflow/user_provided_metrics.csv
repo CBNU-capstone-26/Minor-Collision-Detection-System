@@ -1,0 +1,4 @@
+model,validation_accuracy_percent,accident_f1,source
+S3D,90.9,0.75,user_provided
+X3D-S,81.8,0.50,user_provided
+SlowFast-R50,100,1.00,user_provided

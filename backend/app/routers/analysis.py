@@ -57,6 +57,7 @@ def get_task_status(
     task = db.get(db_models.AnalysisTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    _get_owned_video(task.video_id, db, user)
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.task_id == task.id).all()
 
@@ -86,6 +87,7 @@ def cancel_task(
     task = db.get(db_models.AnalysisTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    _get_owned_video(task.video_id, db, user)
     if task.status in ["PENDING", "PROCESSING"]:
         task.status = "CANCELLED"
         if task.celery_task_id:

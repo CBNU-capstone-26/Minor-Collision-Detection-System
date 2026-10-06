@@ -1,3 +1,23 @@
+# React + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+
+---
+
 # 팀원용 Supabase·Cloudflare R2 사용 안내
 
 이 문서는 이 프로젝트의 다른 팀원이 본인의 계정을 사용해 기존 팀 Supabase 프로젝트와 Cloudflare R2 버킷에 접근하기 위한 안내서입니다.
@@ -311,3 +331,8 @@ Supabase와 R2에 접근할 수 있어도 현재 웹 애플리케이션은 로�
 - Cloudflare 역할: https://developers.cloudflare.com/fundamentals/manage-members/roles/
 - Cloudflare R2 API 토큰: https://developers.cloudflare.com/r2/api/tokens/
 
+## 로컬 모델 병합 안내
+
+`giwon`의 S3D, X3D, SlowFast 학습·평가·추론 코드를 통합했습니다. 기존 커스텀 Inception 및 SlowFast 호환 파이프라인은 `legacy model/`에 보존했습니다.
+
+현재 로컬 기본값은 `MODEL_VARIANT=legacy`입니다. 새 파이프라인을 사용하려면 워커 실행 환경 또는 `backend/.env`에 `MODEL_VARIANT=s3d`, `x3d`, `slowfast` 중 하나를 지정하고 해당 모델의 가중치를 준비한 뒤 워커를 재시작하세요. 각 폴더의 `config.py`에서 가중치 경로를 확인할 수 있습니다. DB/R2 설정은 유지됩니다.
