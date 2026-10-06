@@ -34,6 +34,26 @@ function LoginPage({ onLogin }) {
   const [isSignupOpen, setIsSignupOpen] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            // Optional: unobserve if you only want it to animate once
+            // observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
+    );
+
+    const elements = document.querySelectorAll(".scroll-reveal");
+    elements.forEach((el) => observer.observe(el));
+
+    return () => elements.forEach((el) => observer.unobserve(el));
+  }, []);
+
   const handleLogin = async () => {
     setError("");
     try {
@@ -62,7 +82,7 @@ function LoginPage({ onLogin }) {
 
       <main className="public-main">
         <section className="public-hero">
-          <div className="public-hero-copy">
+          <div className="public-hero-copy scroll-reveal">
             <p className="public-kicker">CCTV EVENT REVIEW / 01</p>
             <h1>관리자가 모든 영상을<br /><em>보지 않아도, AI가 먼저 찾습니다.</em></h1>
             <p className="public-hero-description">
@@ -77,7 +97,7 @@ function LoginPage({ onLogin }) {
             </div>
           </div>
 
-          <div className="public-hero-panel" aria-label="SIOT 분석 흐름">
+          <div className="public-hero-panel scroll-reveal" aria-label="SIOT 분석 흐름">
             <div className="public-panel-topline">
               <span>LIVE REVIEW SYSTEM</span>
               <span className="public-live-dot">● ONLINE</span>
@@ -88,11 +108,14 @@ function LoginPage({ onLogin }) {
                 <span className="public-car car-one" />
                 <span className="public-car car-two" />
                 <span className="public-car car-three" />
+                <div className="public-detection-box box-blue-car">
+                  <span className="public-detected-label">DETECTED</span>
+                </div>
               </div>
-              <div className="public-detection-box box-one"><span>VEHICLE 01</span></div>
-              <div className="public-detection-box box-two"><span>EVENT CHECK</span></div>
               <div className="public-scan-caption">FRAME 004281 / CAMERA C1</div>
             </div>
+
+
             <div className="public-panel-footer">
               <span>의심 구간 감지</span>
               <strong>→ 날짜별 이벤트로 정리</strong>
@@ -100,7 +123,7 @@ function LoginPage({ onLogin }) {
           </div>
         </section>
 
-        <section className="public-proof-strip" aria-label="SIOT 핵심 기능">
+        <section className="public-proof-strip scroll-reveal" aria-label="SIOT 핵심 기능">
           <div><strong>01</strong><span>영상 업로드</span></div>
           <div><strong>02</strong><span>의심 장면 분석</span></div>
           <div><strong>03</strong><span>사건별 확인</span></div>
@@ -108,7 +131,7 @@ function LoginPage({ onLogin }) {
         </section>
 
         <section className="public-insight-section" id="why-siot">
-          <div className="public-section-heading">
+          <div className="public-section-heading scroll-reveal">
             <p className="public-kicker">RECENT HIT-AND-RUN TREND</p>
             <h2>반복되는 물피도주,<br /><em>AI 선별이 필요한 이유</em></h2>
             <p>
@@ -116,7 +139,7 @@ function LoginPage({ onLogin }) {
               SIOT는 수많은 CCTV 영상 중 확인이 필요한 순간을 먼저 좁혀 관리자의 시간을 줄입니다.
             </p>
           </div>
-          <div className="public-trend-table-wrap">
+          <div className="public-trend-table-wrap scroll-reveal">
             <div className="public-trend-table-heading">
               <span>INDICATOR</span><span>OBSERVED DATA</span><span>WHAT IT MEANS</span>
             </div>
@@ -139,6 +162,22 @@ function LoginPage({ onLogin }) {
           </div>
         </section>
       </main>
+
+      <footer className="public-footer scroll-reveal">
+        <div className="footer-left">
+          <div className="footer-title">SIOT</div>
+          <div className="footer-desc">
+            충북대학교 소프트웨어학부<br/>
+            CBNU Department of Software
+          </div>
+        </div>
+        <div className="footer-links">
+          <div className="footer-links-title">Links</div>
+          <a href="https://github.com/CBNU-capstone-26/Minor-Collision-Detection-System" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="#" onClick={(e) => e.preventDefault()}>이용약관</a>
+          <a href="#" onClick={(e) => e.preventDefault()}>개인정보 처리방침</a>
+        </div>
+      </footer>
 
       {isLoginOpen && (
         <div className="login-modal-overlay" onClick={() => setIsLoginOpen(false)}>

@@ -6143,6 +6143,11 @@ body.dark-mode .public-login-page {
   color: var(--public-green);
   font-size: 10px;
   letter-spacing: 0.1em;
+  animation: liveBlink 1s step-end infinite;
+}
+
+@keyframes liveBlink {
+  50% { opacity: 0; }
 }
 
 .public-scan-frame {
@@ -6164,6 +6169,12 @@ body.dark-mode .public-scan-road {
   opacity: 0.32;
   background-image: linear-gradient(rgba(var(--public-accent-rgb), 0.22) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--public-accent-rgb), 0.22) 1px, transparent 1px);
   background-size: 34px 34px;
+  animation: scanGridMove 2s linear infinite;
+}
+
+@keyframes scanGridMove {
+  from { background-position: 0 0; }
+  to { background-position: 0 34px; }
 }
 
 .public-scan-road {
@@ -6183,23 +6194,96 @@ body.dark-mode .public-scan-road {
   box-shadow: inset 0 -12px 0 rgba(15, 23, 42, 0.18);
 }
 
-.car-one { left: 31%; top: 14%; transform: rotate(8deg); }
-.car-two { right: 26%; top: 36%; transform: rotate(-7deg); background: var(--public-green); }
-.car-three { left: 47%; bottom: 9%; transform: rotate(3deg); background: #cbd5e1; }
+/* --- 차량 개별 애니메이션 --- */
+.car-one { left: 31%; top: 14%; --base-rot: 8deg; transform: rotate(var(--base-rot)); animation: carIdleOne 2.3s ease-in-out infinite alternate; }
 
+/* car-two: 파란차 — 충돌 받고 살짝 밀리는 반응 (4s 주기) */
+.car-two {
+  right: 26%; top: 36%;
+  background: var(--public-green);
+  animation: carTwoHit 4s ease-in-out infinite;
+}
+
+/* car-three: 가운데 회색차 — 파란차를 향해 살짝 올라갔다 빠지는 충돌 */
+.car-three {
+  left: 47%; bottom: 9%;
+  background: #cbd5e1;
+  animation: carThreeCollide 4s ease-in-out infinite;
+}
+
+@keyframes carIdleOne {
+  0% { transform: rotate(8deg) translateY(0px); }
+  100% { transform: rotate(8deg) translateY(4px); }
+}
+
+/* car-three: 평소 주행 → 충돌 돌진 → 원위치 */
+@keyframes carThreeCollide {
+  0%   { transform: rotate(3deg) translate(0, 0); }
+  35%  { transform: rotate(3deg) translate(0, 0); }       /* 대기 */
+  52%  { transform: rotate(1deg) translate(6px, -14px); } /* 충돌 진입 */
+  58%  { transform: rotate(2deg) translate(4px, -10px); } /* 충격 */
+  68%  { transform: rotate(3deg) translate(0, 0); }       /* 후퇴 */
+  100% { transform: rotate(3deg) translate(0, 0); }
+}
+
+/* car-two: 충돌 당해 살짝 밀리는 반응 */
+@keyframes carTwoHit {
+  0%   { transform: rotate(-7deg) translate(0, 0); }
+  52%  { transform: rotate(-7deg) translate(0, 0); }       /* 충돌 직전까지 정지 */
+  58%  { transform: rotate(-9deg) translate(4px, -5px); } /* 충격으로 살짝 밀림 */
+  66%  { transform: rotate(-7deg) translate(0, 0); }       /* 복귀 */
+  100% { transform: rotate(-7deg) translate(0, 0); }
+}
+
+/* --- 탐지 박스: 파란차(car-two) 위치에만 1개 --- */
 .public-detection-box {
   position: absolute;
-  padding: 5px 7px;
-  border: 1px solid var(--public-green);
-  color: var(--public-green);
+  border: 1.5px solid #ef4444;
+  color: #ef4444;
   font-size: 8px;
   font-weight: 800;
   letter-spacing: 0.08em;
 }
 
-.box-one { top: 27%; left: 25%; width: 70px; height: 98px; }
-.box-two { top: 46%; right: 18%; width: 72px; height: 96px; }
-.public-detection-box span { position: absolute; top: -16px; left: -1px; white-space: nowrap; }
+/* 파란차(car-two)와 동일한 위치에 고정 (충돌 시 안 흔들림) */
+.box-blue-car {
+  right: 26%; top: 36%;
+  width: 54px; height: 82px;
+  margin-top: -6px; margin-right: -6px;
+  transform: rotate(-7deg);
+  animation: boxHitReact 4s ease-in-out infinite;
+}
+
+@keyframes boxHitReact {
+  0%   { opacity: 0.6; box-shadow: 0 0 0 0 transparent; border-width: 1.5px; }
+  57.9%{ opacity: 0.6; box-shadow: 0 0 0 0 transparent; border-width: 1.5px; }
+  58%  { opacity: 1; box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.4); border-width: 2.5px; }
+  64%  { opacity: 1; box-shadow: 0 0 0 16px transparent; border-width: 1.5px; }
+  100% { opacity: 0.6; box-shadow: 0 0 0 0 transparent; border-width: 1.5px; }
+}
+
+/* DETECTED 라벨: 충돌 후에 나타났다 사라짐 */
+.public-detected-label {
+  position: absolute;
+  top: -22px;
+  left: -1px;
+  white-space: nowrap;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #ef4444;
+  animation: detectedAppear 4s ease-in-out infinite;
+}
+
+@keyframes detectedAppear {
+  0%   { opacity: 0; transform: translateY(4px) scale(0.9); }
+  57.9%{ opacity: 0; transform: translateY(4px) scale(0.9); }
+  58%  { opacity: 1; transform: translateY(0) scale(1.2); }
+  62%  { opacity: 1; transform: translateY(0) scale(1); }
+  85%  { opacity: 1; transform: translateY(0); }
+  92%  { opacity: 0; transform: translateY(-2px); }
+  100% { opacity: 0; }
+}
 
 .public-scan-caption {
   position: absolute;
@@ -6742,4 +6826,71 @@ body.dark-mode .nav-logo {
     box-shadow: 0 -6px 0 var(--public-green);
   }
 
+}
+/* ---------------- Scroll Reveal Effect ---------------- */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s ease-out, transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.scroll-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ---------------- Public Footer ---------------- */
+.public-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 60px 40px;
+  border-top: 1px solid var(--public-line);
+  background: var(--public-bg);
+  max-width: 1200px;
+  margin: 0 auto;
+  flex-wrap: wrap;
+  gap: 40px;
+}
+
+body.dark-mode .public-footer {
+  background: transparent;
+}
+
+.footer-left .footer-title {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 20px;
+  color: var(--public-text);
+  letter-spacing: 0.05em;
+}
+
+.footer-left .footer-desc {
+  font-size: 14px;
+  color: var(--public-muted);
+  line-height: 1.6;
+}
+
+.footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.footer-links-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--public-text);
+}
+
+.footer-links a {
+  color: var(--public-muted);
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 0.2s;
+}
+
+.footer-links a:hover {
+  color: var(--public-green);
 }
