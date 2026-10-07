@@ -18,7 +18,7 @@ function AppLoadingScreen() {
         <div className="cosmic-glow-limb" />
       </div>
       <div className="app-splash-content">
-        <h1 className="app-splash-title">SIOT</h1>
+        <img className="app-splash-logo" src="/siot-logo-loading.svg" alt="SIOT" />
         <p className="app-splash-subtitle">주차 사고 이벤트 감지 시스템</p>
         <div className="app-splash-spinner-ring" />
       </div>
@@ -27,11 +27,32 @@ function AppLoadingScreen() {
 }
 
 function LoginPage({ onLogin }) {
-
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [error, setError] = useState("");
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isSignupOpen, setIsSignupOpen] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            // Optional: unobserve if you only want it to animate once
+            // observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
+    );
+
+    const elements = document.querySelectorAll(".scroll-reveal");
+    elements.forEach((el) => observer.observe(el));
+
+    return () => elements.forEach((el) => observer.unobserve(el));
+  }, []);
 
   const handleLogin = async () => {
     setError("");
@@ -46,59 +67,268 @@ function LoginPage({ onLogin }) {
   };
 
   return (
-    <div className="login-layout">
-      <div className="login-left-panel">
-        <div className="brand-content">
-          <div className="brand-badge">Parking Scratch Detection</div>
-          <h1>주차 사고 이벤트 확인 시스템</h1>
-          <p>
-            CCTV 영상에서 주차된 차량 접촉사고 의심 이벤트를 감지하고
-            날짜별로 정리하여 확인할 수 있는 웹서비스 시스템입니다.
-          </p>
-        </div>
-      </div>
-
-      <div className="login-right-panel">
-        <div className="login-form-wrapper">
-          <h2>로그인</h2>
-
-          <div className="input-group">
-            <input
-              type="text"
-              placeholder="아이디"
-              value={id}
-              onChange={(e) => setId(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            />
-          </div>
-
-          <div className="input-group">
-            <input
-              type="password"
-              placeholder="비밀번호"
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            />
-          </div>
-
-          {error && <p className="login-error-text">{error}</p>}
-
-          <div className="login-options">
-            <label className="remember-me">
-              <input type="checkbox" /> Remember me
-            </label>
-            <a href="#none" className="support-link">Support</a>
-          </div>
-
-          <button className="login-submit-btn" onClick={handleLogin}>로그인</button>
-          <button
-            className="login-signup-btn"
-            onClick={() => navigate("/signup")}
-          >
-            회원가입
+    <div className="public-login-page">
+      <header className="public-navbar">
+        <button className="public-brand" onClick={() => navigate("/login")}>
+          <img className="public-brand-logo" src="/siot-logo.svg" alt="SIOT" />
+        </button>
+        <div className="public-nav-meta">
+          <span className="public-nav-label">Parking incident intelligence</span>
+          <button className="public-login-trigger" onClick={() => setIsLoginOpen(true)}>
+            LOGIN <span aria-hidden="true">↗</span>
           </button>
         </div>
+      </header>
+
+      <main className="public-main">
+        <section className="public-hero">
+          <div className="public-hero-copy scroll-reveal">
+            <p className="public-kicker">CCTV EVENT REVIEW / 01</p>
+            <h1>관리자가 모든 영상을<br /><em>보지 않아도, AI가 먼저 찾습니다.</em></h1>
+            <p className="public-hero-description">
+              물피도주 의심 장면을 영상 속에서 찾아내고, 날짜와 이벤트 단위로 정리합니다.
+              흩어진 CCTV 기록을 확인 가능한 사고 데이터로 바꾸는 모니터링 시스템입니다.
+            </p>
+            <div className="public-hero-actions">
+              <button className="public-primary-btn" onClick={() => setIsLoginOpen(true)}>
+                대시보드 열기 <span aria-hidden="true">→</span>
+              </button>
+              <a className="public-text-link" href="#why-siot">왜 필요한가 <span aria-hidden="true">↓</span></a>
+            </div>
+          </div>
+
+          <div className="public-hero-panel scroll-reveal" aria-label="SIOT 분석 흐름">
+            <div className="public-panel-topline">
+              <span>LIVE REVIEW SYSTEM</span>
+              <span className="public-live-dot">● ONLINE</span>
+            </div>
+            <div className="public-scan-frame">
+              <div className="public-scan-grid" />
+              <div className="public-scan-road">
+                <span className="public-car car-one" />
+                <span className="public-car car-two" />
+                <span className="public-car car-three" />
+                <div className="public-detection-box box-blue-car">
+                  <span className="public-detected-label">DETECTED</span>
+                </div>
+              </div>
+              <div className="public-scan-caption">FRAME 004281 / CAMERA C1</div>
+            </div>
+
+
+            <div className="public-panel-footer">
+              <span>의심 구간 감지</span>
+              <strong>→ 날짜별 이벤트로 정리</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="public-proof-strip scroll-reveal" aria-label="SIOT 핵심 기능">
+          <div><strong>01</strong><span>영상 업로드</span></div>
+          <div><strong>02</strong><span>의심 장면 분석</span></div>
+          <div><strong>03</strong><span>사건별 확인</span></div>
+          <p>AI가 영상을 먼저 훑고, 관리자는 필요한 장면에 집중합니다.</p>
+        </section>
+
+        <section className="public-insight-section" id="why-siot">
+          <div className="public-section-heading scroll-reveal">
+            <p className="public-kicker">RECENT HIT-AND-RUN TREND</p>
+            <h2>반복되는 물피도주,<br /><em>AI 선별이 필요한 이유</em></h2>
+            <p>
+              공개된 지역 경찰 통계와 최근 보도에서 확인되는 흐름을 한눈에 정리했습니다.
+              SIOT는 수많은 CCTV 영상 중 확인이 필요한 순간을 먼저 좁혀 관리자의 시간을 줄입니다.
+            </p>
+          </div>
+          <div className="public-trend-table-wrap scroll-reveal">
+            <div className="public-trend-table-heading">
+              <span>INDICATOR</span><span>OBSERVED DATA</span><span>WHAT IT MEANS</span>
+            </div>
+            <div className="public-trend-row highlight">
+              <strong>전국 / 2024</strong>
+              <b>약 7만 건</b>
+              <span>경찰청 교통 단속 통계를 인용한 2024년 연간 신고 접수 규모</span>
+            </div>
+            <div className="public-trend-row">
+              <strong>광주 / 2021</strong>
+              <b>약 9,600건</b>
+              <span>지역 경찰 집계 기준 하루 약 25건꼴로 발생한 사고 후 미조치</span>
+            </div>
+            <div className="public-trend-row">
+              <strong>확보 시간</strong>
+              <b>2~4주</b>
+              <span>주차장 CCTV는 덮어쓰기 전에 필요한 구간을 먼저 확보해야 함</span>
+            </div>
+            <small className="public-trend-source">출처: 2026.06.18 로톡뉴스의 경찰청 교통 단속 통계 2024 인용 보도, 2022.10.24 광주방송의 광주경찰 집계 보도. CCTV 보존 기간은 로톡뉴스 안내를 참고했습니다.</small>
+          </div>
+        </section>
+      </main>
+
+      <footer className="public-footer scroll-reveal">
+        <div className="footer-left">
+          <div className="footer-title">SIOT</div>
+          <div className="footer-desc">
+            충북대학교 소프트웨어학부<br/>
+            CBNU Department of Software
+          </div>
+        </div>
+        <div className="footer-links">
+          <div className="footer-links-title">Links</div>
+          <a href="https://github.com/CBNU-capstone-26/Minor-Collision-Detection-System" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="#" onClick={(e) => e.preventDefault()}>이용약관</a>
+          <a href="#" onClick={(e) => e.preventDefault()}>개인정보 처리방침</a>
+        </div>
+      </footer>
+
+      {isLoginOpen && (
+        <div className="login-modal-overlay" onClick={() => setIsLoginOpen(false)}>
+          <div className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title" onClick={(e) => e.stopPropagation()}>
+            <button className="login-modal-close" onClick={() => setIsLoginOpen(false)} aria-label="로그인 창 닫기">×</button>
+            <p className="public-kicker">SECURE ACCESS</p>
+            <h2 id="login-modal-title">대시보드 로그인</h2>
+            <p className="login-modal-description">분석된 영상과 사고 의심 이벤트를 확인하세요.</p>
+
+            <div className="input-group">
+              <input
+                type="text"
+                placeholder="아이디"
+                value={id}
+                onChange={(e) => setId(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                autoFocus
+              />
+            </div>
+
+            <div className="input-group">
+              <input
+                type="password"
+                placeholder="비밀번호"
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              />
+            </div>
+
+            {error && <p className="login-error-text">{error}</p>}
+
+            <div className="login-options">
+              <label className="remember-me">
+                <input type="checkbox" /> Remember me
+              </label>
+              <a href="#none" className="support-link">Support</a>
+            </div>
+
+            <button className="login-submit-btn" onClick={handleLogin}>로그인</button>
+            <button
+              className="login-signup-btn"
+              onClick={() => {
+                setIsLoginOpen(false);
+                setIsSignupOpen(true);
+              }}
+            >
+              회원가입
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isSignupOpen && <SignupModal onClose={() => setIsSignupOpen(false)} onBackToLogin={() => {
+        setIsSignupOpen(false);
+        setIsLoginOpen(true);
+      }} />}
+    </div>
+  );
+}
+
+function SignupModal({ onClose, onBackToLogin }) {
+  const [form, setForm] = useState({
+    username: "",
+    name: "",
+    email: "",
+    password: "",
+    passwordConfirm: "",
+  });
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const update = (key) => (e) =>
+    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const handleSignup = async () => {
+    setError("");
+    if (!form.username || !form.name || !form.password) {
+      setError("아이디, 이름, 비밀번호는 필수입니다.");
+      return;
+    }
+    if (form.password !== form.passwordConfirm) {
+      setError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+    try {
+      await api.signup({
+        username: form.username,
+        name: form.name,
+        email: form.email || null,
+        password: form.password,
+      });
+      setDone(true);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  return (
+    <div className="login-modal-overlay" onClick={onClose}>
+      <div className="login-modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title" onClick={(e) => e.stopPropagation()}>
+        <button className="login-modal-close" onClick={onClose} aria-label="회원가입 창 닫기">×</button>
+        <p className="public-kicker">CREATE ACCOUNT</p>
+        <h2 id="signup-modal-title">회원가입</h2>
+        <p className="login-modal-description">SIOT 영상 분석 대시보드 계정을 생성합니다.</p>
+
+        {done ? (
+          <div className="signup-complete-state">
+            <strong>가입이 완료되었습니다.</strong>
+            <span>이제 로그인하여 대시보드를 확인할 수 있습니다.</span>
+            <button className="login-submit-btn" onClick={onBackToLogin}>로그인하러 가기</button>
+          </div>
+        ) : (
+          <>
+            <div className="signup-modal-grid">
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-name">이름 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-name" type="text" placeholder="이름을 입력하세요" value={form.name} onChange={update("name")} autoFocus />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-email">이메일</label>
+                <div className="input-group">
+                  <input id="signup-email" type="email" placeholder="이메일을 입력하세요" value={form.email} onChange={update("email")} autoCapitalize="off" autoCorrect="off" />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-username">아이디 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-username" type="text" placeholder="로그인에 사용할 아이디" value={form.username} onChange={update("username")} autoCapitalize="off" autoCorrect="off" />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-password">비밀번호 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-password" type="password" placeholder="비밀번호를 입력하세요" value={form.password} onChange={update("password")} />
+                </div>
+              </div>
+              <div className="signup-field">
+                <label className="signup-field-label" htmlFor="signup-password-confirm">비밀번호 확인 <span>*</span></label>
+                <div className="input-group">
+                  <input id="signup-password-confirm" type="password" placeholder="비밀번호를 한 번 더 입력하세요" value={form.passwordConfirm} onChange={update("passwordConfirm")} />
+                </div>
+              </div>
+            </div>
+            {error && <p className="login-error-text">{error}</p>}
+            <button className="login-submit-btn" onClick={handleSignup}>가입하기</button>
+            <button className="login-signup-btn" onClick={onBackToLogin}>로그인으로 돌아가기</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -966,9 +1196,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       setSelectedVideo((prev) =>
         prev
           ? {
-              ...prev,
-              events: prev.events.filter((ev) => ev.id !== eventId),
-            }
+            ...prev,
+            events: prev.events.filter((ev) => ev.id !== eventId),
+          }
           : null
       );
       setVideos((prev) =>
@@ -1316,7 +1546,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       {/* 상단 네비게이션 바 */}
       <header className="top-navbar">
         <div className="nav-section nav-left">
-          <button className="nav-logo nav-home-btn" onClick={handleBackToHome}>SIOT</button>
+          <button className="nav-logo nav-home-btn" onClick={handleBackToHome} aria-label="SIOT 홈으로 이동">
+            <img src="/siot-logo.svg" alt="SIOT" />
+          </button>
           <div className="nav-search-bar">
             <span className="search-icon">🔍</span>
             <input
@@ -1582,34 +1814,34 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               paginatedVideos.map((video) => {
                 const isSelected = selectedForDelete.includes(video.id);
                 return (
-                <div
-                  key={video.id}
-                  className={`video-card ${deleteMode ? "delete-mode" : ""} ${isSelected ? "delete-selected" : ""}`}
-                  onClick={() =>
-                    deleteMode ? toggleDeleteSelect(video.id) : handleWatchVideo(video)
-                  }
-                >
-                  <div className="video-thumbnail">
-                    {/* 영상 첫 프레임 썸네일 */}
-                    <img
-                      className="video-thumbnail-img"
-                      src={api.thumbnailUrl(video.id)}
-                      alt={`${video.date} ${video.camera} 썸네일`}
-                      loading="lazy"
-                      onError={(e) => { e.currentTarget.style.display = "none"; }}
-                    />
-                    <span className="event-count-badge">이벤트 {video.events.length}건</span>
-                    {deleteMode && (
-                      <span className={`delete-check ${isSelected ? "checked" : ""}`}>
-                        {isSelected ? "✓" : ""}
-                      </span>
-                    )}
+                  <div
+                    key={video.id}
+                    className={`video-card ${deleteMode ? "delete-mode" : ""} ${isSelected ? "delete-selected" : ""}`}
+                    onClick={() =>
+                      deleteMode ? toggleDeleteSelect(video.id) : handleWatchVideo(video)
+                    }
+                  >
+                    <div className="video-thumbnail">
+                      {/* 영상 첫 프레임 썸네일 */}
+                      <img
+                        className="video-thumbnail-img"
+                        src={api.thumbnailUrl(video.id)}
+                        alt={`${video.date} ${video.camera} 썸네일`}
+                        loading="lazy"
+                        onError={(e) => { e.currentTarget.style.display = "none"; }}
+                      />
+                      <span className="event-count-badge">이벤트 {video.events.length}건</span>
+                      {deleteMode && (
+                        <span className={`delete-check ${isSelected ? "checked" : ""}`}>
+                          {isSelected ? "✓" : ""}
+                        </span>
+                      )}
+                    </div>
+                    <div className="video-info">
+                      <h3>{getVideoDisplayTitle(video, videos)}</h3>
+                      <p>영상 길이: {formatTime(video.duration)}</p>
+                    </div>
                   </div>
-                  <div className="video-info">
-                    <h3>{getVideoDisplayTitle(video, videos)}</h3>
-                    <p>영상 길이: {formatTime(video.duration)}</p>
-                  </div>
-                </div>
                 );
               })
             )}
@@ -1679,99 +1911,99 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
             {/* 영상(player) 컬럼에 맞춰 정렬되는 오른쪽 영역 */}
             <div className="watch-header-right">
-            {/* 탐지하기 + 수동 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
-            <div className="watch-header-actions">
-            <button
-              className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
-              disabled={isAnalyzing}
-              onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
-              title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다" : "YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"}
-            >
-              {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
-            </button>
-
-            <button
-              className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
-              disabled={isAnalyzing}
-              onClick={() => {
-                if (selectionMode === "manual") {
-                  handleEndDesignateMode();
-                } else {
-                  handleStartManualDesignate();
-                }
-              }}
-              title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "수동 지정 모드 종료" : "직접 드래그하여 차량 지정")}
-            >
-              {selectionMode === "manual" ? "수동 지정 종료" : "수동 차량 지정"}
-            </button>
-
-            {selectionMode !== "none" && (
-              <button
-                className="mode-exit-btn"
-                onClick={handleEndDesignateMode}
-                title="모든 지정 모드 해제"
-              >
-                ✕ 모드 해제
-              </button>
-            )}
-
-
-
-            {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
-            <div className="detect-btn-wrapper">
-              {isAnalyzing ? (
+              {/* 탐지하기 + 수동 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
+              <div className="watch-header-actions">
                 <button
-                  className="detect-run-btn analyzing-cancel-btn"
+                  className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
+                  disabled={isAnalyzing}
+                  onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
+                  title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다" : "YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"}
+                >
+                  {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
+                </button>
+
+                <button
+                  className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
+                  disabled={isAnalyzing}
                   onClick={() => {
-                    const currentJob = analyzingJobs.find((j) => j.videoId === selectedVideo?.id);
-                    handleCancelAnalysis(currentJob?.taskId);
+                    if (selectionMode === "manual") {
+                      handleEndDesignateMode();
+                    } else {
+                      handleStartManualDesignate();
+                    }
                   }}
-                  title="진행 중인 사고 감지 분석을 취소합니다"
+                  title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "수동 지정 모드 종료" : "직접 드래그하여 차량 지정")}
                 >
-                  🛑 사고감지 취소
+                  {selectionMode === "manual" ? "수동 지정 종료" : "수동 차량 지정"}
                 </button>
-              ) : (
-                <button
-                  className="detect-run-btn"
-                  onClick={handleDetectClick}
-                  title="선택한 차량의 사고예상 구간 탐지"
-                >
-                  사고감지 실행
-                </button>
-              )}
 
-              {showDetectConfirm && (
-                <>
-                  <div
-                    className="detect-popover-overlay"
-                    onClick={() => setShowDetectConfirm(false)}
-                  />
-                  <div className="detect-popover">
-                    <p className="detect-popover-text">
-                      현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?
-                    </p>
-                    <div className="detect-popover-actions">
-                      <button className="detect-popover-run" onClick={runDetection}>
-                        실행
-                      </button>
-                      <button
-                        className="detect-popover-cancel"
+                {selectionMode !== "none" && (
+                  <button
+                    className="mode-exit-btn"
+                    onClick={handleEndDesignateMode}
+                    title="모든 지정 모드 해제"
+                  >
+                    ✕ 모드 해제
+                  </button>
+                )}
+
+
+
+                {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
+                <div className="detect-btn-wrapper">
+                  {isAnalyzing ? (
+                    <button
+                      className="detect-run-btn analyzing-cancel-btn"
+                      onClick={() => {
+                        const currentJob = analyzingJobs.find((j) => j.videoId === selectedVideo?.id);
+                        handleCancelAnalysis(currentJob?.taskId);
+                      }}
+                      title="진행 중인 사고 감지 분석을 취소합니다"
+                    >
+                      🛑 사고감지 취소
+                    </button>
+                  ) : (
+                    <button
+                      className="detect-run-btn"
+                      onClick={handleDetectClick}
+                      title="선택한 차량의 사고예상 구간 탐지"
+                    >
+                      사고감지 실행
+                    </button>
+                  )}
+
+                  {showDetectConfirm && (
+                    <>
+                      <div
+                        className="detect-popover-overlay"
                         onClick={() => setShowDetectConfirm(false)}
-                      >
-                        뒤로가기
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            </div>
+                      />
+                      <div className="detect-popover">
+                        <p className="detect-popover-text">
+                          현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?
+                        </p>
+                        <div className="detect-popover-actions">
+                          <button className="detect-popover-run" onClick={runDetection}>
+                            실행
+                          </button>
+                          <button
+                            className="detect-popover-cancel"
+                            onClick={() => setShowDetectConfirm(false)}
+                          >
+                            뒤로가기
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
 
-            <div className="watch-header-metadata">
-              <span className="metadata-item"><strong>카메라:</strong> {selectedVideo.camera}</span>
-              <span className="metadata-item"><strong>녹화 영상:</strong> {getVideoDisplayTitle(selectedVideo, videos)} ({selectedVideo.startTime})</span>
-              <span className="metadata-item"><strong>총 이벤트:</strong> {selectedVideo.events.length}건 감지됨</span>
-            </div>
+              <div className="watch-header-metadata">
+                <span className="metadata-item"><strong>카메라:</strong> {selectedVideo.camera}</span>
+                <span className="metadata-item"><strong>녹화 영상:</strong> {getVideoDisplayTitle(selectedVideo, videos)} ({selectedVideo.startTime})</span>
+                <span className="metadata-item"><strong>총 이벤트:</strong> {selectedVideo.events.length}건 감지됨</span>
+              </div>
             </div>
           </div>
 
@@ -1883,7 +2115,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                           const videos = videosByDate[dateText] ?? [];
                           const hasVideo = videos.length > 0;
                           const isSelectedDate = (selectedCalendarDate ?? selectedVideo.date) === dateText;
-                          
+
                           // 영상의 총 이벤트 건수를 합산하여 강도를 계산
                           const totalEvents = videos.reduce((acc, v) => acc + v.events.length, 0);
 
@@ -2879,7 +3111,7 @@ export default function App() {
       api.getMe().then((u) => {
         setCurrentUser(u);
         saveAuth(getToken(), u);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     const timer = setTimeout(() => {
       setIsInitializing(false);

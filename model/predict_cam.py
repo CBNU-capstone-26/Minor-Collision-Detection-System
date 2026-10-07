@@ -14,6 +14,12 @@ from device_utils import is_cuda_like, is_channels_last_3d_supported
 
 # 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
 _FFMPEG = shutil.which("ffmpeg")
+if not _FFMPEG:
+    try:
+        import imageio_ffmpeg
+        _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        pass
 
 
 activation = {}
