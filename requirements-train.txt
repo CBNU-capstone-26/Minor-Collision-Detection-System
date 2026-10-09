@@ -69,6 +69,7 @@
 # 로컬 검증(Python 3.11.15) 당시 실제 버전: numpy 2.4.6 / opencv 4.13.0.92 / pillow 12.2.0 / tqdm 4.68.1
 numpy>=1.24                         # 수치 연산 (Python 3.10 → 2.2.x, 3.11+ → 2.4.x 등 자동 선택)
 opencv-python-headless>=4.8         # cv2: 프레임 디코딩·크롭·CAM 오버레이·클립 렌더링
+imageio-ffmpeg>=0.6.0               # 시스템 ffmpeg가 없을 때 쓰는 내장 ffmpeg (predict 모드 클립 H.264 변환)
 pillow>=10.0                        # PIL: 데이터 증강(색상 지터 등) 시 이미지 변환
 tqdm>=4.65                          # 평가 진행률 표시
 

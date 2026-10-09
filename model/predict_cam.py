@@ -14,7 +14,15 @@ from device_utils import is_cuda_like, is_channels_last_3d_supported
 
 # 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
 _FFMPEG = shutil.which("ffmpeg")
-
+# 시스템 ffmpeg가 없으면(macOS·Windows 기본 상태) imageio-ffmpeg에 들어 있는 ffmpeg를 쓴다.
+# 클립 변환에 ffmpeg가 없으면 분석 전체가 실패하므로 requirements에 넣어 둔다.
+# 그 바이너리도 libx264를 포함해 같은 H.264 변환이 된다(linux 0.6.0 실측).
+if not _FFMPEG:
+    try:
+        import imageio_ffmpeg
+        _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        pass
 
 activation = {}
 
@@ -40,7 +48,7 @@ def _open_clip_writer(dest_stem, fps, size):
 def _finalize_clip(rendered_path, dest_stem):
     """mp4v 임시본을 H.264/mp4(yuv420p+faststart)로 재인코딩해 최종 경로(str)를 반환.
 
-    시스템 ffmpeg(libx264)가 **필수**다. H.264/mp4로 통일해야 브라우저·OS(크롬·파폭·
+    ffmpeg(libx264)가 **필수**다(시스템 것 우선, 없으면 imageio-ffmpeg). H.264/mp4로 통일해야 브라우저·OS(크롬·파폭·
     사파리·iOS)를 가리지 않고 재생되기 때문. ffmpeg가 없으면 명확한 에러를 낸다.
     """
     if not _FFMPEG:
@@ -50,6 +58,7 @@ def _finalize_clip(rendered_path, dest_stem):
             pass
         raise RuntimeError(
             "ffmpeg가 설치되어 있지 않습니다 — 브라우저 호환 클립(H.264) 생성에 필요합니다. "
+            "pip install imageio-ffmpeg 로 설치하거나(requirements 포함), "
             "시스템에 설치하세요: sudo apt install -y ffmpeg (또는 brew install ffmpeg)")
     final = f"{dest_stem}.mp4"
     subprocess.run(

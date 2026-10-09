@@ -67,6 +67,7 @@ redis==8.0.0
 
 # ---- 영상처리 / 수치연산 (추론·CAM 클립 생성; torch는 위 별도 스텝) ----
 opencv-python-headless==4.13.0.92
+imageio-ffmpeg==0.6.0  # ffmpeg 바이너리 내장(libx264). 시스템 ffmpeg가 없는 macOS·Windows에서 CAM 클립 H.264 변환용
 numpy==2.4.6
 pillow==12.2.0
 tqdm==4.68.1
