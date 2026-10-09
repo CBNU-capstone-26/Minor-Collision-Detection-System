@@ -122,18 +122,45 @@ def _video_writer_worker(q, out_video):
         out_video.write(frame)
 
 
-def _draw_state_label(frame, state):
-    """좌상단에 현재 클래스 상태(S/A)를 표시한다.
+def _state_bar_height(frame_h):
+    """영상 아래에 붙일 상태 띠 높이 — 영상 높이의 약 6%(최소 36px).
+    H.264(yuv420p) 변환은 가로·세로가 짝수여야 하므로 전체 높이가 짝수가 되게 맞춘다."""
+    bar_h = max(36, int(round(frame_h * 0.06)))
+    if (frame_h + bar_h) % 2:
+        bar_h += 1
+    return bar_h
 
-    state=0 → S (정상, 초록)
-    state=1 → A (충돌, 빨강)
+
+def _add_state_bar(frame, state):
+    """프레임 '아래'에 상태 띠를 붙인 새 프레임을 돌려준다(S/A 표시).
+
+    예전엔 S/A 를 영상 왼쪽 위에 덮어 그려서, 차량이 그쪽에 있으면 가려졌다.
+    띠를 영상 밖에 붙이면 영상 내용은 한 픽셀도 가리지 않는다.
+    state=0 → S · NORMAL (초록), state=1 → A · ACCIDENT (빨강)
+    (OpenCV 글꼴은 한글을 못 그려서 영어로 쓴다 — 서버에 한글 글꼴이 없어도 되게)
     """
-    label = "A" if state == 1 else "S"
-    color = (0, 0, 255) if state == 1 else (0, 255, 0)
-    # 배경 사각형으로 가독성 확보
-    cv2.rectangle(frame, (10, 10), (90, 65), (0, 0, 0), -1)
-    cv2.putText(frame, label, (20, 57),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.8, color, 3)
+    h, w = frame.shape[:2]
+    bar_h = _state_bar_height(h)
+    bar = np.full((bar_h, w, 3), (24, 24, 24), dtype=np.uint8)
+    color = (40, 40, 220) if state == 1 else (60, 170, 60)       # BGR: 빨강 / 초록
+    label, word = ("A", "ACCIDENT") if state == 1 else ("S", "NORMAL")
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    pad = max(4, bar_h // 6)
+    thick = max(1, bar_h // 20)
+    # 왼쪽: 색 배지 + 흰 글자(A/S)
+    side = bar_h - 2 * pad
+    x0 = 2 * pad
+    cv2.rectangle(bar, (x0, pad), (x0 + side, pad + side), color, -1)
+    scale = (side * 0.62) / cv2.getTextSize(label, font, 1.0, thick)[0][1]
+    (tw, th), _ = cv2.getTextSize(label, font, scale, thick + 1)
+    cv2.putText(bar, label, (x0 + (side - tw) // 2, pad + (side + th) // 2),
+                font, scale, (255, 255, 255), thick + 1, cv2.LINE_AA)
+    # 오른쪽: 상태 단어
+    wscale = (bar_h * 0.40) / cv2.getTextSize(word, font, 1.0, thick)[0][1]
+    (_, wh), _ = cv2.getTextSize(word, font, wscale, thick)
+    cv2.putText(bar, word, (x0 + side + 2 * pad, (bar_h + wh) // 2),
+                font, wscale, color, thick, cv2.LINE_AA)
+    return np.vstack([frame, bar])
 
 
 def predict_hit_and_run_final(
@@ -239,7 +266,7 @@ def predict_hit_and_run_final(
         os.makedirs(out_path.parent, exist_ok=True)
         out_stem = str(out_path.with_suffix(""))
         out_video, out_rendered = _open_clip_writer(
-            out_stem, 30.0, (orig_w, orig_h))
+            out_stem, 30.0, (orig_w, orig_h + _state_bar_height(orig_h)))
 
         write_queue = queue.Queue(maxsize=64)
         writer_thread = threading.Thread(
@@ -261,8 +288,7 @@ def predict_hit_and_run_final(
         for i in range(min(display_offset, len(original_full_frames))):
             f = cv2.cvtColor(original_full_frames[i], cv2.COLOR_RGB2BGR)
             cv2.rectangle(f, (v_nx1, v_ny1), (v_nx2, v_ny2), (0, 255, 0), 2)
-            _draw_state_label(f, display_state)
-            write_queue.put(f)
+            write_queue.put(_add_state_bar(f, display_state))
         next_frame_to_write = min(display_offset, len(original_full_frames))
 
         print(f"배치 슬라이딩 윈도우 추론 및 히트맵 생성 중... (stride={window_stride})")
@@ -330,8 +356,7 @@ def predict_hit_and_run_final(
                             original_full_frames[skipped_idx], cv2.COLOR_RGB2BGR)
                         cv2.rectangle(sf, (v_nx1, v_ny1),
                                       (v_nx2, v_ny2), (0, 255, 0), 2)
-                        _draw_state_label(sf, display_state)
-                        write_queue.put(sf)
+                        write_queue.put(_add_state_bar(sf, display_state))
 
                     # 현재 예측 프레임
                     final_frame = cv2.cvtColor(
@@ -355,10 +380,8 @@ def predict_hit_and_run_final(
                     cv2.putText(final_frame, conf_text,
                                 (v_nx1, max(v_ny1 - 10, 20)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, bbox_color, 2)
-                    # 좌상단 클래스 상태 (S / A)
-                    _draw_state_label(final_frame, pred_class)
-
-                    write_queue.put(final_frame)
+                    # 클래스 상태(S / A)는 영상 아래 띠에 표시
+                    write_queue.put(_add_state_bar(final_frame, pred_class))
                     next_frame_to_write = disp_idx + 1
 
         # 마지막 예측 이후 남은 프레임: 마지막 display_state 유지
@@ -366,8 +389,7 @@ def predict_hit_and_run_final(
             sf = cv2.cvtColor(
                 original_full_frames[skipped_idx], cv2.COLOR_RGB2BGR)
             cv2.rectangle(sf, (v_nx1, v_ny1), (v_nx2, v_ny2), (0, 255, 0), 2)
-            _draw_state_label(sf, display_state)
-            write_queue.put(sf)
+            write_queue.put(_add_state_bar(sf, display_state))
 
         # 영상 마지막 시점까지 A 상태가 유지된 경우 이벤트 닫기
         if prev_state == 1 and event_start is not None:
@@ -474,7 +496,8 @@ def predict_events_and_clips(
     infer_batch_size=config.PREDICT_INFER_BATCH_SIZE,
     window_stride=config.PREDICT_WINDOW_STRIDE,
     display_offset=config.PREDICT_DISPLAY_OFFSET,
-    clip_pad_frames=15,
+    cam_overlay=config.PREDICT_CLIP_CAM_OVERLAY,
+    clip_pad_frames=config.PREDICT_CLIP_PAD_FRAMES,
     progress_callback=None,
     use_coarse_scan=config.PREDICT_USE_COARSE_SCAN,
     coarse_step=config.PREDICT_COARSE_STEP,
@@ -669,7 +692,10 @@ def predict_events_and_clips(
                         window_pred[window_idx] = pred_class
                         window_pA[window_idx] = probs[offset, 1].item()
 
-                        if pred_class == 1:
+                        if pred_class == 1 and not cam_overlay:
+                            # 클립에 히트맵을 안 그리면 CAM 계산을 건너뛰고 확률만 남긴다
+                            accident_overlays[disp_idx] = (None, prob)
+                        elif pred_class == 1:
                             feat_map = feat_maps[offset]
                             weight = model.head_conv.weight[pred_class]
                             cam = F.relu(torch.sum(weight * feat_map, dim=0))
@@ -802,10 +828,15 @@ def predict_events_and_clips(
                 crash_prob = max(probs_in_event) if probs_in_event else None
 
                 clip_path = None
+                raw_clip_path = None
                 if render_clips:
                     clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
                     writer, rendered_path = _open_clip_writer(
-                        clip_stem, fps, (orig_w, orig_h))
+                        clip_stem, fps, (orig_w, orig_h + _state_bar_height(orig_h)))
+                    # 원본 사고 클립: 같은 프레임 구간을 아무것도 합성하지 않고 그대로 저장한다
+                    # (사용자가 박스·상태 표시 없는 원본을 따로 내려받을 수 있게)
+                    raw_stem = f'{clip_stem}_raw'
+                    raw_writer, raw_rendered = _open_clip_writer(raw_stem, fps, (orig_w, orig_h))
 
 
                     # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
@@ -817,33 +848,42 @@ def predict_events_and_clips(
                     a_last = a_keys[-1] + window_stride - 1 if a_keys else None
                     render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
                     last_heatmap = None
+                    # 박스 선 굵기는 해상도에 맞춘다(1080p 이하 2px · 1440p 3px · 4K 4px).
+                    # 예전엔 사고 3px / 정상 2px 고정이라 작은 영상에서 차량을 두껍게 덮었다.
+                    # 1px 는 H.264(yuv420p, 색 정보 절반 해상도)로 압축하면 빨간 선이 흐려져 최소 2px.
+                    box_thick = max(2, int(round(orig_h / 540)))
                     for f in range(clip_start, clip_end + 1):
                         ret, frame = render_cap.read()  # 이미 BGR
                         if not ret:
                             break
-                        if f in accident_overlays:
+                        raw_writer.write(frame)   # 그리기 전에 원본부터 저장
+                        if f in accident_overlays and accident_overlays[f][0] is not None:
                             last_heatmap = accident_overlays[f][0]
                         in_event = a_first is not None and a_first <= f <= a_last
-                        if in_event and last_heatmap is not None:
-                            roi = frame[by1:by2, bx1:bx2]
-                            # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
-                            hm = cv2.resize(last_heatmap, (roi.shape[1], roi.shape[0]))
-                            frame[by1:by2, bx1:bx2] = cv2.addWeighted(
-                                roi, 0.6, hm, 0.4, 0)
+                        if in_event:
+                            if cam_overlay and last_heatmap is not None:
+                                roi = frame[by1:by2, bx1:bx2]
+                                # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
+                                hm = cv2.resize(last_heatmap, (roi.shape[1], roi.shape[0]))
+                                frame[by1:by2, bx1:bx2] = cv2.addWeighted(
+                                    roi, 0.6, hm, 0.4, 0)
                             cv2.rectangle(frame, (bx1, by1),
-                                          (bx2, by2), (0, 0, 255), 3)
-                            _draw_state_label(frame, 1)
+                                          (bx2, by2), (0, 0, 255), box_thick, cv2.LINE_AA)
+                            state = 1
                         else:
                             cv2.rectangle(frame, (bx1, by1),
-                                          (bx2, by2), (0, 255, 0), 2)
-                            _draw_state_label(frame, 0)
-                        writer.write(frame)
+                                          (bx2, by2), (0, 255, 0), box_thick, cv2.LINE_AA)
+                            state = 0
+                        # S/A 는 영상 밖(아래 띠)에 표시 — 차량을 가리지 않게
+                        writer.write(_add_state_bar(frame, state))
                         render_done[0] += 1
                         if render_done[0] % 15 == 0:
                             _report_render()
                     writer.release()
+                    raw_writer.release()
                     # 브라우저 호환 최종본(H.264/mp4)으로 변환
                     clip_path = _finalize_clip(rendered_path, clip_stem)
+                    raw_clip_path = _finalize_clip(raw_rendered, raw_stem)
 
                 # ── 사고 '시점' 확정: 이벤트 구간 내 플로우 최대점(=충격 순간) ──
                 # 모델은 '윈도우 마지막 프레임=충돌 종료'로 학습돼 윈도우 시작
@@ -872,6 +912,7 @@ def predict_events_and_clips(
                     'event_end_frame': end_f,
                     'crash_prob': crash_prob,
                     'clip_path': clip_path,
+                    'raw_clip_path': raw_clip_path,   # 합성 없는 원본 사고 클립(이름 = 클립 + '_raw')
                 })
         finally:
             if render_cap is not None:

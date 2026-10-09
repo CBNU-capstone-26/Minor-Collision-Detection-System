@@ -54,6 +54,7 @@ class EventOut(BaseModel):
     end_frame_number: Optional[int] = None
     crash_prob: Optional[float] = None
     has_clip: bool = False
+    has_raw_clip: bool = False   # 합성 없는 원본 사고 클립을 내려받을 수 있는지
 
 
 class ActiveTaskOut(BaseModel):

@@ -19,6 +19,22 @@ router = APIRouter(prefix="/api/videos", tags=["videos"])
 
 
 # ---------- 직렬화 헬퍼 ----------
+def raw_clip_path(ev: db_models.CrashEvent):
+    """합성 없는 원본 사고 클립 경로 — 분석 때 표시 클립 옆에 '<이름>_raw.mp4' 로 만든다.
+    (DB 컬럼을 늘리지 않으려고 이름 규칙으로 찾는다. 예전 분석 결과엔 없을 수 있다)"""
+    if not ev.cam_heatmap_path:
+        return None
+    p = settings.abs_path(ev.cam_heatmap_path)
+    return p.with_name(f"{p.stem}_raw{p.suffix}")
+
+
+def _unlink_event_clips(ev: db_models.CrashEvent):
+    """이벤트의 표시 클립과 원본 클립 파일을 지운다."""
+    if ev.cam_heatmap_path:
+        settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+        raw_clip_path(ev).unlink(missing_ok=True)
+
+
 def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
     return api_schemas.EventOut(
         id=ev.id,
@@ -28,6 +44,7 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
         has_clip=bool(ev.cam_heatmap_path),
+        has_raw_clip=bool(ev.cam_heatmap_path) and raw_clip_path(ev).exists(),
     )
 
 
@@ -158,8 +175,7 @@ def delete_video(
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.video_id == video_id).all()
     for ev in events:
-        if ev.cam_heatmap_path:
-            settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+        _unlink_event_clips(ev)
         db.delete(ev)
 
     # 2) analysis_tasks 행 삭제
@@ -193,8 +209,7 @@ def delete_crash_event(
     if event is None:
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
 
-    if event.cam_heatmap_path:
-        settings.abs_path(event.cam_heatmap_path).unlink(missing_ok=True)
+    _unlink_event_clips(event)
 
     db.delete(event)
     db.commit()
@@ -214,8 +229,7 @@ def clear_all_crash_events(
     ).all()
     count = len(events)
     for ev in events:
-        if ev.cam_heatmap_path:
-            settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+        _unlink_event_clips(ev)
         db.delete(ev)
     db.commit()
     return {"deleted_count": count}

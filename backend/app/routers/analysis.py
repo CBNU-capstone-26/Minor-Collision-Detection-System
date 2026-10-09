@@ -1,4 +1,6 @@
 """분석 요청 / 태스크 상태 / 이벤트·클립 조회 라우터."""
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -7,7 +9,7 @@ from app.db_connection import get_db
 from app import db_models, api_schemas
 from app.auth_guard import get_current_user
 from app.settings import settings
-from app.routers.videos import to_event_out, _get_owned_video
+from app.routers.videos import to_event_out, _get_owned_video, raw_clip_path
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -180,6 +182,21 @@ def list_events(
         db_models.CrashEvent.video_id == video_id).order_by(
         db_models.CrashEvent.timestamp_sec).all()
     return [to_event_out(e) for e in events]
+
+
+@router.get("/events/{event_id}/clip/raw")
+def download_raw_clip(event_id: int, db: Session = Depends(get_db)):
+    """합성(박스·상태 띠)이 전혀 없는 원본 사고 클립 내려받기.
+    <a href download> 용이라 표시 클립과 마찬가지로 인증 미적용 (MVP)."""
+    event = db.get(db_models.CrashEvent, event_id)
+    path = raw_clip_path(event) if event is not None else None
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404,
+                            detail="원본 클립이 없습니다. 영상을 다시 분석하면 만들어집니다.")
+    t = event.timestamp_sec or 0.0
+    stem = Path(event.video.video_name).stem if event.video else "video"
+    name = f"{stem}_{int(t // 60):02d}분{int(t % 60):02d}초_원본사고클립.mp4"
+    return FileResponse(str(path), media_type="video/mp4", filename=name)
 
 
 @router.get("/events/{event_id}/clip")

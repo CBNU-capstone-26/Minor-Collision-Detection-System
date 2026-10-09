@@ -94,8 +94,9 @@ def run_prediction_task(self, task_id: int):
         db.refresh(task)
         if task.status == "CANCELLED":
             for r in results:
-                if r.get("clip_path"):
-                    Path(r["clip_path"]).unlink(missing_ok=True)
+                for key in ("clip_path", "raw_clip_path"):
+                    if r.get(key):
+                        Path(r[key]).unlink(missing_ok=True)
             return {"task_id": task_id, "skipped": "CANCELLED"}
 
         for r in results:
