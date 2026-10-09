@@ -55,6 +55,7 @@ starlette==1.2.1
 pydantic==2.13.4
 pydantic-core==2.46.4
 python-multipart==0.0.32
+pyjwt==2.15.1  # 로그인 토큰(JWT) 서명·만료
 
 # ---- DB (MySQL) ----
 sqlalchemy==2.0.50

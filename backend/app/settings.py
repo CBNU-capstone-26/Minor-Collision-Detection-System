@@ -3,6 +3,7 @@
 GPU·대용량 스토리지 서버가 없는 환경을 가정한다.
 영상/클립은 프로젝트 루트의 storage/ 폴더(로컬 파일시스템)에 저장한다.
 """
+import functools
 import os
 from pathlib import Path
 
@@ -44,6 +45,11 @@ class Settings:
     )
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 
+    # 로그인 토큰(JWT) 서명 키 · 유효 시간.
+    # 키는 환경변수 AUTH_SECRET_KEY 를 우선 쓰고, 없으면 backend/.auth_secret 에 한 번 만들어
+    # 두고 계속 쓴다(재시작해도 로그인이 유지되도록). 이 파일은 git 에서 제외한다.
+    AUTH_TOKEN_TTL_HOURS: float = float(os.getenv("AUTH_TOKEN_TTL_HOURS", "24"))
+
     # CORS 허용 오리진 (Vite 개발 서버)
     CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
@@ -54,6 +60,26 @@ class Settings:
     def rel_path(self, abs_path) -> str:
         """절대경로 → storage 기준 상대경로 (DB 저장용)"""
         return str(Path(abs_path).resolve().relative_to(self.STORAGE_DIR))
+
+
+@functools.lru_cache(maxsize=1)
+def auth_secret_key() -> str:
+    """JWT 서명 키. 토큰을 쓰는 웹 서버가 처음 필요할 때만 읽거나 만든다
+    (워커가 import 만으로 키 파일을 만들지 않게 — 동시에 뜨면 키가 갈릴 수 있다)."""
+    key = os.getenv("AUTH_SECRET_KEY", "").strip()
+    if key:
+        return key
+    path = Path(__file__).resolve().parents[1] / ".auth_secret"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    import secrets
+    key = secrets.token_hex(32)
+    path.write_text(key, encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return key
 
 
 settings = Settings()

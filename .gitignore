@@ -17,6 +17,9 @@ node_modules/
 dist/
 dist-ssr/
 
+# 로그인 토큰 서명 키(서버마다 따로 생성 — 절대 커밋하지 않는다)
+backend/.auth_secret
+
 # Runtime uploads and generated media
 storage/
 data/
