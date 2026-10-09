@@ -48,7 +48,9 @@ class Settings:
     # 로그인 토큰(JWT) 서명 키 · 유효 시간.
     # 키는 환경변수 AUTH_SECRET_KEY 를 우선 쓰고, 없으면 backend/.auth_secret 에 한 번 만들어
     # 두고 계속 쓴다(재시작해도 로그인이 유지되도록). 이 파일은 git 에서 제외한다.
-    AUTH_TOKEN_TTL_HOURS: float = float(os.getenv("AUTH_TOKEN_TTL_HOURS", "24"))
+    # 기본 8시간(하루 근무) — CCTV 영상(개인정보)을 다루므로 로그인 유지 시간을 짧게 둔다.
+    # 개발할 때 자주 다시 로그인하기 싫으면: AUTH_TOKEN_TTL_HOURS=72 ./dev.sh
+    AUTH_TOKEN_TTL_HOURS: float = float(os.getenv("AUTH_TOKEN_TTL_HOURS", "8"))
 
     # CORS 허용 오리진 (Vite 개발 서버)
     CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
