@@ -30,6 +30,15 @@ async function request(path, { method = "GET", body, isForm = false, signal } = 
     payload = JSON.stringify(body);
   }
   const res = await fetch(`/api${path}`, { method, headers, body: payload, signal });
+  // 로그인이 만료됐거나 토큰이 유효하지 않으면 저장된 로그인 정보를 지우고 로그인 화면으로.
+  // (로그인·회원가입 자체의 401 — 아이디/비밀번호 오류 — 는 화면에 그대로 보여 준다)
+  if (res.status === 401 && !path.startsWith("/auth/login") && !path.startsWith("/auth/signup")) {
+    clearAuth();
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.replace("/login?expired=1");
+    }
+    throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+  }
   if (!res.ok) {
     let detail = `요청 실패 (${res.status})`;
     try {
@@ -71,6 +80,12 @@ export function normalizeVideo(v) {
     height: v.height,
     fps: v.fps,
     events: (v.events || []).map(normalizeEvent),
+    // 분석을 한 번이라도 완료했는지 — 다시 분석할 때 확인 문구를 바꾼다
+    analyzedBefore: !!v.analysis_done,
+    // 가장 최근 분석 작업 — 실패·중단이면 화면이 '다시 실행'을 안내한다
+    lastTask: v.last_task
+      ? { id: v.last_task.task_id, status: v.last_task.status, errorMessage: v.last_task.error_message }
+      : null,
   };
 }
 
@@ -113,6 +128,10 @@ export const api = {
     request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox, signal }),
   taskStatus: (taskId) => request(`/tasks/${taskId}`),
   cancelTask: (taskId) => request(`/tasks/${taskId}/cancel`, { method: "POST" }),
+  // 로그인한 사용자의 대기·진행 중 분석(창을 다시 열 때 진행 상황 복원용)
+  activeTasks: () => request("/tasks/active"),
+  // 실패·취소된 분석을 같은 영상·같은 차량 박스로 다시 실행
+  retryTask: (taskId) => request(`/tasks/${taskId}/retry`, { method: "POST" }),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,
 };
 

@@ -3,6 +3,8 @@
 torch/opencv/모델 임포트는 모두 **태스크 내부에서 지연 로딩**한다.
 → FastAPI 웹 프로세스는 ML 의존성 없이도 이 모듈을 임포트(.delay 호출)할 수 있다.
 """
+from pathlib import Path
+
 from app.worker import celery_app
 from app.settings import settings
 from app.db_connection import SessionLocal
@@ -52,6 +54,10 @@ def run_prediction_task(self, task_id: int):
         task = db.get(db_models.AnalysisTask, task_id)
         if task is None:
             return {"error": f"task {task_id} not found"}
+        # 취소 표시는 워커 메모리(revoke)에만 있어서 워커가 재시작되면 사라지고,
+        # 대기 중이던 메시지가 다시 배달될 수 있다 → DB 상태로 한 번 더 거른다.
+        if task.status != "PENDING":
+            return {"task_id": task_id, "skipped": task.status}
 
         task.status = "PROCESSING"
         db.commit()
@@ -61,15 +67,20 @@ def run_prediction_task(self, task_id: int):
 
         from predict_cam import predict_events_and_clips
 
-        # 추론 진행도를 Celery 상태(Redis)에 기록 → /tasks 엔드포인트가 읽어 프론트에 전달.
-        # pass-1(윈도우 추론)을 0~95%로 매핑(마지막 5%는 클립 렌더/마무리 몫).
-        _last_pct = {"v": -1}
+        # 진행률(%)과 남은 시간(초)을 Celery 상태(Redis)에 기록 → /tasks 가 읽어 화면에 전달.
+        # 진행률은 0~99 — 100%는 작업 완료(SUCCESS)로만 표시한다. 남은 시간은 분석 함수가
+        # 실제로 잰 속도로 계산해 주며, 진행률이 그대로여도 1.5초마다 갱신해 준다.
+        import time as _time
+        _last = {"pct": -1, "t": 0.0}
 
-        def _on_progress(frac):
-            pct = int(frac * 95)
-            if pct != _last_pct["v"]:      # 정수 % 바뀔 때만 기록(과도한 갱신 방지)
-                _last_pct["v"] = pct
-                self.update_state(state="PROGRESS", meta={"percent": pct})
+        def _on_progress(frac, eta=None, eta_min=False):
+            pct = min(99, int(frac * 100))
+            now = _time.time()
+            if pct != _last["pct"] or now - _last["t"] >= 1.5:
+                _last.update(pct=pct, t=now)
+                self.update_state(state="PROGRESS", meta={
+                    "percent": pct, "eta": None if eta is None else int(round(eta)),
+                    "eta_min": bool(eta_min)})
 
         results = predict_events_and_clips(
             model,
@@ -78,6 +89,14 @@ def run_prediction_task(self, task_id: int):
             output_dir=settings.CLIP_DIR,
             progress_callback=_on_progress,
         )
+
+        # 분석 도중 취소됐는데(revoke 실패 등) 끝까지 돌았다면 결과를 버린다
+        db.refresh(task)
+        if task.status == "CANCELLED":
+            for r in results:
+                if r.get("clip_path"):
+                    Path(r["clip_path"]).unlink(missing_ok=True)
+            return {"task_id": task_id, "skipped": "CANCELLED"}
 
         for r in results:
             db.add(db_models.CrashEvent(

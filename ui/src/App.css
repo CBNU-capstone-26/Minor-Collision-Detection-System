@@ -4687,7 +4687,7 @@ body.dark-mode .upload-cancel-btn:disabled {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 220px;
+  min-width: 340px; /* '서버에 분석을 요청하는 중'이 잘리지 않게 */
 }
 
 .analysis-status-info {
@@ -4758,7 +4758,7 @@ body.dark-mode .upload-cancel-btn:disabled {
   top: calc(100% + 8px);
   right: 0;
   z-index: 50;
-  width: 320px;
+  width: 400px; /* 오른쪽 상태 칸에 '서버에 분석을 요청하는 중'이 들어가도록 */
   max-height: 320px;
   overflow-y: auto;
   background: #ffffff;
@@ -4867,6 +4867,7 @@ body.dark-mode .auto-detect-btn.detecting:hover {
 .analysis-job-pct {
   color: #2563eb;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .analysis-job-eta {
@@ -6905,4 +6906,44 @@ body.dark-mode .public-footer {
 
 .footer-links a:hover {
   color: var(--public-green);
+}
+
+/* 마지막 분석 실패·중단 안내 + 다시 실행 */
+.analysis-failed-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fff4e5;
+  border: 1px solid #f5c26b;
+  color: #8a5300;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.analysis-retry-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #d98a00;
+  background: #ffffff;
+  color: #8a5300;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.analysis-retry-btn:hover {
+  background: #ffe8c2;
+}
+
+body.dark-mode .analysis-failed-banner {
+  background: #3a2a10;
+  border-color: #7a5a20;
+  color: #ffd28a;
+}
+
+body.dark-mode .analysis-retry-btn {
+  background: #2a2010;
+  color: #ffd28a;
+  border-color: #a07020;
 }

@@ -3,6 +3,7 @@ import queue
 import shutil
 import subprocess
 import threading
+import time
 import cv2
 import torch
 import numpy as np
@@ -28,10 +29,16 @@ activation = {}
 
 # 진행도(0.0~1.0) 구간 배분 — 단계마다 '실제' 진행도를 보고해 UI가 가짜 추정을
 # 쓰지 않게 한다(가짜 추정 → 실제값 전환 시 진행바가 뒤로 점프하는 문제 방지).
-PROG_DECODE_END = 0.25    # 프레임 디코딩/크롭
-PROG_FLOW_END = 0.30      # 광학흐름(충격 시점 판정용)
-PROG_COARSE_END = 0.60    # 거친 탐색(10프레임 간격)
-PROG_INFER_END = 0.95     # 3D-CNN 윈도우 추론
+# 진행률 보고: 남은 시간(초)은 실제로 잰 속도(창 하나 추론 시간, 클립 프레임 처리 시간)로
+# 계산하고, 진행률은 '경과 ÷ (경과 + 남은 시간)'으로 낸다. 예전처럼 단계마다 고정 몫을
+# 주면 실제 시간과 크게 어긋났다(TA_0002 실측: 영상 읽기는 전체 시간의 0.3%인데 막대
+# 24%, 촘촘한 탐색은 80%인데 막대 33% → 남은 시간이 초반엔 짧게, 끝에는 길게 나옴).
+# 추론 속도를 재기 전(영상 읽기·광학흐름)에는 아래 작은 고정값만 쓴다.
+PROG_DECODE_END = 0.02    # 프레임 디코딩/크롭
+PROG_FLOW_END = 0.03      # 광학흐름(충격 시점 판정용)
+# 클립 렌더링 속도를 재기 전 쓰는 추정값: 프레임당 시간 ≈ 디코딩·크롭 시간의 이 배수
+# (원본 해상도 디코딩 + 히트맵 합성 + 인코딩 + H.264 변환; TA_0002 CPU 실측 약 8배)
+RENDER_COST_PER_DECODE = 8.0
 # 0.95~1.0 = 사고구간 CAM 클립 렌더링
 
 
@@ -534,12 +541,26 @@ def predict_events_and_clips(
             first_frame, target_bbox, r_value, resize)
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-        # 디코딩 단계도 실제 진행도로 보고한다(0~PROG_DECODE_END).
-        # 이게 없으면 긴 영상에서 '진행도 없음' 구간이 길어져 UI가 가짜 추정을
-        # 쓰게 되고, 이후 실제 진행도가 오면 진행바가 뒤로 점프한다.
+        t_begin = time.time()
+
+        def _report(frac=None, eta=None, eta_min=False):
+            """진행률(0~1)과 남은 시간(초, 아직 모르면 None)을 보고한다.
+            남은 시간을 알면 진행률은 경과 ÷ (경과 + 남은 시간) — 막대와 남은 시간이
+            같은 기준으로 움직인다. 100%는 작업 완료(SUCCESS)로만 표시되게 0.99에서 멈춘다.
+            eta_min=True 는 '최소 이만큼'이라는 뜻(거친 탐색 중 — 촘촘히 볼 창 수를 아직 모름)."""
+            if progress_callback is None:
+                return
+            if eta is not None:
+                eta = max(0.0, float(eta))
+                elapsed = time.time() - t_begin
+                frac = min(0.99, elapsed / max(1e-6, elapsed + eta))
+            progress_callback(frac or 0.0, eta, eta_min)
+
+        # 디코딩 단계도 진행도를 보고한다(0~PROG_DECODE_END, 남은 시간은 아직 모름).
         total_frames_hint = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         _decoded = 0
         _last_decode_report = -1
+        t_decode = time.time()
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -549,13 +570,14 @@ def predict_events_and_clips(
                 frame_rgb, target_bbox, r_value, resize)
             processed_frames.append(processed)
             _decoded += 1
-            if progress_callback is not None and total_frames_hint > 0:
-                frac = PROG_DECODE_END * min(1.0, _decoded / total_frames_hint)
-                step = int(frac * 100)
-                if step != _last_decode_report:   # 정수 %마다만 보고
+            if total_frames_hint > 0:
+                step = int(100 * _decoded / total_frames_hint)
+                if step != _last_decode_report:   # 디코딩 1%마다만 보고
                     _last_decode_report = step
-                    progress_callback(frac)
+                    _report(PROG_DECODE_END * min(1.0, _decoded / total_frames_hint))
         cap.release()
+        # 클립 렌더링 시간 추정의 기준(프레임당 디코딩·크롭 시간)
+        decode_sec_per_frame = (time.time() - t_decode) / max(1, _decoded)
 
         if not processed_frames:
             return []
@@ -595,17 +617,35 @@ def predict_events_and_clips(
         )
         flow_mag, flow_mag_roi = _flow_magnitude_series(
             processed_frames, clip_length, roi=_roi)
-        if progress_callback is not None:
-            progress_callback(PROG_FLOW_END)
+        _report(PROG_FLOW_END)
 
-        def _run_windows(starts, prog_lo, prog_hi):
-            """starts 의 창들을 3D-CNN 에 넣어 예측·P(A)·CAM 을 채운다."""
+        # 남은 시간 계산용: 창 하나 추론에 걸린 '누적' 평균 시간을 잰다. 첫 묶음은 모델
+        # 준비(첫 호출 오버헤드)가 섞여 느리므로 속도 계산에서 뺀다. (최근 묶음 위주의 이동
+        # 평균은 CPU에서 묶음마다 시간이 들쭉날쭉해 오히려 오차가 컸다 — 두 영상 실측 비교)
+        speed = {"n": 0, "sec": 0.0, "first": True}
+        near_set = set()        # 거친 탐색 중 지금까지 찾은 의심 창 주변(촘촘히 볼 후보)
+        coarse_done = [0]
+        last_start = window_starts[-1] if window_starts else 0
+
+        def _est_refine(k_step):
+            """거친 탐색 도중, 끝나고 촘촘히 볼 창 수 — 지금까지 찾은 의심 위치 주변만 센다
+            (이미 본 거친 창은 뺀다). 남은 비율만큼 늘려 잡으면 의심 위치가 앞쪽에 몰린 영상에서
+            크게 과대 추정됐다(실측: TA_0002 최대 +690초 → 찾은 만큼만 셀 때 +145초).
+            앞으로 찾을 의심 위치는 모르므로 이 값은 '최소' 추정이다."""
+            return int(len(near_set) * (1 - 1 / k_step))
+
+        def _run_windows(starts, coarse_k=0):
+            """starts 의 창들을 3D-CNN 에 넣어 예측·P(A)·CAM 을 채운다.
+            coarse_k > 0 이면 거친 탐색 단계 — 의심 창 주변을 모아 남은 시간 추정에 쓴다."""
             with torch.inference_mode():
                 for batch_start in range(0, len(starts), infer_batch_size):
-                    # 실제 추론 진행도 보고 (prog_lo~prog_hi 구간에 매핑)
-                    if progress_callback is not None:
-                        frac = batch_start / max(1, len(starts))
-                        progress_callback(prog_lo + (prog_hi - prog_lo) * frac)
+                    # 남은 시간 = 남은 창 × 창 하나 평균 시간 (+ 거친 탐색이면 촘촘히 볼 창 추정)
+                    if speed["n"] > 0:
+                        per = speed["sec"] / speed["n"]
+                        more = _est_refine(coarse_k) if coarse_k > 1 else 0
+                        _report(eta=(len(starts) - batch_start + more) * per,
+                                eta_min=coarse_k > 1)
+                    t_batch = time.time()
                     batch_window_starts = starts[
                         batch_start:batch_start + infer_batch_size]
                     clips = torch.stack(
@@ -646,6 +686,19 @@ def predict_events_and_clips(
                             ]
                             accident_overlays[disp_idx] = (heatmap_bbox, prob)
 
+                        if coarse_k > 1 and window_pA[window_idx] > coarse_prob:
+                            lo = max(0, window_idx - coarse_pad)
+                            lo += (-lo) % window_stride       # 창 시작 격자에 맞춘다
+                            near_set.update(range(lo, min(last_start, window_idx + coarse_pad) + 1,
+                                                  window_stride))
+                    if coarse_k > 1:
+                        coarse_done[0] += len(batch_window_starts)
+                    if speed["first"]:
+                        speed["first"] = False
+                    else:
+                        speed["n"] += len(batch_window_starts)
+                        speed["sec"] += time.time() - t_batch
+
         # [2단계] 거친 탐색 → 의심 구간만 촘촘히 (멀티-아워 영상에서 3D-CNN 호출을 줄인다)
         #   1) coarse_step 프레임 간격의 창만 먼저 본다(영상 끝 창도 포함).
         #   2) P(A) > coarse_prob 인 창 주변 ±coarse_pad 프레임의 창을 모두 본다.
@@ -656,8 +709,7 @@ def predict_events_and_clips(
         coarse = window_starts[::k]
         if coarse[-1] != window_starts[-1]:
             coarse.append(window_starts[-1])
-        _run_windows(coarse, PROG_FLOW_END,
-                     PROG_COARSE_END if k > 1 else PROG_INFER_END)
+        _run_windows(coarse, coarse_k=k)
         hot = [w for w in coarse if window_pA[w] > coarse_prob]
         refine = []
         if k > 1 and hot:
@@ -666,7 +718,7 @@ def predict_events_and_clips(
                 near[max(0, h - coarse_pad):h + coarse_pad + 1] = True
             refine = [w for w in window_starts
                       if near[w] and w not in window_pred]
-            _run_windows(refine, PROG_COARSE_END, PROG_INFER_END)
+            _run_windows(refine)
         print(f"[2단계] 거친 탐색 {len(coarse)}개(간격 {k * window_stride}) → "
               f"의심 {len(hot)}개 주변 {len(refine)}개 추가 | 전체 "
               f"{len(window_starts)} 윈도우 중 3D-CNN 평가 {len(window_pred)}개 "
@@ -721,12 +773,24 @@ def predict_events_and_clips(
         base_name = os.path.splitext(os.path.basename(video_path))[0]
         render_cap = (cv2.VideoCapture(video_path)
                       if (events and render_clips) else None)
+        # 클립 렌더링 남은 시간 = 남은 프레임 × 프레임당 시간(재기 전엔 디코딩 기준 추정)
+        render_total = sum(
+            min(real_frame_count - 1, e['end_frame'] + clip_pad_frames)
+            - max(0, e['start_frame'] - clip_pad_frames) + 1
+            for e in events) if render_clips else 0
+        render_done = [0]
+        t_render = time.time()
+
+        def _report_render():
+            if render_done[0] >= 15:
+                per = (time.time() - t_render) / render_done[0]
+            else:
+                per = decode_sec_per_frame * RENDER_COST_PER_DECODE
+            _report(eta=(render_total - render_done[0]) * per)
+
         try:
             for ev_idx, ev in enumerate(events, 1):
-                if progress_callback is not None:
-                    progress_callback(
-                        PROG_INFER_END
-                        + (1.0 - PROG_INFER_END) * ((ev_idx - 1) / len(events)))
+                _report_render()
                 start_f = ev['start_frame']
                 end_f = ev['end_frame']
                 clip_start = max(0, start_f - clip_pad_frames)
@@ -774,6 +838,9 @@ def predict_events_and_clips(
                                           (bx2, by2), (0, 255, 0), 2)
                             _draw_state_label(frame, 0)
                         writer.write(frame)
+                        render_done[0] += 1
+                        if render_done[0] % 15 == 0:
+                            _report_render()
                     writer.release()
                     # 브라우저 호환 최종본(H.264/mp4)으로 변환
                     clip_path = _finalize_clip(rendered_path, clip_stem)
@@ -810,6 +877,7 @@ def predict_events_and_clips(
             if render_cap is not None:
                 render_cap.release()
 
+        _report(eta=0.0)
         print(f"[predict_events_and_clips] {len(results)}건 사고구간 클립 생성")
         return results
 

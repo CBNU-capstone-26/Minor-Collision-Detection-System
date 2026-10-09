@@ -47,7 +47,18 @@ def to_video_out(v: db_models.Video) -> api_schemas.VideoOut:
         detected_vehicles=v.detected_vehicles,
         created_at=v.created_at,
         events=[to_event_out(e) for e in v.crash_events],
+        last_task=_last_task_out(v),
+        analysis_done=any(t.status == "SUCCESS" for t in v.analysis_tasks),
     )
+
+
+def _last_task_out(v: db_models.Video):
+    """가장 최근 분석 작업(없으면 None)."""
+    if not v.analysis_tasks:
+        return None
+    t = max(v.analysis_tasks, key=lambda x: x.id)
+    return api_schemas.LastTaskOut(task_id=t.id, status=t.status,
+                                   error_message=t.error_message, created_at=t.created_at)
 
 
 

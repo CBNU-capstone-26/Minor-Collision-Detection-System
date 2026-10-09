@@ -26,11 +26,15 @@ function AppLoadingScreen() {
   );
 }
 
+// 로그인이 만료돼 돌아왔으면(/login?expired=1) 로그인 창을 열고 안내한다
+const AUTH_EXPIRED_MSG = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+const cameFromExpiredLogin = () => new URLSearchParams(window.location.search).has("expired");
+
 function LoginPage({ onLogin }) {
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
-  const [error, setError] = useState("");
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [error, setError] = useState(() => (cameFromExpiredLogin() ? AUTH_EXPIRED_MSG : ""));
+  const [isLoginOpen, setIsLoginOpen] = useState(cameFromExpiredLogin);
   const [isSignupOpen, setIsSignupOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -925,6 +929,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [now, setNow] = useState(() => Date.now()); // 진행률 계산용 현재시각(0.5s마다 갱신)
   const selectedVideoIdRef = useRef(null); // 폴링 중 최신 선택 영상 추적(stale closure 방지)
   const progressMaxRef = useRef({}); // 작업별 최대 진행률(진행바가 뒤로 가지 않게)
+  const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 간다
+  const pollingRef = useRef(new Set()); // 이미 상태를 확인 중인 작업(중복 폴링 방지)
   const [clipEvent, setClipEvent] = useState(null); // CAM 클립 팝업 대상 이벤트
 
   // 업로드 모달
@@ -1191,6 +1197,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const handleDeleteEvent = async (eventId, e) => {
     if (e) e.stopPropagation();
     if (!selectedVideo) return;
+    // 서버가 이벤트와 함께 CAM 클립 파일도 지우므로 한 번 확인받는다
+    if (!window.confirm("이 사고 구간의 클립 영상을 삭제하시겠습니까? 삭제하면 되돌릴 수 없습니다.")) return;
     try {
       await api.deleteEvent(selectedVideo.id, eventId);
       setSelectedVideo((prev) =>
@@ -1335,13 +1343,33 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const removeJob = (taskId) =>
     setAnalyzingJobs((prev) => prev.filter((j) => j.taskId !== taskId));
 
+  // 분석이 끝났을 때: 화면 안 토스트 + 다른 탭·창을 보고 있으면 브라우저 알림
+  const notifyDone = (title, body, type) => {
+    showToast(`${title}: ${body}`, type);
+    try {
+      if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body, icon: "/siot-logo.svg" });
+      }
+    } catch {
+      /* 브라우저 알림을 못 띄워도 토스트는 이미 표시됨 */
+    }
+  };
+
   const pollTask = (taskId, analyzedId) => {
+    if (pollingRef.current.has(taskId)) return; // 같은 작업을 두 번 폴링하지 않는다
+    pollingRef.current.add(taskId);
+    const finish = () => {
+      pollingRef.current.delete(taskId);
+      removeJob(taskId);
+    };
     const poll = async () => {
+      if (!aliveRef.current) return; // 화면이 닫히면 멈춤 — 다시 열리면 복원하면서 새로 시작
       try {
         const status = await api.taskStatus(taskId);
+        if (!aliveRef.current) return;
         if (status.status === "SUCCESS") {
-          removeJob(taskId);
-          showToast(`분석 완료: 사고 의심 구간 ${status.events.length}건`, "success");
+          finish();
+          notifyDone("분석 완료", `사고 의심 구간 ${status.events.length}건`, "success");
           // 분석한 영상을 아직 보고 있을 때만 화면 갱신 (다른 영상으로 이동했으면 덮어쓰지 않음)
           if (selectedVideoIdRef.current === analyzedId) {
             const v = await api.getVideo(analyzedId);
@@ -1351,29 +1379,99 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           return;
         }
         if (status.status === "FAILURE") {
-          removeJob(taskId);
-          showToast(`분석 실패: ${status.error_message || "오류"}`, "error");
+          finish();
+          notifyDone("분석 실패", status.error_message || "오류", "error");
+          if (selectedVideoIdRef.current === analyzedId) {
+            const v = await api.getVideo(analyzedId); // '다시 실행' 안내를 띄우기 위해 갱신
+            setSelectedVideo(v);
+          }
           return;
         }
         if (status.status === "CANCELLED") {
-          removeJob(taskId);
+          finish();
           showToast("사고 감지 분석이 취소되었습니다.", "info");
           return;
         }
-        // 백엔드가 실제 추론 진행도(%)를 주면 해당 job에 반영
-        if (typeof status.progress === "number") {
-          setAnalyzingJobs((prev) =>
-            prev.map((j) =>
-              j.taskId === taskId ? { ...j, progress: status.progress } : j));
-        }
+        // 진행도(%)와 서버가 실제로 잰 속도 기준의 남은 시간(초)을 반영한다.
+        // 받은 시각(etaAt)을 같이 저장해 다음 확인 전까지 화면에서 1초씩 줄여 보여 준다.
+        const receivedAt = Date.now();
+        setAnalyzingJobs((prev) =>
+          prev.map((j) => {
+            if (j.taskId !== taskId) return j;
+            const next = { ...j, status: status.status };
+            if (typeof status.progress === "number") next.progress = status.progress;
+            next.etaSec = status.eta_sec ?? null;
+            next.etaMin = !!status.eta_is_min;
+            next.etaAt = receivedAt;
+            return next;
+          }));
         setTimeout(poll, 2000); // PENDING/PROCESSING → 재시도
       } catch (e) {
-        removeJob(taskId);
+        finish();
         showToast(`상태 조회 실패: ${e.message}`, "error");
       }
     };
     poll();
   };
+
+  // 실패·중단된 마지막 분석을 같은 차량 박스로 다시 실행
+  const handleRetryAnalysis = async () => {
+    const last = selectedVideo?.lastTask;
+    if (!last) return;
+    const videoIdForJob = selectedVideo.id;
+    try {
+      const res = await api.retryTask(last.id);
+      const job = {
+        taskId: res.task_id,
+        videoId: videoIdForJob,
+        dateLabel: selectedVideo.date,
+        cameraLabel: selectedVideo.camera,
+        status: res.status,
+      };
+      showToast(res.already_running ? "이 영상은 이미 분석 중입니다." : "분석을 다시 시작했습니다.", "info");
+      setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === res.task_id) ? prev : [...prev, job]));
+      pollTask(res.task_id, videoIdForJob);
+      setSelectedVideo((v) =>
+        v ? { ...v, lastTask: { id: res.task_id, status: res.status, errorMessage: null } } : v);
+    } catch (e) {
+      showToast(`다시 실행 실패: ${e.message}`, "error");
+    }
+  };
+
+  // 화면이 열릴 때(새로고침·재접속 포함) 서버에 남아 있는 내 분석을 복원해 이어서 추적한다.
+  // 분석 목록은 브라우저 메모리에만 있어서, 이게 없으면 창을 닫았다 열었을 때 진행 중인
+  // 분석이 사라진 것처럼 보이고 같은 영상을 다시 요청하게 된다.
+  useEffect(() => {
+    aliveRef.current = true;
+    (async () => {
+      try {
+        const tasks = await api.activeTasks();
+        if (!aliveRef.current) return;
+        tasks.forEach((t) => {
+          const job = {
+            taskId: t.task_id,
+            videoId: t.video_id,
+            dateLabel: t.recording_date || (t.created_at || "").slice(0, 10),
+            cameraLabel: t.camera_location,
+            startedAt: Date.now(),
+            status: t.status,
+            progress: t.progress ?? undefined,
+            etaSec: t.eta_sec ?? null,
+            etaMin: !!t.eta_is_min,
+            etaAt: Date.now(),
+          };
+          setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === t.task_id) ? prev : [...prev, job]));
+          pollTask(t.task_id, t.video_id);
+        });
+      } catch {
+        /* 복원 실패는 치명적이지 않다 — 새 분석 요청은 그대로 동작 */
+      }
+    })();
+    return () => {
+      aliveRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 확인 팝오버에서 '실행' → bbox 원본해상도 환산 후 분석 요청
   const runDetection = async () => {
@@ -1415,13 +1513,28 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       startedAt: Date.now(),
     };
 
+    // 분석이 끝나면 다른 탭에 있어도 알려 주도록 처음 한 번 알림 권한을 묻는다
+    try {
+      if ("Notification" in window && Notification.permission === "default") {
+        const r = Notification.requestPermission();
+        if (r && r.catch) r.catch(() => {});
+      }
+    } catch {
+      /* 알림을 지원하지 않는 브라우저 — 토스트만 쓴다 */
+    }
+
     const controller = new AbortController();
     analyzeAbortControllerRef.current = controller;
 
     try {
       const res = await api.analyze(analyzedId, bbox, controller.signal);
       job.taskId = res.task_id;
-      setAnalyzingJobs((prev) => [...prev, job]);
+      job.status = res.status;
+      if (res.already_running) {
+        // 같은 영상에 이미 대기·진행 중인 분석이 있으면 서버가 새로 만들지 않고 그 작업을 준다
+        showToast("이 영상은 이미 분석 중입니다. 진행 상황을 이어서 보여드릴게요.", "info");
+      }
+      setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === res.task_id) ? prev : [...prev, job]));
       pollTask(res.task_id, analyzedId);
     } catch (e) {
       if (e.name === "AbortError") {
@@ -1503,16 +1616,34 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 백엔드가 디코딩·선별·추론·렌더링 전 단계에서 '실제' 진행도를 보고하므로
   // 가짜 시간기반 추정을 만들지 않는다. (예전엔 정적 공식으로 큰 예상시간을
   // 띄우다가 실제 진행도가 도착하면 진행바가 뒤로 점프하는 문제가 있었다.)
+  // 남은 시간 표시: 1분 넘으면 분·초, 1시간 넘으면 시간·분.
+  // isMin: 거친 탐색 중이라 촘촘히 볼 구간 수를 아직 몰라 '최소 이만큼'인 경우 → '이상'
+  const formatRemain = (sec, isMin = false) => {
+    const tail = isMin ? "이상 남음" : "남음";
+    if (sec <= 1 && !isMin) return "곧 완료";
+    if (sec < 60) return `약 ${Math.max(1, sec)}초 ${tail}`;
+    if (sec < 3600) {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return s ? `약 ${m}분 ${s}초 ${tail}` : `약 ${m}분 ${tail}`;
+    }
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return m ? `약 ${h}시간 ${m}분 ${tail}` : `약 ${h}시간 ${tail}`;
+  };
+
   const jobProgress = (job) => {
     const key = job.taskId ?? job.videoId;
-    const elapsed = (now - job.startedAt) / 1000;
     const hasReal = typeof job.progress === "number" && job.progress > 0;
+    // 단계: 요청(서버 대기열에서 차례를 기다림) → 준비(모델 로드·영상 읽기) → 진행(실제 %)
+    // 다른 사용자의 작업 정보는 드러내지 않으므로 대기 순번은 보여 주지 않는다.
+    const stage = hasReal ? "running" : job.status === "PENDING" ? "queued" : "starting";
 
-    // 실제 진행도가 오기 전 = 준비 중(불확정). 숫자 ETA를 지어내지 않는다.
     let pct = hasReal ? Math.min(99, job.progress) : 0;
-    // 남은 시간은 '측정된 속도'로만 역산 → 2단계로 빨라져도 자동으로 맞춰짐
-    const remain = hasReal
-      ? Math.max(0, Math.ceil((elapsed * (100 - job.progress)) / job.progress))
+    // 남은 시간: 서버가 실제로 잰 처리 속도로 계산한 값(etaSec)을 받은 시각부터 1초씩 줄인다.
+    // 서버가 아직 속도를 재기 전(영상 읽기 중)이면 null → '남은 시간 계산 중'.
+    const remain = hasReal && job.etaSec != null && job.etaAt != null
+      ? Math.max(0, Math.round(job.etaSec - (now - job.etaAt) / 1000))
       : null;
 
     // 진행바는 절대 뒤로 가지 않게 단조 증가로 고정
@@ -1520,7 +1651,20 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     pct = Math.max(prevMax, pct);
     progressMaxRef.current[key] = pct;
 
-    return { pct, remain, preparing: !hasReal };
+    const remainText = remain == null ? "남은 시간 계산 중…" : formatRemain(remain, !!job.etaMin);
+    // 상단 대표 칸: 진행 중이면 '% · 남은 시간'
+    const statusText =
+      stage === "queued" ? "서버에 분석을 요청하는 중"
+        : stage === "starting" ? "분석 준비 중…"
+          : `${Math.round(pct)}% · ${remainText}`;
+    // 서버 병목으로 기다린다는 걸 알리는 게 목적이라, 요청 단계 문구는 줄이지 않는다
+    const shortText =
+      stage === "queued" ? "서버에 분석을 요청하는 중" : stage === "starting" ? "준비 중" : `${Math.round(pct)}%`;
+    // 펼친 목록의 아랫줄 — 윗줄(짧은 칸)과 겹치지 않게
+    const detailText =
+      stage === "queued" ? "서버의 앞선 분석이 끝나면 자동으로 시작됩니다"
+        : stage === "starting" ? "분석 준비 중…" : remainText;
+    return { pct, remain, preparing: stage !== "running", stage, statusText, shortText, detailText };
   };
 
   // 오버레이 div 안에서 실제 영상 콘텐츠가 차지하는 영역(object-fit:contain 레터박스)과
@@ -1572,7 +1716,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             </div>
           ) : (() => {
             const lead = analyzingJobs[0];
-            const { pct, remain, preparing } = jobProgress(lead);
+            const { pct, preparing, statusText } = jobProgress(lead);
             return (
               <div className="analysis-status-box">
                 <div className="analysis-status-main">
@@ -1581,7 +1725,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       🔍 {lead.dateLabel} 분석 중
                     </span>
                     <span className="analysis-status-eta">
-                      {preparing ? "분석 준비 중…" : `약 ${remain}초 남음`}
+                      {statusText}
                     </span>
                   </div>
                   <div className="analysis-progress-track">
@@ -1620,7 +1764,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                               </span>
                               <div className="analysis-job-top-right">
                                 <span className="analysis-job-pct">
-                                  {p.preparing ? "준비 중" : `${Math.round(p.pct)}%`}
+                                  {p.shortText}
                                 </span>
                                 <button
                                   className="analysis-job-cancel-btn"
@@ -1638,7 +1782,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                               />
                             </div>
                             <span className="analysis-job-eta">
-                              {p.preparing ? "남은 시간 계산 중…" : `약 ${p.remain}초 남음`}
+                              {p.detailText}
                             </span>
                           </div>
                         );
@@ -1949,6 +2093,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
 
 
+                {/* 마지막 분석이 실패·중단됐으면 같은 차량 박스로 다시 실행하도록 안내 */}
+                {!isAnalyzing && selectedVideo?.lastTask?.status === "FAILURE" && (
+                  <div
+                    className="analysis-failed-banner"
+                    role="status"
+                    title={selectedVideo.lastTask.errorMessage || ""}
+                  >
+                    <span>
+                      {(selectedVideo.lastTask.errorMessage || "").startsWith("분석 서버가 재시작")
+                        ? "⚠️ 서버 재시작으로 분석이 중단됐습니다"
+                        : "⚠️ 마지막 분석이 실패했습니다"}
+                    </span>
+                    <button className="analysis-retry-btn" onClick={handleRetryAnalysis}>
+                      다시 실행
+                    </button>
+                  </div>
+                )}
+
                 {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
                 <div className="detect-btn-wrapper">
                   {isAnalyzing ? (
@@ -1980,7 +2142,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       />
                       <div className="detect-popover">
                         <p className="detect-popover-text">
-                          현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?
+                          {selectedVideo?.analyzedBefore
+                            ? "이미 분석을 완료한 영상입니다. 다시 분석을 실행하시겠습니까?"
+                            : "현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?"}
                         </p>
                         <div className="detect-popover-actions">
                           <button className="detect-popover-run" onClick={runDetection}>
