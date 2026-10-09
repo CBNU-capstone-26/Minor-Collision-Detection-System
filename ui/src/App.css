@@ -4502,32 +4502,8 @@ body.dark-mode .detect-popover-run:hover {
 }
 
 /* CAM 클립 팝업 */
-.clip-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.clip-modal {
-  width: min(880px, 92vw);
-  background: #0f172a;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
-}
 
-.clip-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  color: #e2e8f0;
-  font-weight: 700;
-}
 
 .clip-modal-close {
   background: transparent;
@@ -4550,12 +4526,6 @@ body.dark-mode .clip-modal-close:hover {
   color: #00e699;
 }
 
-.clip-modal-video {
-  width: 100%;
-  display: block;
-  background: #000;
-  max-height: 70vh;
-}
 
 /* 업로드 모달 */
 .upload-modal {
@@ -6970,7 +6940,7 @@ body.dark-mode .analysis-retry-btn {
   border-radius: 50%;
   background: rgba(239, 68, 68, 0.12);
   border: 1px solid rgba(239, 68, 68, 0.3);
-  font-size: 22px;
+  color: #ef4444; /* 휴지통 아이콘(currentColor) 색 */
 }
 
 .confirm-modal-title {
@@ -7041,4 +7011,202 @@ body.dark-mode .confirm-modal-desc {
 
 body.dark-mode .confirm-danger-btn {
   box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
+}
+
+/* 사고구간 클립 창 — 영상 보기라 눈부시지 않게 밝은 모드에서도 어두운 카드를 쓴다
+   (다크모드는 아래 body.dark-mode 규칙의 남색) */
+.clip-modal {
+  width: min(920px, 94vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f172a;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  animation: confirmPop 0.18s ease-out;
+  border: 1px solid #1e293b;
+}
+
+.clip-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+}
+
+.clip-modal-title {
+  margin: 0 0 8px;
+  font-size: 19px;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.clip-modal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clip-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.clip-chip-danger {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+
+.clip-close-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.clip-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+}
+
+.clip-video-frame {
+  margin: 0 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000000;
+}
+
+.clip-modal-video {
+  display: block;
+  width: 100%;
+  max-height: 66vh;
+  background: #000000;
+}
+
+.clip-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px 18px;
+}
+
+.clip-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 14px;
+  color: #94a3b8;
+}
+
+.clip-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.clip-legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 2px solid;
+  box-sizing: border-box;
+}
+
+.clip-legend-a {
+  border-color: #ef4444;
+}
+
+.clip-legend-s {
+  border-color: #22c55e;
+}
+
+/* 원본 다운로드 — 어두운 카드 위 옅은 버튼(다크모드는 앱 강조색 초록) */
+.clip-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 14.5px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: none;
+  transition: opacity 0.15s ease;
+}
+
+.clip-download-btn:hover {
+  opacity: 0.88;
+}
+
+.clip-download-unavailable {
+  font-size: 13.5px;
+  color: #64748b;
+  white-space: nowrap;
+  cursor: help;
+}
+
+body.dark-mode .clip-modal {
+  background: #0d1520;
+  border: 1px solid #1a2a3c;
+}
+
+body.dark-mode .clip-modal-title {
+  color: #e2e8f0;
+}
+
+body.dark-mode .clip-chip {
+  background: #121d2b;
+  color: #94a3b8;
+}
+
+body.dark-mode .clip-chip-danger {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+}
+
+body.dark-mode .clip-close-btn {
+  color: #7e91a6;
+}
+
+body.dark-mode .clip-close-btn:hover {
+  background: #121d2b;
+  color: #e2e8f0;
+}
+
+body.dark-mode .clip-legend {
+  color: #7e91a6;
+}
+
+body.dark-mode .clip-download-btn {
+  background: #00e699;
+  color: #080d14;
+  font-weight: 800;
+  box-shadow: 0 0 16px rgba(0, 230, 153, 0.35);
+}
+
+/* 클립 창 바깥 배경은 다른 창보다 더 어둡게 — 영상 주변 밝기를 낮춘다 */
+.clip-viewer-overlay {
+  background: rgba(2, 6, 23, 0.72);
 }

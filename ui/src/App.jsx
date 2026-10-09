@@ -10,6 +10,30 @@ import {
 import { api, saveAuth, clearAuth, getToken, getStoredUser } from "./api";
 import "./App.css";
 
+// 선으로 그린 휴지통 아이콘 — 글자색(currentColor)을 따라가서 평소 회색 → 마우스 올리면 빨강.
+// (🗑 이모지는 자체 색이라 hover 색이 안 먹고, 운영체제마다 모양이 달랐다)
+function TrashIcon({ size = 14 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
 function AppLoadingScreen() {
   return (
     <div className="app-splash-screen">
@@ -931,7 +955,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const progressMaxRef = useRef({}); // 작업별 최대 진행률(진행바가 뒤로 가지 않게)
   const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 간다
   const pollingRef = useRef(new Set()); // 이미 상태를 확인 중인 작업(중복 폴링 방지)
-  const [clipEvent, setClipEvent] = useState(null); // CAM 클립 팝업 대상 이벤트
+  const [clipEvent, setClipEvent] = useState(null); // 사고 클립 팝업 대상 이벤트
   const [pendingDeleteEvent, setPendingDeleteEvent] = useState(null); // 삭제 확인 창 대상 이벤트
 
   // 업로드 모달
@@ -2228,20 +2252,21 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                                   if (event.hasClip) {
                                     setClipEvent(event);
                                   } else {
-                                    showToast("이 이벤트의 CAM 클립이 아직 없습니다.", "warning");
+                                    showToast("이 이벤트의 사고 클립이 아직 없습니다.", "warning");
                                   }
                                 }}
-                                aria-label={`${formatTime(event.timestamp)} 사고구간 CAM 클립 재생`}
-                                title="사고구간 CAM 클립 보기"
+                                aria-label={`${formatTime(event.timestamp)} 사고구간 클립 재생`}
+                                title="사고구간 클립 보기"
                               >
                                 ▶
                               </button>
                               <button
                                 className="event-delete-item-btn"
                                 onClick={(e) => requestDeleteEvent(event, e)}
-                                title="이벤트 삭제"
+                                title="클립 삭제"
+                                aria-label={`${formatTime(event.timestamp)} 사고구간 클립 삭제`}
                               >
-                                🗑
+                                <TrashIcon size={14} />
                               </button>
                             </div>
                           </div>
@@ -2377,7 +2402,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       const dispY2 = Math.round(offsetY + y2 * scale);
 
                       setBboxList([{ id: Date.now(), xmin: dispX1, ymin: dispY1, xmax: dispX2, ymax: dispY2 }]);
-                      showToast(`${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
+                      showToast("차량이 선택되었습니다.", "success");
                       return;
                     }
                     if (selectionMode === "manual") {
@@ -2537,22 +2562,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                             pointerEvents: "none",
                           }}
                         >
-                          <span
-                            style={{
-                              position: "absolute",
-                              top: -17,
-                              left: -1,
-                              background: "rgba(22,163,74,0.9)",
-                              color: "#fff",
-                              fontSize: 11,
-                              lineHeight: "15px",
-                              padding: "0 4px",
-                              borderRadius: 3,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            #{box.id + 1} {box.class_name} {Math.round((box.confidence || 0) * 100)}%
-                          </span>
                         </div>
                       );
                     });
@@ -2578,7 +2587,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         }}
                       >
                         <span className="bbox-hover-label">
-                          🚗 {hoveredDetectedBox.class_name} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
+                          🚗 클릭하여 이 차량 선택
                         </span>
                       </div>
                     );
@@ -2925,7 +2934,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         <div className={`app-toast app-toast-${toast.type}`}>{toast.message}</div>
       )}
 
-      {/* 사고구간 CAM 클립 팝업 */}
+      {/* 사고구간 클립 팝업 (+ 원본 클립 다운로드) */}
       {/* 사고 클립 삭제 확인 — 화면 가운데. 기본 초점은 '취소'(Enter 실수로 지우지 않게), Esc·바깥 클릭으로 닫힘 */}
       {pendingDeleteEvent && (
         <div className="settings-modal-overlay" onClick={() => setPendingDeleteEvent(null)}>
@@ -2940,12 +2949,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               if (e.key === "Escape") setPendingDeleteEvent(null);
             }}
           >
-            <div className="confirm-modal-icon" aria-hidden="true">🗑</div>
+            <div className="confirm-modal-icon" aria-hidden="true">
+              <TrashIcon size={24} />
+            </div>
             <h2 id="confirm-modal-title" className="confirm-modal-title">
               클립 영상을 삭제하시겠습니까?
             </h2>
             <p id="confirm-modal-desc" className="confirm-modal-desc">
-              {formatTime(pendingDeleteEvent.timestamp)} 사고 구간의 클립 영상과 감지 기록이 삭제됩니다.
+              해당 사고 구간의 클립 영상과 감지 기록이 삭제됩니다.
               <br />
               삭제한 뒤에는 되돌릴 수 없습니다.
             </p>
@@ -2973,31 +2984,70 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       )}
 
       {clipEvent && (
-        <div className="clip-modal-overlay" onClick={() => setClipEvent(null)}>
-          <div className="clip-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="settings-modal-overlay clip-viewer-overlay" onClick={() => setClipEvent(null)}>
+          <div
+            className="clip-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clip-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setClipEvent(null);
+            }}
+          >
             <div className="clip-modal-header">
-              <span>
-                사고구간 CAM 클립 · {formatTime(clipEvent.timestamp)}
-                {clipEvent.endTimestamp != null
-                  ? ` ~ ${formatTime(clipEvent.endTimestamp)}`
-                  : ""}
-                {clipEvent.prob != null
-                  ? ` · ${(clipEvent.prob * 100).toFixed(1)}%`
-                  : ""}
-              </span>
+              <div className="clip-modal-heading">
+                <h2 id="clip-modal-title" className="clip-modal-title">사고구간 클립</h2>
+                <div className="clip-modal-chips">
+                  <span className="clip-chip">
+                    ⏱ {formatTime(clipEvent.timestamp)}
+                    {clipEvent.endTimestamp != null ? ` ~ ${formatTime(clipEvent.endTimestamp)}` : ""}
+                  </span>
+                  {clipEvent.prob != null && (
+                    <span className="clip-chip clip-chip-danger">
+                      사고 확률 {(clipEvent.prob * 100).toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+              </div>
               <button
-                className="clip-modal-close"
+                className="clip-close-btn"
                 onClick={() => setClipEvent(null)}
+                aria-label="클립 창 닫기"
+                autoFocus
               >
                 ✕
               </button>
             </div>
-            <video
-              className="clip-modal-video"
-              src={api.clipUrl(clipEvent.id)}
-              controls
-              autoPlay
-            />
+
+            <div className="clip-video-frame">
+              <video className="clip-modal-video" src={api.clipUrl(clipEvent.id)} controls autoPlay />
+            </div>
+
+            <div className="clip-modal-footer">
+              <div className="clip-legend">
+                <span className="clip-legend-item">
+                  <i className="clip-legend-swatch clip-legend-a" /> 빨간 테두리 — 사고가 의심되는 순간이에요
+                </span>
+                <span className="clip-legend-item">
+                  <i className="clip-legend-swatch clip-legend-s" /> 초록 테두리 — 특별한 이상이 없는 장면이에요
+                </span>
+              </div>
+              {clipEvent.hasRawClip ? (
+                <a
+                  className="clip-download-btn"
+                  href={api.rawClipUrl(clipEvent.id)}
+                  download
+                  title="박스·상태 표시가 없는 원본 사고 구간 영상을 내려받습니다"
+                >
+                  ⬇ 원본 클립 다운로드
+                </a>
+              ) : (
+                <span className="clip-download-unavailable" title="이 영상을 다시 분석하면 원본 클립이 만들어집니다">
+                  원본 클립 없음 · 다시 분석하면 생성
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}

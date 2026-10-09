@@ -62,6 +62,7 @@ function normalizeEvent(e) {
       e.end_timestamp_sec != null ? Math.round(e.end_timestamp_sec) : null,
     prob: e.crash_prob,
     hasClip: !!e.has_clip,
+    hasRawClip: !!e.has_raw_clip, // 합성 없는 원본 사고 클립을 내려받을 수 있는지
     title: "사고 의심 구간",
     status:
       e.crash_prob != null && e.crash_prob >= 0.5 ? "확인 필요" : "분석 완료",
@@ -133,6 +134,8 @@ export const api = {
   // 실패·취소된 분석을 같은 영상·같은 차량 박스로 다시 실행
   retryTask: (taskId) => request(`/tasks/${taskId}/retry`, { method: "POST" }),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,
+  // 박스·상태 띠 없이 사고 구간만 자른 원본 클립(다운로드)
+  rawClipUrl: (eventId) => `/api/events/${eventId}/clip/raw`,
 };
 
 
