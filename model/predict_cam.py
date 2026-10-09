@@ -140,6 +140,7 @@ def predict_hit_and_run_final(
     output_dir=config.PREDICT_OUTPUT_DIR,
     infer_batch_size=config.PREDICT_INFER_BATCH_SIZE,
     window_stride=config.PREDICT_WINDOW_STRIDE,
+    display_offset=config.PREDICT_DISPLAY_OFFSET,
 ):
     """단일 영상에 대해 슬라이딩 윈도우 추론 + CAM 합성 영상을 출력한다.
 
@@ -247,13 +248,15 @@ def predict_hit_and_run_final(
         v_nx1, v_ny1 = max(0, target_bbox[0]), max(0, target_bbox[1])
         v_nx2, v_ny2 = min(orig_w, target_bbox[2]), min(orig_h, target_bbox[3])
 
-        # 첫 (clip_length - 1)개 프레임: 아직 예측 전 → 상태 S로 출력
-        for i in range(min(clip_length - 1, len(original_full_frames))):
+        # 창 판정은 '창 시작 + display_offset' 프레임에 그린다(config 주석 참고).
+        display_offset = max(0, min(int(display_offset), clip_length - 1))
+        # 첫 display_offset 개 프레임: 아직 판정을 그릴 창이 없음 → 상태 S로 출력
+        for i in range(min(display_offset, len(original_full_frames))):
             f = cv2.cvtColor(original_full_frames[i], cv2.COLOR_RGB2BGR)
             cv2.rectangle(f, (v_nx1, v_ny1), (v_nx2, v_ny2), (0, 255, 0), 2)
             _draw_state_label(f, display_state)
             write_queue.put(f)
-        next_frame_to_write = min(clip_length - 1, len(original_full_frames))
+        next_frame_to_write = min(display_offset, len(original_full_frames))
 
         print(f"배치 슬라이딩 윈도우 추론 및 히트맵 생성 중... (stride={window_stride})")
         num_windows = full_video_tensor.size(1) - (clip_length - 1)
@@ -276,8 +279,9 @@ def predict_hit_and_run_final(
                 feat_maps = activation['inception5b']
 
                 for offset, window_idx in enumerate(batch_window_starts):
-                    # 이 윈도우의 마지막 프레임에 오버레이를 그림
+                    # 이벤트 경계는 창 끝(frame_idx) 기준, 판정·CAM 표시는 disp_idx 에 그린다
                     frame_idx = window_idx + clip_length - 1
+                    disp_idx = window_idx + display_offset
                     pred_class = int(pred_classes[offset].item())
                     conf = probs[offset, pred_class].item() * 100
 
@@ -314,7 +318,7 @@ def predict_hit_and_run_final(
                     ]
 
                     # 스킵된 프레임: 직전 display_state 그대로 표시
-                    for skipped_idx in range(next_frame_to_write, frame_idx):
+                    for skipped_idx in range(next_frame_to_write, disp_idx):
                         sf = cv2.cvtColor(
                             original_full_frames[skipped_idx], cv2.COLOR_RGB2BGR)
                         cv2.rectangle(sf, (v_nx1, v_ny1),
@@ -324,7 +328,7 @@ def predict_hit_and_run_final(
 
                     # 현재 예측 프레임
                     final_frame = cv2.cvtColor(
-                        original_full_frames[frame_idx], cv2.COLOR_RGB2BGR)
+                        original_full_frames[disp_idx], cv2.COLOR_RGB2BGR)
                     roi = final_frame[v_ny1:v_ny2, v_nx1:v_nx2]
 
                     if pred_class == 1:
@@ -348,7 +352,7 @@ def predict_hit_and_run_final(
                     _draw_state_label(final_frame, pred_class)
 
                     write_queue.put(final_frame)
-                    next_frame_to_write = frame_idx + 1
+                    next_frame_to_write = disp_idx + 1
 
         # 마지막 예측 이후 남은 프레임: 마지막 display_state 유지
         for skipped_idx in range(next_frame_to_write, len(original_full_frames)):
@@ -462,6 +466,7 @@ def predict_events_and_clips(
     clip_length=config.CLIP_LENGTH,
     infer_batch_size=config.PREDICT_INFER_BATCH_SIZE,
     window_stride=config.PREDICT_WINDOW_STRIDE,
+    display_offset=config.PREDICT_DISPLAY_OFFSET,
     clip_pad_frames=15,
     progress_callback=None,
     use_coarse_scan=config.PREDICT_USE_COARSE_SCAN,
@@ -500,6 +505,7 @@ def predict_events_and_clips(
     output_dir = Path(output_dir)
     os.makedirs(output_dir, exist_ok=True)
     window_stride = max(1, int(window_stride))
+    display_offset = max(0, min(int(display_offset), clip_length - 1))
 
     device = next(model.parameters()).device
     model.eval()
@@ -567,7 +573,7 @@ def predict_events_and_clips(
 
         # ── 추론: 윈도우별 예측 + 사고 프레임의 CAM 히트맵 캐싱 ──────────────
         events = []          # [{'start_frame','end_frame'}, ...]
-        # frame_idx → (heatmap_bbox, prob) (사고로 예측된 프레임만)
+        # 표시 프레임(창 시작 + display_offset) → (heatmap_bbox, prob) (사고로 예측된 창만)
         accident_overlays = {}
         # window_idx → pred_class / P(A) (3D-CNN을 실제로 실행한 윈도우만)
         window_pred = {}
@@ -615,7 +621,9 @@ def predict_events_and_clips(
                     feat_maps = activation['inception5b']
 
                     for offset, window_idx in enumerate(batch_window_starts):
-                        frame_idx = window_idx + clip_length - 1
+                        # 판정·CAM 은 창 끝이 아니라 '창 시작 + display_offset' 프레임에
+                        # 그린다 — 창 끝에 붙이면 A 표시가 실제 충돌보다 늦다(config 주석).
+                        disp_idx = window_idx + display_offset
                         pred_class = int(pred_classes[offset].item())
                         prob = probs[offset, pred_class].item()
                         window_pred[window_idx] = pred_class
@@ -636,7 +644,7 @@ def predict_events_and_clips(
                                 max(0, by1 - ry1):(by2 - ry1),
                                 max(0, bx1 - rx1):(bx2 - rx1),
                             ]
-                            accident_overlays[frame_idx] = (heatmap_bbox, prob)
+                            accident_overlays[disp_idx] = (heatmap_bbox, prob)
 
         # [2단계] 거친 탐색 → 의심 구간만 촘촘히 (멀티-아워 영상에서 3D-CNN 호출을 줄인다)
         #   1) coarse_step 프레임 간격의 창만 먼저 본다(영상 끝 창도 포함).
@@ -737,6 +745,12 @@ def predict_events_and_clips(
 
 
                     # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
+                    # A 로 그리는 구간 = 이 이벤트에서 판정이 그려진 첫 프레임 ~ 마지막 프레임.
+                    # (이벤트 시작 start_f 는 첫 A 창의 '시작'이라, 여기서부터 A 로 그리면
+                    #  판정이 아직 없는 앞부분이 S 로 그려지거나 너무 이르게 된다)
+                    a_keys = sorted(k for k in accident_overlays if start_f <= k <= end_f)
+                    a_first = a_keys[0] if a_keys else None
+                    a_last = a_keys[-1] + window_stride - 1 if a_keys else None
                     render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
                     last_heatmap = None
                     for f in range(clip_start, clip_end + 1):
@@ -745,7 +759,7 @@ def predict_events_and_clips(
                             break
                         if f in accident_overlays:
                             last_heatmap = accident_overlays[f][0]
-                        in_event = start_f <= f <= end_f
+                        in_event = a_first is not None and a_first <= f <= a_last
                         if in_event and last_heatmap is not None:
                             roi = frame[by1:by2, bx1:bx2]
                             # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
