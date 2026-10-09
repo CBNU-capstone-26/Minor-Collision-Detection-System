@@ -932,6 +932,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 간다
   const pollingRef = useRef(new Set()); // 이미 상태를 확인 중인 작업(중복 폴링 방지)
   const [clipEvent, setClipEvent] = useState(null); // CAM 클립 팝업 대상 이벤트
+  const [pendingDeleteEvent, setPendingDeleteEvent] = useState(null); // 삭제 확인 창 대상 이벤트
 
   // 업로드 모달
   const [showUpload, setShowUpload] = useState(false);
@@ -1194,11 +1195,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   // 특정 사고 이벤트 1건 삭제
-  const handleDeleteEvent = async (eventId, e) => {
+  // 휴지통 → 바로 지우지 않고 화면 가운데 확인 창을 띄운다(서버가 클립 파일도 지움)
+  const requestDeleteEvent = (event, e) => {
     if (e) e.stopPropagation();
+    setPendingDeleteEvent(event);
+  };
+
+  const handleDeleteEvent = async (eventId) => {
     if (!selectedVideo) return;
-    // 서버가 이벤트와 함께 CAM 클립 파일도 지우므로 한 번 확인받는다
-    if (!window.confirm("이 사고 구간의 클립 영상을 삭제하시겠습니까? 삭제하면 되돌릴 수 없습니다.")) return;
     try {
       await api.deleteEvent(selectedVideo.id, eventId);
       setSelectedVideo((prev) =>
@@ -2234,7 +2238,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                               </button>
                               <button
                                 className="event-delete-item-btn"
-                                onClick={(e) => handleDeleteEvent(event.id, e)}
+                                onClick={(e) => requestDeleteEvent(event, e)}
                                 title="이벤트 삭제"
                               >
                                 🗑
@@ -2922,6 +2926,52 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       )}
 
       {/* 사고구간 CAM 클립 팝업 */}
+      {/* 사고 클립 삭제 확인 — 화면 가운데. 기본 초점은 '취소'(Enter 실수로 지우지 않게), Esc·바깥 클릭으로 닫힘 */}
+      {pendingDeleteEvent && (
+        <div className="settings-modal-overlay" onClick={() => setPendingDeleteEvent(null)}>
+          <div
+            className="confirm-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-modal-title"
+            aria-describedby="confirm-modal-desc"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setPendingDeleteEvent(null);
+            }}
+          >
+            <div className="confirm-modal-icon" aria-hidden="true">🗑</div>
+            <h2 id="confirm-modal-title" className="confirm-modal-title">
+              클립 영상을 삭제하시겠습니까?
+            </h2>
+            <p id="confirm-modal-desc" className="confirm-modal-desc">
+              {formatTime(pendingDeleteEvent.timestamp)} 사고 구간의 클립 영상과 감지 기록이 삭제됩니다.
+              <br />
+              삭제한 뒤에는 되돌릴 수 없습니다.
+            </p>
+            <div className="upload-modal-actions">
+              <button
+                className="confirm-danger-btn"
+                onClick={() => {
+                  const id = pendingDeleteEvent.id;
+                  setPendingDeleteEvent(null);
+                  handleDeleteEvent(id);
+                }}
+              >
+                삭제
+              </button>
+              <button
+                className="upload-cancel-btn"
+                autoFocus
+                onClick={() => setPendingDeleteEvent(null)}
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {clipEvent && (
         <div className="clip-modal-overlay" onClick={() => setClipEvent(null)}>
           <div className="clip-modal" onClick={(e) => e.stopPropagation()}>
