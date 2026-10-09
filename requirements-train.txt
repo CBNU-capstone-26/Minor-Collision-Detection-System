@@ -1,6 +1,6 @@
 # ================================================================
 # requirements-train.txt
-# 물피도주 감지 "모델 학습 · 추론" 전용 Python 환경 (model/ · x3d model/)
+# 물피도주 감지 "모델 학습 · 추론" 전용 Python 환경 (model/ = x3d-m)
 # 재현 검증 환경: Python 3.11.15 (로컬 CPU) / Python 3.10 (학습 서버 GPU, RTX 3080)
 #
 # 이 파일은 ML 코드(train / predict / eval)만 실행하기 위한 최소 의존성입니다.
@@ -8,13 +8,13 @@
 # ================================================================
 #
 # -- 무엇을 위한 파일인가 -----------------------------------------
-#   백본마다 폴더가 따로 있고, 그 폴더 안에서 실행한다(폴더명에 공백이 있어 -m 불가).
-#   사용 백본: model/(s3d), x3d model/(x3d-m)  ※ slowfast model/ 은 사용 안 함
-#     (cd "x3d model" && PRETRAINED=1 python3 -u main.py --mode train)    # 학습
-#     (cd "x3d model" && EVAL_WEIGHTS=../weights/<파일> python3 -u main.py --mode eval)
-#     (cd "x3d model" && python3 -u main.py --mode predict)                # 단일 영상 CAM
-#     (cd "x3d model" && python3 ../check_probs.py ../weights/<파일>)      # 검증셋 확률 분포
-#     (cd "x3d model" && python3 trainplot.py ../outputs/trainlogs/*.csv)  # 학습 곡선 그래프
+#   서비스·학습 모델은 model/(x3d-m)이고, 그 폴더 안에서 실행한다.
+#   (예전 s3d 백본은 "s3d model/" 로 옮겨 git 에서 제외했다. slowfast model/ 은 사용 안 함)
+#     (cd model && PRETRAINED=1 python3 -u main.py --mode train)    # 학습
+#     (cd model && EVAL_WEIGHTS=../weights/<파일> python3 -u main.py --mode eval)
+#     (cd model && python3 -u main.py --mode predict)                      # 단일 영상 CAM
+#     (cd model && python3 ../check_probs.py ../weights/<파일>)            # 검증셋 확률 분포
+#     (cd model && python3 trainplot.py ../outputs/trainlogs/*.csv)        # 학습 곡선 그래프
 #   ※ 파이프(| tee)로 로그를 받을 땐 -u 를 붙여야 출력이 바로 보인다(버퍼링).
 #
 # -- 학습 서버 준비: tmux (시스템 패키지 — pip 이 아님) --------------
@@ -72,8 +72,8 @@ opencv-python-headless>=4.8         # cv2: 프레임 디코딩·크롭·CAM 오�
 pillow>=10.0                        # PIL: 데이터 증강(색상 지터 등) 시 이미지 변환
 tqdm>=4.65                          # 평가 진행률 표시
 
-# ---- X3D 백본 (x3d model/) ----
-# x3d_m 모델 정의와 Kinetics-400 사전학습 가중치를 제공한다. s3d 만 쓸 땐 불필요.
+# ---- X3D 백본 (model/) ----
+# x3d_m 모델 정의와 Kinetics-400 사전학습 가중치를 제공한다.
 # PyPI 최신이 0.1.5(2022)이며 fvcore·iopath·av 가 함께 설치된다.
 # 로컬 검증: pytorchvideo 0.1.5 + torchvision 0.27.0 에서 x3d 학습·추론 정상 동작.
 pytorchvideo>=0.1.5

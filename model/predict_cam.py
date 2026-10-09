@@ -14,12 +14,6 @@ from device_utils import is_cuda_like, is_channels_last_3d_supported
 
 # 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
 _FFMPEG = shutil.which("ffmpeg")
-if not _FFMPEG:
-    try:
-        import imageio_ffmpeg
-        _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
-    except ImportError:
-        pass
 
 
 activation = {}
@@ -29,7 +23,7 @@ activation = {}
 PROG_DECODE_END = 0.25    # 프레임 디코딩/크롭
 PROG_FLOW_END = 0.30      # 광학흐름(충격 시점 판정용)
 PROG_COARSE_END = 0.60    # 거친 탐색(10프레임 간격)
-PROG_INFER_END = 0.95     # S3D 윈도우 추론
+PROG_INFER_END = 0.95     # 3D-CNN 윈도우 추론
 # 0.95~1.0 = 사고구간 CAM 클립 렌더링
 
 
@@ -74,7 +68,7 @@ def get_activation(name):
 
 
 def _frames_to_video_tensor(frames):
-    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(S3D Kinetics-400)
+    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(Kinetics-400)
     mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD,

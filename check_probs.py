@@ -12,7 +12,7 @@ recall/acc 는 argmax(임계값 0.5) 기준이라, 모델이 A 확률을 0.1 →
 seed 42 를 쓰므로 검증셋이 정확히 일치한다.
 
 사용:
-    cd "x3d model" && python3 ../check_probs.py ../weights/hitandrun_x3d_ptY_best.pth
+    cd model && python3 ../check_probs.py ../weights/hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth
 """
 from __future__ import annotations
 

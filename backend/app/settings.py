@@ -9,11 +9,13 @@ from pathlib import Path
 
 # 사용할 백본 → 모델 코드 폴더. 폴더마다 config.py / hitandrun_model.py 가
 # 같은 이름으로 들어 있고, prediction_job 이 sys.path 에 얹어 임포트한다.
-# ⚠️ 모듈명(config, hitandrun_model)이 세 폴더에서 동일하므로 한 프로세스에는
+# ⚠️ 모듈명(config, hitandrun_model)이 폴더마다 동일하므로 한 프로세스에는
 #    한 백본만 올릴 수 있다. 다른 백본을 쓰려면 워커를 따로 띄운다.
+# 서비스 모델은 model/(x3d). "s3d model/" 은 git 에서 제외된 로컬 비교용이라
+# 그 폴더가 있는 PC 에서만 MODEL_VARIANT=s3d 로 쓸 수 있다.
 MODEL_VARIANT_DIRS = {
-    "s3d": "model",
-    "x3d": "x3d model",
+    "x3d": "model",
+    "s3d": "s3d model",
     "slowfast": "slowfast model",
 }
 
