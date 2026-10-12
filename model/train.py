@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 import torch
@@ -13,6 +14,7 @@ import config
 from dataset import HitAndRunDataset
 from device_utils import get_device, is_cuda_like, is_channels_last_3d_supported
 from hitandrun_model import HitAndRun3DCNN
+from runlog import make_run_dir, write_run_info
 
 
 class EarlyStopping:
@@ -137,6 +139,7 @@ def train_model(
 
     gen = torch.Generator().manual_seed(42)  # 재현 가능한 분할 (seed 고정)
     train_idx, val_rc_idx, val_real_idx = [], [], []
+    split_videos = {'train': [], 'val': []}  # 회차 폴더에 남길 영상 목록(나중에 누수 확인용)
     n_train_vid = n_val_vid = 0
     for (dom, direction, scen), vid_map in sorted(groups.items()):
         vkeys = sorted(vid_map)                      # 영상 목록(그룹 내)
@@ -145,8 +148,10 @@ def train_model(
         cut = int(train_split_ratio * len(vkeys))
         for vk in shuffled[:cut]:                    # 영상 통째로 train
             train_idx += vid_map[vk]
+            split_videos['train'].append(vk)
         for vk in shuffled[cut:]:                    # 영상 통째로 val
             (val_real_idx if dom == 'real' else val_rc_idx).extend(vid_map[vk])
+            split_videos['val'].append(vk)
         n_train_vid += cut
         n_val_vid += len(vkeys) - cut
 
@@ -168,12 +173,41 @@ def train_model(
         Subset(val_dataset, val_real_idx), batch_size=batch_size,
         shuffle=False, device=device) if val_real_idx else None
 
+    # ── 이번 학습의 회차 폴더 ──────────────────────────────────────
+    # outputs/trainlogs/<YYMMDD_HHMM>_<모델>_<ptY|ptN>/ 에 이번 학습의 산출물을 모은다.
+    # 가중치 파일 이름에도 같은 시각을 붙여, 어느 회차에서 나온 가중치인지 맞춰 볼 수 있다.
+    run_started = datetime.now()
+    run_dir, run_stamp = make_run_dir(
+        config.TRAIN_LOG_DIR, config.MODEL_NAME, config.PRETRAIN_TAG, run_started)
+    print(f"[로그] 이번 학습 산출물 폴더: {run_dir}")
+    # 그때의 설정을 그대로 남긴다 — 나중에 config.py 가 바뀌어도 이 회차 조건을 알 수 있다
+    shutil.copy2(config.__file__, run_dir / 'config_snapshot.py')
+    # 학습/검증에 쓴 영상 목록 — 평가 영상과 겹치지 않았는지 나중에 확인할 수 있다
+    with open(run_dir / 'split.json', 'w', encoding='utf-8') as _f:
+        root = Path(data_dir)
+        json.dump({
+            'data_dir': str(root),
+            'n_train_videos': len(split_videos['train']),
+            'n_val_videos': len(split_videos['val']),
+            'train': sorted(os.path.relpath(v, root) for v in split_videos['train']),
+            'val': sorted(os.path.relpath(v, root) for v in split_videos['val']),
+        }, _f, ensure_ascii=False, indent=2)
+    run_info = [
+        ('종류', '학습'),
+        ('모델', config.MODEL_NAME),
+        ('사전학습', config.PRETRAIN_TAG),
+        ('시작', run_started.strftime('%Y-%m-%d %H:%M:%S')),
+        ('종료', '(학습 중이거나 중간에 멈춤)'),
+        ('최종 가중치', '(학습이 끝나면 기록됨)'),
+        ('데이터 폴더', str(data_dir)),
+        ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
+    ]
+    write_run_info(run_dir, run_info)
+
     # ── 학습 곡선 로그 (CSV) ───────────────────────────────────────
-    # 파일명에 모델·사전학습여부·시각이 들어가 5가지 조합이 섞이지 않는다.
-    log_path = config.TRAIN_LOG_DIR / (
-        f"trainlog_{config.MODEL_NAME}_{config.PRETRAIN_TAG}_"
-        f"{datetime.now().strftime('%y%m%d_%H%M')}.csv")
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # 파일명에도 모델·사전학습여부·시각을 넣어, 회차 폴더 밖으로 꺼내도 구분된다.
+    log_path = run_dir / (
+        f"trainlog_{config.MODEL_NAME}_{config.PRETRAIN_TAG}_{run_stamp}.csv")
     with open(log_path, 'w', newline='', encoding='utf-8') as _f:
         csv.writer(_f).writerow([
             'epoch', 'lr', 'train_loss',
@@ -455,14 +489,15 @@ def train_model(
             break
 
     # ── 최종 가중치 파일명 규칙 적용 ───────────────────────────────
-    # hitandrun_[모델명]_[날짜YYMMDD]_[에포크수]ep_[earlyY|earlyN]_[손실율]
+    # hitandrun_[모델명]_[YYMMDD_HHMM]_[에포크수]ep_[earlyY|earlyN]_[ptY|ptN]_[손실율]
     #   · 모델명 : config.MODEL_NAME (s3d / x3d / slowfast) — 폴더별 구분용
-    #   · 날짜   : 학습 종료일 (예: 2026-07-24 → 260724)
+    #   · 시각   : 학습 시작 시각 = 회차 폴더 이름의 시각 (예: 2026-07-24 14:05 → 260724_1405)
+    #             ⚠️ 2026-10-11 이전 파일은 '학습 종료일'(YYMMDD)만 붙어 있다.
     #   · 에포크 : best 가중치가 저장된 에포크 (예: 50 → 50ep)
     #   · early  : 조기종료로 멈췄으면 earlyY, 아니면 earlyN
     #   · 손실율 : 저장 당시 '판단 지표'(val_real 균형 손실의 이동평균) 값.
     #             ⚠️ 2026-09-29 이전 파일은 그냥 val_real loss 였으므로 서로 비교 불가.
-    date_str = datetime.now().strftime('%y%m%d')
+    date_str = run_stamp
     epoch_str = f'{early_stopping.best_epoch}ep'
     early_str = 'earlyY' if early_stopping.early_stop else 'earlyN'
     loss_str = f'{early_stopping.val_loss_min:.4f}'
@@ -493,13 +528,26 @@ def train_model(
         cand_info.append({'rank': rank, 'epoch': c['epoch'],
                           'score': round(c['score'], 6), 'file': dest_name})
 
+    run_finished = datetime.now()
+    info = dict(run_info)
+    info['종료'] = run_finished.strftime('%Y-%m-%d %H:%M:%S')
+    info['최종 가중치'] = str(final_path)
+    info['best 에포크'] = (f"{early_stopping.best_epoch} "
+                          f"({'조기 종료' if early_stopping.early_stop else '끝까지 학습'})")
+    info['후보 가중치'] = ', '.join(c['file'] for c in cand_info if c['rank'] > 1) or '없음'
+    write_run_info(run_dir, list(info.items()))
+
     # 결과 요약 — 그래프가 best·후보를 표시할 때도 쓴다
     result_path = log_path.with_name(log_path.stem + '.result.json')
     with open(result_path, 'w', encoding='utf-8') as _f:
         json.dump({
+            'started': run_started.strftime('%Y-%m-%d %H:%M:%S'),
+            'finished': run_finished.strftime('%Y-%m-%d %H:%M:%S'),
+            'run_dir': str(run_dir),
             'best_epoch': early_stopping.best_epoch,
             'early_stop': bool(early_stopping.early_stop),
             'final_weights': final_path.name,
+            'weights_dir': str(final_path.parent),
             'monitor': f'val_real class-balanced loss, {smooth_n}-epoch avg',
             'candidates': cand_info,
         }, _f, ensure_ascii=False, indent=2)

@@ -132,8 +132,9 @@ NORM_STD = (0.225, 0.225, 0.225)
 
 # ---------- 학습 전용 ----------
 # 학습 '작업용' 경로. 학습 중 best 가중치를 해당 파일로 갱신 저장했놓고, 학습 종료 시
-# 규칙 파일명: (hitandrun_[YYMMDD]_[N]ep_[earlyY|N]_[손실율]) 으로 rename 된다(train.py).
-# [YYMMDD] : 학습 시작 날짜, [N]ep : 학습 종료 시점 epoch, [earlyY|N] : 조기 종료 여부, [손실율] : 최종 검증 손실율(val loss)
+# 규칙 파일명: (hitandrun_[모델]_[YYMMDD_HHMM]_[N]ep_[earlyY|N]_[ptY|N]_[손실율]) 으로 rename 된다(train.py).
+# [YYMMDD_HHMM] : 학습 시작 시각(= outputs/trainlogs 회차 폴더 이름의 시각), [N]ep : best 에포크,
+# [earlyY|N] : 조기 종료 여부, [손실율] : best 저장 당시 판단 지표 값
 TRAIN_BEST_MODEL_SAVE_PATH = (
     _ROOT / "weights" / f"hitandrun_{MODEL_NAME}_{PRETRAIN_TAG}_best.pth")
 TRAIN_BATCH_SIZE = 15  # 논문과 동일(Hwang&Lee 2024: batch 15). VRAM 부족하면 낮출 것
@@ -172,9 +173,13 @@ TRAIN_LEARNING_RATE = 0.00003  # X3D-M 미세조정 (헤드 기준; 백본은 tr
 #    헤드 3e-5 / 백본 3e-6 이라 λ=0.01 로는 100에포크 전체에서 가중치가 0.2%
 #    밖에 줄지 않아 사실상 정규화가 걸리지 않았다. λ=0.1 이면 헤드 약 2%.
 TRAIN_WEIGHT_DECAY = 0.1
-# 에포크별 학습 곡선 CSV 저장 위치 (과적합 판단·모델 비교용)
+# 학습·평가 산출물은 1회마다 '<YYMMDD_HHMM>_<모델>_<ptY|ptN>' 회차 폴더를 새로 만들어
+# 그 안에 모은다(시각 = 시작 시각, model/runlog.py). 폴더 이름으로 언제 돌린 결과인지 구분한다.
+# 학습: outputs/trainlogs/<회차>/  학습 곡선 CSV·그래프·결과 json, 그때의 config 사본,
+#        학습/검증에 쓴 영상 목록(split.json). 가중치는 weights/ 에 같은 시각을 붙여 저장.
 TRAIN_LOG_DIR = _ROOT / "outputs" / "trainlogs"
-# 평가 결과 로그(콘솔 전문 + 5가지 모델 비교용 요약 CSV) 저장 위치
+# 평가: outputs/evallogs/<회차>/  콘솔 전문 로그, 영상별 결과 CSV.
+#        모델 비교용 요약은 outputs/evallogs/eval_summary.csv 한 파일에 계속 덧붙인다.
 EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------

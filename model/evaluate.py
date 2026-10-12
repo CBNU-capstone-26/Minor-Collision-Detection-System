@@ -3,6 +3,9 @@ from datetime import datetime
 import sys
 import csv
 import pathlib
+import platform
+import statistics
+import time
 import cv2
 import torch
 import numpy as np
@@ -10,6 +13,7 @@ from tqdm import tqdm
 
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported
+from runlog import make_run_dir, write_run_info
 
 
 def _evaluate_folder_impl(
@@ -204,13 +208,134 @@ def _evaluate_folder_impl(
                                 target_id=target_id, r_value=r_value,
                                 resize=resize, clip_length=clip_length)
     svc_rows = svc.pop('rows')
+
+    # 추론 속도: ① 모델만 ② 서비스 경로 전체(위에서 영상별로 잰 시간)
+    speed = {'device': _device_name(device), 'model': benchmark_model(
+        model, clip_length=clip_length, resize=resize), 'service': svc.pop('speed')}
+    _print_speed(speed)
+    sb = {b['batch']: b for b in speed['model']}
+    svc_b = sb.get(int(config.PREDICT_INFER_BATCH_SIZE), speed['model'][-1])
+    s = speed['service'] or {}
     return {
         'n_videos': total_videos, 'tp': tp, 'fn': fn, 'fp': fp, 'tn': tn,
         'recall': recall, 'false_alarm': false_alarm, 'accuracy': accuracy,
         'precision': precision, 'f1': f1,
         **{(k if k.startswith(('clean_', 'n_in')) else f'svc_{k}'): v
            for k, v in svc.items()},
+        'device': speed['device'],
+        'speed_proc_fps': round(s['proc_fps'], 2) if s else None,
+        'speed_realtime_x': round(s['realtime_x'], 3) if s else None,
+        'speed_windows_eval_pct': round(s['windows_eval_pct'], 1) if s else None,
+        'speed_model_batch': svc_b['batch'],
+        'speed_model_clips_per_sec': svc_b['clips_per_sec'],
+        'speed_model_ms_per_clip': svc_b['ms_per_clip'],
+        '_speed': speed,
         '_svc_rows': svc_rows,
+    }
+
+
+def _device_name(device):
+    """속도 결과를 읽을 때 어떤 하드웨어였는지 알 수 있게 장치 이름을 남긴다."""
+    if is_cuda_like(device):
+        try:
+            return f"{device} ({torch.cuda.get_device_name(device)})"
+        except Exception:  # noqa: BLE001
+            return str(device)
+    cpu = platform.processor() or platform.machine()
+    try:
+        with open('/proc/cpuinfo', encoding='utf-8') as f:
+            cpu = next(l.split(':', 1)[1].strip() for l in f if l.startswith('model name'))
+    except (OSError, StopIteration):
+        pass
+    return f"cpu ({cpu}, torch 스레드 {torch.get_num_threads()}개)"
+
+
+def benchmark_model(model, clip_length=config.CLIP_LENGTH, resize=config.RESIZE,
+                    batch_sizes=None, min_sec=3.0, max_iters=30):
+    """3D-CNN 순수 추론 속도 — 영상 디코딩·크롭·전처리 없이 모델만 잰다.
+
+    서비스는 창 간격 1(PREDICT_WINDOW_STRIDE)이라 영상을 빠짐없이 훑으려면 프레임
+    하나당 창(30프레임 클립) 하나를 추론해야 한다. 그래서 '초당 처리한 창 수'가 곧
+    '모델이 초당 분석할 수 있는 영상 프레임 수'다(거친 탐색 없이 전부 볼 때).
+    """
+    device = next(model.parameters()).device
+    batch_sizes = batch_sizes or sorted({1, int(config.PREDICT_INFER_BATCH_SIZE),
+                                         int(config.EVAL_INFER_BATCH_SIZE)})
+    sync = (torch.cuda.synchronize if is_cuda_like(device) else (lambda: None))
+    out = []
+    model.eval()
+    with torch.inference_mode():
+        for bs in batch_sizes:
+            x = torch.randn(bs, 3, clip_length, resize[1], resize[0], device=device)
+            if is_channels_last_3d_supported(device):
+                x = x.contiguous(memory_format=torch.channels_last_3d)
+            for _ in range(2):                       # 첫 호출 오버헤드(cuDNN 탐색 등) 제외
+                model(x)
+            sync()
+            n, t0 = 0, time.perf_counter()
+            while n < max_iters and (time.perf_counter() - t0) < min_sec:
+                model(x)
+                n += 1
+            sync()
+            sec = time.perf_counter() - t0
+            clips_per_sec = n * bs / sec
+            out.append({'batch': bs, 'clips_per_sec': round(clips_per_sec, 2),
+                        'ms_per_clip': round(1000 / clips_per_sec, 2)})
+    return out
+
+
+def _print_speed(speed):
+    print("\n" + "=" * 60)
+    print("[추론 속도]  장치: " + speed['device'])
+    print("=" * 60)
+    print("① 모델만 (3D-CNN, 30프레임 클립 1개 = 창 1개)")
+    for b in speed['model']:
+        mark = '  ← 서비스 배치' if b['batch'] == config.PREDICT_INFER_BATCH_SIZE else ''
+        print(f"   배치 {b['batch']:>2}: 초당 {b['clips_per_sec']:7.2f}개 창 "
+              f"(창 1개 {b['ms_per_clip']:.1f}ms){mark}")
+    print("   → 창 간격 1로 빠짐없이 훑을 때 모델이 초당 분석하는 영상 프레임 수와 같다")
+    s = speed.get('service')
+    if s:
+        print("② 서비스 경로 전체 (디코딩·크롭 + 움직임 계산 + 거친 탐색·정밀 추론, 클립 렌더링 제외)")
+        print(f"   영상 {s['n_videos']}개, {s['video_sec']:.1f}초 분량({s['frames']}프레임) → "
+              f"처리 {s['proc_sec']:.1f}초")
+        print(f"   처리 속도  : 초당 {s['proc_fps']:.1f} 프레임  "
+              f"(영상 1초를 {s['sec_per_video_sec']:.2f}초에 처리, 실시간의 {s['realtime_x']:.2f}배)")
+        print(f"   3D-CNN 추론 창: 전체 {s['windows_total']}개 중 {s['windows_eval']}개 "
+              f"({s['windows_eval_pct']:.0f}%, 거친 탐색으로 줄임), 초당 {s['windows_per_sec']:.1f}개")
+        print(f"   시간 비중  : 디코딩·크롭 {s['pct_decode']:.0f}% / 움직임 계산 {s['pct_flow']:.0f}% / "
+              f"3D-CNN {s['pct_infer']:.0f}% / 기타 {s['pct_other']:.0f}%")
+        print(f"   영상별 처리 속도: 중앙값 초당 {s['proc_fps_median']:.1f} 프레임 "
+              f"(최저 {s['proc_fps_min']:.1f} · 최고 {s['proc_fps_max']:.1f})")
+    print("=" * 60)
+
+
+def _speed_summary(rows):
+    """서비스 경로 영상별 처리 시간 → 전체 처리 속도."""
+    rs = [r for r in rows if r.get('proc_sec')]
+    if not rs:
+        return None
+    frames = sum(r['frames_read'] for r in rs)
+    vsec = sum(r['frames_read'] / r['fps'] for r in rs if r['fps'])
+    proc = sum(r['proc_sec'] for r in rs)
+    dec = sum(r['decode_sec'] for r in rs)
+    flow = sum(r['flow_sec'] for r in rs)
+    inf = sum(r['infer_sec'] for r in rs)
+    wt = sum(r['windows_total'] for r in rs)
+    we = sum(r['windows_eval'] for r in rs)
+    per = sorted(r['proc_fps'] for r in rs)
+    pct = lambda x: x / proc * 100 if proc else 0.0  # noqa: E731
+    return {
+        'n_videos': len(rs), 'frames': frames, 'video_sec': vsec, 'proc_sec': proc,
+        'proc_fps': frames / proc if proc else 0.0,
+        'realtime_x': vsec / proc if proc else 0.0,
+        'sec_per_video_sec': proc / vsec if vsec else 0.0,
+        'windows_total': wt, 'windows_eval': we,
+        'windows_eval_pct': we / wt * 100 if wt else 0.0,
+        'windows_per_sec': we / inf if inf else 0.0,
+        'pct_decode': pct(dec), 'pct_flow': pct(flow), 'pct_infer': pct(inf),
+        'pct_other': max(0.0, 100 - pct(dec) - pct(flow) - pct(inf)),
+        'proc_fps_median': statistics.median(per), 'proc_fps_min': per[0], 'proc_fps_max': per[-1],
     }
 
 
@@ -345,22 +470,36 @@ def evaluate_service_path(
         frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         cap.release()
 
+        stats = {}
         try:
+            t0 = time.perf_counter()
             events = predict_events_and_clips(
                 model, video_path=video_path, bbox=tuple(bbox),
                 output_dir=tmp_dir, r_value=r_value, resize=resize,
-                clip_length=clip_length, render_clips=False)
+                clip_length=clip_length, render_clips=False, stats=stats)
+            proc_sec = time.perf_counter() - t0
         except Exception as exc:  # noqa: BLE001
             print(f"  [경고] {mp4_file} 처리 실패: {exc}")
             continue
 
+        frames_read = stats.get('frames', frames)
         row = {'file': mp4_file, 'gt': 'A' if gt_sf is not None else 'S',
                'in_train': mp4_file in in_train, 'fps': round(fps, 2),
                'frames': frames, 'gt_start': gt_sf, 'gt_end': gt_ef,
                'n_events': len(events),
                'event_starts': ' '.join(str(e['start_frame']) for e in events),
                'hit': None, 'overlap': None, 'err_f': None, 'err_sec': None,
-               'false_events': len(events)}
+               'false_events': len(events),
+               # ── 속도 (클립 렌더링 제외: render_clips=False) ──
+               'frames_read': frames_read,
+               'proc_sec': round(proc_sec, 3),
+               'proc_fps': round(frames_read / proc_sec, 2) if proc_sec else None,
+               'realtime_x': round(frames_read / fps / proc_sec, 3) if proc_sec and fps else None,
+               'decode_sec': round(stats.get('decode_sec', 0.0), 3),
+               'flow_sec': round(stats.get('flow_sec', 0.0), 3),
+               'infer_sec': round(stats.get('infer_sec', 0.0), 3),
+               'windows_total': stats.get('windows_total', 0),
+               'windows_eval': stats.get('windows_eval', 0)}
         if gt_sf is not None:
             tol = max(1, int(round(fps * tol_sec)))
             row['hit'] = False
@@ -377,8 +516,8 @@ def evaluate_service_path(
 
     # ── 영상별 결과 ──
     print(f"\n{'영상':<22} {'학습폴더':>6} {'fps':>4} {'라벨시작':>7} {'이벤트':>5} "
-          f"{'가장 가까운 시작(오차)':>24}  판정")
-    print("-" * 92)
+          f"{'가장 가까운 시작(오차)':>24} {'처리fps':>7}  판정")
+    print("-" * 100)
     for r in rows:
         if r['gt'] == 'A':
             if r['n_events'] == 0:
@@ -394,7 +533,7 @@ def evaluate_service_path(
             near = "-"
         print(f"{r['file']:<22} {'⚠있음' if r['in_train'] else '-':>6} {r['fps']:>4.0f} "
               f"{r['gt_start'] if r['gt_start'] is not None else '-':>7} {r['n_events']:>5} "
-              f"{near:>24}  {verdict}")
+              f"{near:>24} {r['proc_fps'] or 0:>7.1f}  {verdict}")
 
     # ── 집계 ──
     print("\n" + "-" * 60)
@@ -418,7 +557,7 @@ def evaluate_service_path(
 
     out = {'hit_tol_sec': tol_sec,
            **{k: v for k, v in all_s.items() if k not in ('n', 'n_A', 'n_S', 'hours')},
-           'n_in_train': n_contam}
+           'n_in_train': n_contam, 'speed': _speed_summary(rows)}
     if clean_s:
         out.update({'clean_n': clean_s['n'], 'clean_recall': clean_s['recall'],
                     'clean_false_events': clean_s['false_events'],
@@ -450,18 +589,28 @@ class _Tee:
 def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwargs):
     """폴더 평가 진입점 — 결과를 콘솔과 파일에 동시에 남긴다.
 
-    남는 것 두 가지:
-      1) 콘솔 전문 로그  outputs/evallogs/eval_<모델>_<ptY|ptN>_<시각>.txt
-      2) 요약 한 줄      outputs/evallogs/eval_summary.csv  (append)
+    남는 것:
+      1) 회차 폴더       outputs/evallogs/<YYMMDD_HHMM>_<모델>_<ptY|ptN>/
+           · 콘솔 전문 로그  eval_<모델>_<ptY|ptN>_<시각>.txt
+           · 영상별 결과     eval_<모델>_<ptY|ptN>_<시각>_videos.csv
+      2) 요약 한 줄      outputs/evallogs/eval_summary.csv  (append, run 열 = 회차 폴더 이름)
          → 5가지 학습 조합을 한 표에서 비교하려고 계속 덧붙인다.
     """
     log_dir = pathlib.Path(getattr(config, 'EVAL_LOG_DIR',
                                    pathlib.Path('outputs') / 'evallogs'))
     log_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime('%y%m%d_%H%M')
     tag = getattr(config, 'PRETRAIN_TAG', '?')
+    run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, tag)
     weights = pathlib.Path(str(config.EVAL_WEIGHTS_PATH)).name
-    log_path = log_dir / f"eval_{config.MODEL_NAME}_{tag}_{stamp}.txt"
+    log_path = run_dir / f"eval_{config.MODEL_NAME}_{tag}_{stamp}.txt"
+    write_run_info(run_dir, [
+        ('종류', '평가'),
+        ('모델', config.MODEL_NAME),
+        ('사전학습', tag),
+        ('시작', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+        ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
+        ('평가 폴더', str(folder_path)),
+    ])
 
     tee = _Tee(log_path)
     sys.stdout = tee
@@ -477,10 +626,27 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         print(f"[로그] 평가 로그: {log_path}")
         return m
 
+    speed = m.pop('_speed', None) or {}
+    s = speed.get('service') or {}
+    info = (pathlib.Path(run_dir, 'run_info.txt').read_text(encoding='utf-8')
+            .rstrip('\n').split('\n'))
+    write_run_info(run_dir, [tuple(l.split(': ', 1)) for l in info] + [
+        ('종료', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+        ('평가 영상 수', m.get('n_videos')),
+        ('재현율(영상 단위, %)', m.get('recall')),
+        ('서비스 경로 재현율(%)', m.get('svc_recall')),
+        ('학습 폴더와 겹친 영상', m.get('n_in_train')),
+        ('추론 장치', speed.get('device')),
+        ('처리 속도(서비스 경로)', f"초당 {s['proc_fps']:.1f} 프레임, 실시간의 {s['realtime_x']:.2f}배 "
+                            f"(클립 렌더링 제외)" if s else None),
+        ('모델 추론 속도', ' / '.join(f"배치 {b['batch']}: 초당 {b['clips_per_sec']:.1f}개 창"
+                                     for b in speed.get('model', [])) or None),
+    ])
+
     # 영상별 결과 CSV — 어떤 영상에서 무엇이 틀렸는지 나중에 다시 보려고
     rows = m.pop('_svc_rows', [])
     if rows:
-        per_video = log_dir / f"eval_{config.MODEL_NAME}_{tag}_{stamp}_videos.csv"
+        per_video = run_dir / f"eval_{config.MODEL_NAME}_{tag}_{stamp}_videos.csv"
         with open(per_video, 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
             w.writeheader()
@@ -489,14 +655,17 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
 
     # 요약 CSV 에 한 줄 덧붙인다(모델 비교용)
     summary = log_dir / 'eval_summary.csv'
-    cols = ['datetime', 'model', 'pretrain', 'weights', 'eval_folder', 'n_videos',
+    cols = ['datetime', 'run', 'model', 'pretrain', 'weights', 'eval_folder', 'n_videos',
             'tp', 'fn', 'fp', 'tn', 'recall', 'false_alarm', 'accuracy',
             'precision', 'f1',
             'svc_hit_tol_sec', 'svc_recall', 'svc_overlap_recall', 'svc_missed',
             'svc_wrong_place', 'svc_split', 'svc_false_events', 'svc_false_per_hour',
             'svc_video_false_alarm', 'svc_err_median_f', 'svc_err_median_sec',
             'n_in_train', 'clean_n', 'clean_recall', 'clean_false_events',
-            'clean_video_false_alarm']
+            'clean_video_false_alarm',
+            # 추론 속도 — 장치가 다르면 비교할 수 없으니 device 와 함께 본다
+            'device', 'speed_proc_fps', 'speed_realtime_x', 'speed_windows_eval_pct',
+            'speed_model_batch', 'speed_model_clips_per_sec', 'speed_model_ms_per_clip']
     # 컬럼 구성이 바뀐 옛 요약 파일에 이어 쓰면 열이 어긋나므로 옆으로 치워둔다
     if summary.exists():
         with open(summary, encoding='utf-8') as f:
@@ -505,7 +674,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
             moved = summary.with_name(f"eval_summary_old_{stamp}.csv")
             summary.rename(moved)
             print(f"[로그] 요약 CSV 컬럼이 바뀌어 기존 파일을 {moved.name} 로 옮겼습니다")
-    row = {'datetime': datetime.now().strftime('%Y-%m-%d %H:%M'),
+    row = {'datetime': datetime.now().strftime('%Y-%m-%d %H:%M'), 'run': run_dir.name,
            'model': config.MODEL_NAME, 'pretrain': tag, 'weights': weights,
            'eval_folder': str(folder_path), **m}
     write_header = not summary.exists()

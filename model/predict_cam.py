@@ -504,6 +504,7 @@ def predict_events_and_clips(
     coarse_prob=config.PREDICT_COARSE_PROB,
     coarse_pad=config.PREDICT_COARSE_PAD,
     render_clips=True,
+    stats=None,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -521,6 +522,9 @@ def predict_events_and_clips(
         render_clips (bool): False면 CAM 클립을 만들지 않고 이벤트 목록만 돌려준다
             (clip_path=None). 평가에서 '서비스와 동일한 경로'로 이벤트를 뽑을 때
             쓴다 — 렌더링은 평가에 불필요하고 가장 느린 단계다.
+        stats (dict|None): 주면 단계별 처리 시간(초)과 창 수를 채워 준다(평가의 속도
+            측정용). 키: frames, decode_sec, flow_sec, infer_sec, render_sec,
+            windows_total, windows_eval.
 
     Returns:
         list[dict]: 이벤트 목록. 각 항목:
@@ -599,8 +603,9 @@ def predict_events_and_clips(
                     _last_decode_report = step
                     _report(PROG_DECODE_END * min(1.0, _decoded / total_frames_hint))
         cap.release()
+        decode_sec = time.time() - t_decode
         # 클립 렌더링 시간 추정의 기준(프레임당 디코딩·크롭 시간)
-        decode_sec_per_frame = (time.time() - t_decode) / max(1, _decoded)
+        decode_sec_per_frame = decode_sec / max(1, _decoded)
 
         if not processed_frames:
             return []
@@ -638,14 +643,17 @@ def predict_events_and_clips(
             max(1, min(resize[0], int((bx2 - rx1) * _sx))),
             max(1, min(resize[1], int((by2 - ry1) * _sy))),
         )
+        t_flow = time.time()
         flow_mag, flow_mag_roi = _flow_magnitude_series(
             processed_frames, clip_length, roi=_roi)
+        flow_sec = time.time() - t_flow
         _report(PROG_FLOW_END)
 
         # 남은 시간 계산용: 창 하나 추론에 걸린 '누적' 평균 시간을 잰다. 첫 묶음은 모델
         # 준비(첫 호출 오버헤드)가 섞여 느리므로 속도 계산에서 뺀다. (최근 묶음 위주의 이동
         # 평균은 CPU에서 묶음마다 시간이 들쭉날쭉해 오히려 오차가 컸다 — 두 영상 실측 비교)
         speed = {"n": 0, "sec": 0.0, "first": True}
+        infer_sec = [0.0]       # 속도 측정용: 첫 묶음까지 포함한 3D-CNN 추론 총시간
         near_set = set()        # 거친 탐색 중 지금까지 찾은 의심 창 주변(촘촘히 볼 후보)
         coarse_done = [0]
         last_start = window_starts[-1] if window_starts else 0
@@ -719,6 +727,7 @@ def predict_events_and_clips(
                                                   window_stride))
                     if coarse_k > 1:
                         coarse_done[0] += len(batch_window_starts)
+                    infer_sec[0] += time.time() - t_batch
                     if speed["first"]:
                         speed["first"] = False
                     else:
@@ -919,6 +928,10 @@ def predict_events_and_clips(
                 render_cap.release()
 
         _report(eta=0.0)
+        if stats is not None:
+            stats.update(frames=real_frame_count, decode_sec=decode_sec, flow_sec=flow_sec,
+                         infer_sec=infer_sec[0], render_sec=time.time() - t_render,
+                         windows_total=len(window_starts), windows_eval=len(window_pred))
         print(f"[predict_events_and_clips] {len(results)}건 사고구간 클립 생성")
         return results
 
