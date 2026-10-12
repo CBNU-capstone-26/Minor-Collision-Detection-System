@@ -1,5 +1,6 @@
 import os
 import glob
+import math
 import cv2
 import numpy as np
 import torch
@@ -26,6 +27,12 @@ class HitAndRunDataset(Dataset):
         self.resize = resize
         # augment=True → 학습용(랜덤 증강 적용), False → 검증용(증강 없음, 결정적)
         self.augment = augment
+        # A 클립 방식(config.TRAIN_A_MODE). 'span'이면 샘플마다 창 묶음 (K, 3, T, H, W)을
+        # 돌려주고(비충돌은 K=1), 로더는 span_collate 로 묶는다.
+        a_mode = getattr(config, 'TRAIN_A_MODE', 'pre')
+        if a_mode not in ('pre', 'span'):
+            raise ValueError(f"TRAIN_A_MODE 는 'pre' 또는 'span' 이어야 합니다: {a_mode!r}")
+        self.span = a_mode == 'span'
         # 정규화 통계는 사전학습(Kinetics-400)과 동일하게 config에서 일괄 관리
         self.mean = torch.tensor(
             config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
@@ -70,8 +77,8 @@ class HitAndRunDataset(Dataset):
             # 영상 메타는 한 번만 읽는다(S 슬라이싱의 총프레임 + 지터 환산용 fps).
             total, fps = self._video_meta(mp4_path)
 
-            def _add(sf):
-                samples.append({
+            def _add(sf, wins=None):
+                sample = {
                     'file_name': file_name,
                     'video_key': mp4_path,   # 분할을 '영상 단위'로 묶기 위한 키
                     'mp4_path': mp4_path,
@@ -79,7 +86,10 @@ class HitAndRunDataset(Dataset):
                     'start_f': sf,
                     'bbox': target_bbox,
                     'fps': fps,              # 시간 지터를 '초' 기준으로 맞추기 위함
-                })
+                }
+                if wins is not None:
+                    sample['win_starts'] = wins  # span: 구간을 덮는 창들의 시작 프레임
+                samples.append(sample)
 
             if label == 1:
                 # 충돌(A): 창을 start_f 보다 TRAIN_A_PRE_FRAMES 앞에서 시작해
@@ -88,7 +98,11 @@ class HitAndRunDataset(Dataset):
                 a_start = max(0, start_f - pre)
                 a_stride = max(1, int(getattr(config, 'TRAIN_A_SLICE_STRIDE', 15)))
                 last = end_f - self.clip_length + 1      # 창 끝 == end_f 인 시작점
-                if (getattr(config, 'TRAIN_A_SLICE_ENABLED', False)
+                if self.span:
+                    # span: 접근부터 충돌 종료까지를 덮는 창들을 샘플 하나로 둔다.
+                    wins = self._span_starts(a_start, last, total)
+                    _add(wins[0], wins)
+                elif (getattr(config, 'TRAIN_A_SLICE_ENABLED', False)
                         and last > a_start):
                     # (기본 off) 구간 안에서 창을 밀어 A 클립을 늘리는 경로.
                     # 첫 창만 접근을 담고 나머지는 '충돌 중'이 된다.
@@ -116,6 +130,24 @@ class HitAndRunDataset(Dataset):
                 for sf in starts:
                     _add(sf)
         return samples
+
+    def _span_starts(self, a_start, last, total):
+        """span 창 시작점들 — 첫 창은 a_start(접근), 마지막 창은 끝이 충돌 종료.
+
+        last : 끝이 충돌 종료에 맞는 창의 시작점. 영상 끝을 넘지 않게 자른다.
+        구간이 창 하나에 들어가면(last <= a_start) 창 1개 = 'pre' 방식과 같다.
+        그 밖에는 TRAIN_SPAN_WINDOW_STRIDE 이하 간격으로 구간을 고르게 나누고,
+        창이 TRAIN_SPAN_MAX_WINDOWS 를 넘으면 간격을 넓혀 그 개수로 덮는다.
+        """
+        if total > 0:
+            last = min(last, total - self.clip_length)
+        if last <= a_start:
+            return [a_start]
+        stride = max(1, int(getattr(config, 'TRAIN_SPAN_WINDOW_STRIDE', 15)))
+        max_n = max(2, int(getattr(config, 'TRAIN_SPAN_MAX_WINDOWS', 6)))
+        d = last - a_start
+        n = min(max_n, 1 + math.ceil(d / stride))
+        return [a_start + round(i * d / (n - 1)) for i in range(n)]
 
     @staticmethod
     def _video_meta(mp4_path):
@@ -225,7 +257,8 @@ class HitAndRunDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-        start_f = sample['start_f']
+        # 창 시작점들. 'pre' 모드와 비충돌 샘플은 창 1개다.
+        starts = list(sample.get('win_starts') or [sample['start_f']])
         bbox = sample['bbox']
 
         if self.augment:
@@ -240,7 +273,10 @@ class HitAndRunDataset(Dataset):
             jitter = int(round(sample.get('fps', 30.0)
                                * getattr(config, 'TRAIN_TIME_JITTER_SEC', 0.33)))
             if jitter > 0:
-                start_f = max(0, start_f + random.randint(-jitter, jitter))
+                # span 창들은 간격을 지킨 채 통째로 민다(맨 앞 창이 0 아래로 가지 않게).
+                # 창 1개면 max(0, start_f + d) 와 같다.
+                d = max(random.randint(-jitter, jitter), -min(starts))
+                starts = [s + d for s in starts]
             # ② bbox 지터: 서비스에서는 사용자가 마우스로 대충 박스를 그린다.
             #    GT 좌표 그대로만 학습하면 손그림 박스와 분포가 어긋나므로
             #    중심 이동(±5%)·크기 배율(0.9~1.15)로 부정확한 박스를 시뮬레이션.
@@ -260,11 +296,15 @@ class HitAndRunDataset(Dataset):
                 and random.random() < getattr(config, 'TRAIN_R_AUGMENT_PROB', 0.0)):
             r = random.choice(config.TRAIN_R_AUGMENT_VALUES)
 
+        # 첫 창 시작부터 마지막 창 끝까지 한 번에 읽는다(창 1개면 clip_length 프레임).
+        # 모든 창이 같은 박스·r·증강을 쓰게 되어, 같은 충돌의 다른 시점일 뿐이 된다.
+        s0 = min(starts)
+        n_read = max(starts) - s0 + self.clip_length
         cap = cv2.VideoCapture(sample['mp4_path'])
         frames = []
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_f)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, s0)
 
-        for _ in range(self.clip_length):
+        for _ in range(n_read):
             ret, frame = cap.read()
             if not ret:
                 break
@@ -272,7 +312,7 @@ class HitAndRunDataset(Dataset):
             frames.append(self._crop_and_pad(frame, bbox, r))
         cap.release()
 
-        while len(frames) < self.clip_length:
+        while len(frames) < n_read:
             frames.append(
                 frames[-1] if frames else np.zeros((self.resize[1], self.resize[0], 3), dtype=np.uint8))
 
@@ -280,4 +320,21 @@ class HitAndRunDataset(Dataset):
         if self.augment:
             frames = self._apply_augmentation(frames)
 
-        return self._frames_to_tensor(frames), torch.tensor(sample['label'], dtype=torch.long)
+        video = self._frames_to_tensor(frames)
+        label = torch.tensor(sample['label'], dtype=torch.long)
+        if not self.span:
+            return video, label
+        # (K, 3, T, H, W) — 구간을 덮는 창들
+        return torch.stack([video[:, s - s0:s - s0 + self.clip_length]
+                            for s in starts]), label
+
+
+def span_collate(batch):
+    """span 배치: 샘플마다 창 수가 달라 창들을 이어 붙이고 샘플별 창 수를 함께 준다.
+
+    반환: (창들 (ΣK, 3, T, H, W), 샘플별 창 수 (B,), 라벨 (B,))
+    """
+    clips = torch.cat([b[0] for b in batch])
+    sizes = torch.tensor([b[0].shape[0] for b in batch], dtype=torch.long)
+    labels = torch.stack([b[1] for b in batch])
+    return clips, sizes, labels

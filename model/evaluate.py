@@ -82,6 +82,7 @@ def _evaluate_folder_impl(
     correct_preds = 0
     tp = tn = fp = fn = 0   # 혼동행렬 (Positive = A/충돌)
     wrong_list = []
+    base_rows = {}          # 영상별 ① 판정 — 서비스 판정과 나란히 영상별 CSV에 남긴다
 
     with torch.inference_mode():
         for mp4_file in tqdm(selected_files, desc="평가 진행률"):
@@ -131,6 +132,7 @@ def _evaluate_folder_impl(
             # ⑦ 영상 텐서를 처음부터 GPU에 상주 — 배치마다 .to(device) 전송 제거
             full_video_tensor = frames_to_tensor(frames).to(device)
             predicted_label = 0
+            first_a = None          # P(A) > 0.5 가 처음 나온 창의 시작 프레임
             num_windows = len(frames) - (clip_length - 1)
             window_starts = list(range(0, num_windows, window_stride))
 
@@ -148,9 +150,11 @@ def _evaluate_folder_impl(
                 pred_classes = outputs.argmax(dim=1)
                 if (pred_classes == 1).any().item():
                     predicted_label = 1
+                    first_a = batch_window_starts[int((pred_classes == 1).nonzero()[0])]
                     break
 
             total_videos += 1
+            base_rows[mp4_file] = {'pred': 'A' if predicted_label else 'S', 'first_a': first_a}
             # 혼동행렬 집계 (Positive = A/충돌)
             if gt_label == 1 and predicted_label == 1:
                 tp += 1
@@ -171,30 +175,14 @@ def _evaluate_folder_impl(
                 })
 
     # ── 논문(Hwang & Lee 2024, Table 6)과 동일한 지표 ──────────────
-    #   Positive = A(충돌).  Recall = TP/(TP+FN), False alarm = FP/(FP+TN),
-    #   Accuracy = (TP+TN)/전체, Precision = TP/(TP+FP), F1 = 2PR/(P+R)
-    def _pct(num, den):
-        return (num / den * 100) if den > 0 else 0.0
-
-    accuracy = _pct(tp + tn, total_videos)
-    recall = _pct(tp, tp + fn)          # 실제 충돌 중 잡은 비율
-    false_alarm = _pct(fp, fp + tn)     # 정상 중 오탐 비율
-    precision = _pct(tp, tp + fp)       # A라 판정한 것 중 실제 A
-    f1 = (2 * precision * recall / (precision + recall)
-          ) if (precision + recall) > 0 else 0.0
-
-    print("\n" + "=" * 50)
-    print("[모델 성능 평가 결과]  (Positive = A/충돌)")
-    print("=" * 50)
-    print(f"총 평가 영상 수 : {total_videos} 개  (A {tp + fn} / S {fp + tn})")
-    print(f"혼동행렬        : TP {tp} / FN {fn} / FP {fp} / TN {tn}")
-    print("-" * 50)
-    print(f"Recall(재현율)      : {recall:.2f}%   (실제 충돌 중 잡음)")
-    print(f"False alarm(오탐율) : {false_alarm:.2f}%   (정상 중 오탐)")
-    print(f"Accuracy(정확도)    : {accuracy:.2f}%")
-    print(f"Precision(정밀도)   : {precision:.2f}%")
-    print(f"F1-score            : {f1:.2f}%")
-    print("=" * 50)
+    base = _metrics(tp, fn, fp, tn)
+    print("\n" + "=" * 60)
+    print("[① 기존 판정]  창 하나라도 P(A) > 0.5 면 그 영상은 충돌  (논문 Table 6 방식)")
+    print(f"   창 간격 {window_stride}로 모든 창을 본다. 거친 탐색·이벤트 규칙이 없고, "
+          "충돌 위치는 따지지 않는다.")
+    print("=" * 60)
+    _print_metrics(base)
+    print("=" * 60)
 
     if wrong_list:
         print("\n[오답 노트 (틀린 영상 리스트)]")
@@ -206,8 +194,10 @@ def _evaluate_folder_impl(
     # 이어서 '서비스와 동일한 경로'로 한 번 더 평가한다
     svc = evaluate_service_path(model, folder_path, selected_files,
                                 target_id=target_id, r_value=r_value,
-                                resize=resize, clip_length=clip_length)
+                                resize=resize, clip_length=clip_length,
+                                base_rows=base_rows)
     svc_rows = svc.pop('rows')
+    _print_comparison(base, svc, svc_rows, window_stride)
 
     # 추론 속도: ① 모델만 ② 서비스 경로 전체(위에서 영상별로 잰 시간)
     speed = {'device': _device_name(device), 'model': benchmark_model(
@@ -217,9 +207,8 @@ def _evaluate_folder_impl(
     svc_b = sb.get(int(config.PREDICT_INFER_BATCH_SIZE), speed['model'][-1])
     s = speed['service'] or {}
     return {
-        'n_videos': total_videos, 'tp': tp, 'fn': fn, 'fp': fp, 'tn': tn,
-        'recall': recall, 'false_alarm': false_alarm, 'accuracy': accuracy,
-        'precision': precision, 'f1': f1,
+        'n_videos': total_videos,
+        **{f'base_{k}': v for k, v in base.items()},
         **{(k if k.startswith(('clean_', 'n_in')) else f'svc_{k}'): v
            for k, v in svc.items()},
         'device': speed['device'],
@@ -232,6 +221,82 @@ def _evaluate_folder_impl(
         '_speed': speed,
         '_svc_rows': svc_rows,
     }
+
+
+def _metrics(tp, fn, fp, tn):
+    """영상 단위 혼동행렬 → 논문 Table 6 지표(%). 분모가 0이면 None.
+
+    Positive = A(충돌). Recall = TP/(TP+FN), False alarm = FP/(FP+TN),
+    Accuracy = (TP+TN)/전체, Precision = TP/(TP+FP), F1 = 2PR/(P+R).
+    """
+    def pct(a, b):
+        return round(a / b * 100, 2) if b else None
+
+    rec, prec = pct(tp, tp + fn), pct(tp, tp + fp)
+    if rec is None or prec is None:
+        f1 = None
+    else:
+        f1 = round(2 * prec * rec / (prec + rec), 2) if (prec + rec) else 0.0
+    return {'tp': tp, 'fn': fn, 'fp': fp, 'tn': tn,
+            'recall': rec, 'false_alarm': pct(fp, fp + tn),
+            'accuracy': pct(tp + tn, tp + fn + fp + tn), 'precision': prec, 'f1': f1}
+
+
+def _fmt_pct(v):
+    return '-' if v is None else f'{v:.2f}%'
+
+
+def _print_metrics(mt):
+    print(f"영상 수            : {mt['tp'] + mt['fn'] + mt['fp'] + mt['tn']} 개  "
+          f"(A {mt['tp'] + mt['fn']} / S {mt['fp'] + mt['tn']})")
+    print(f"혼동행렬           : TP {mt['tp']} / FN {mt['fn']} / FP {mt['fp']} / TN {mt['tn']}")
+    print(f"Recall(재현율)      : {_fmt_pct(mt['recall'])}   (실제 충돌 영상 중 충돌로 판정)")
+    print(f"False alarm(오탐율) : {_fmt_pct(mt['false_alarm'])}   (비충돌 영상 중 충돌로 판정)")
+    print(f"Accuracy(정확도)    : {_fmt_pct(mt['accuracy'])}")
+    print(f"Precision(정밀도)   : {_fmt_pct(mt['precision'])}")
+    print(f"F1-score            : {_fmt_pct(mt['f1'])}")
+
+
+def _print_comparison(base, svc, rows, window_stride):
+    """① 기존 판정과 ② 서비스 판정을 같은 지표로 나란히 — 판정 규칙 차이만 비교된다."""
+    tol = svc.get('hit_tol_sec', 1.0)
+    W = 22
+
+    def line(name, a, b):
+        print(f"{name:<{W}}{a:>18}{b:>22}")
+
+    print("\n" + "=" * 64)
+    print("[판정 방식 비교]  같은 영상, 영상 단위 (Positive = A/충돌)")
+    print("=" * 64)
+    line('', '① 기존 판정', '② 서비스 판정')
+    line('판정 규칙', '창 P(A)>0.5 1개↑', '이벤트 1개↑')
+    line('창 보는 방식', f'간격 {window_stride}, 전부', f'거친 탐색 → 의심 구간만')
+    print("-" * 64)
+    line('TP / FN / FP / TN', f"{base['tp']}/{base['fn']}/{base['fp']}/{base['tn']}",
+         f"{svc['tp']}/{svc['fn']}/{svc['fp']}/{svc['tn']}")
+    line('Recall(재현율)', _fmt_pct(base['recall']), _fmt_pct(svc['video_recall']))
+    line('False alarm(오탐율)', _fmt_pct(base['false_alarm']), _fmt_pct(svc['video_false_alarm']))
+    line('Accuracy(정확도)', _fmt_pct(base['accuracy']), _fmt_pct(svc['accuracy']))
+    line('Precision(정밀도)', _fmt_pct(base['precision']), _fmt_pct(svc['precision']))
+    line('F1-score', _fmt_pct(base['f1']), _fmt_pct(svc['f1']))
+    print("-" * 64)
+    line(f'Recall(시작 ±{tol:g}초)', '(위치 안 봄)', _fmt_pct(svc['hit_recall']))
+    fph = svc.get('false_per_hour')
+    line('오탐 이벤트', '(이벤트 없음)',
+         f"{svc['false_events']}개" + (f" (1시간당 {fph})" if fph is not None else ''))
+    print("=" * 64)
+    print("  · 위 표의 윗부분은 두 판정 모두 '충돌 위치와 무관하게 영상에서 충돌이 나왔나'만 본다.")
+    print(f"  · 서비스에서 쓸모 있는 검출은 'Recall(시작 ±{tol:g}초)'이다 — 충돌 시작 근처에서")
+    print("    시작한 이벤트만 센다(엉뚱한 곳의 이벤트는 사용자가 헛걸음하는 오탐).")
+    diff = [r for r in rows if r.get('base_pred') and r['base_pred'] != r['svc_pred']]
+    if diff:
+        print(f"\n[두 판정이 다른 영상 {len(diff)}개]")
+        for r in diff:
+            fa = f" (첫 A 창 {r['base_first_a']}f)" if r.get('base_first_a') is not None else ''
+            print(f" - {r['file']} (실제 {r['gt']}) : ① {r['base_pred']}{fa} / "
+                  f"② {r['svc_pred']} (이벤트 {r['n_events']}개)")
+    else:
+        print("\n두 판정이 다른 영상은 없습니다.")
 
 
 def _device_name(device):
@@ -373,7 +438,11 @@ def _training_video_names():
 
 
 def _summarize(rows):
-    """영상별 결과(rows) → 서비스 관점 지표."""
+    """영상별 결과(rows) → 서비스 판정 지표.
+
+    · 영상 단위(① 기존 판정과 같은 정의): 이벤트가 하나라도 나오면 그 영상은 충돌.
+    · 위치 기준: 라벨 시작 ± 허용 오차 안에서 시작한 이벤트가 있어야 검출(hit_recall).
+    """
     A = [r for r in rows if r['gt'] == 'A']
     S = [r for r in rows if r['gt'] == 'S']
     hits = sum(1 for r in A if r['hit'])
@@ -384,17 +453,22 @@ def _summarize(rows):
     def pct(a, b):
         return round(a / b * 100, 2) if b else None
 
+    tp = sum(1 for r in A if r['n_events'])
+    fp = sum(1 for r in S if r['n_events'])
+    conf = _metrics(tp, len(A) - tp, fp, len(S) - fp)
     false_events = sum(r['false_events'] for r in rows)
     return {
         'n': len(rows), 'n_A': len(A), 'n_S': len(S),
-        'recall': pct(hits, len(A)),
+        'tp': conf['tp'], 'fn': conf['fn'], 'fp': conf['fp'], 'tn': conf['tn'],
+        'video_recall': conf['recall'], 'video_false_alarm': conf['false_alarm'],
+        'accuracy': conf['accuracy'], 'precision': conf['precision'], 'f1': conf['f1'],
+        'hit_recall': pct(hits, len(A)),
         'overlap_recall': pct(sum(1 for r in A if r['overlap']), len(A)),
         'missed': sum(1 for r in A if r['n_events'] == 0),
         'wrong_place': sum(1 for r in A if r['n_events'] and not r['hit']),
         'split': sum(1 for r in A if r['hit'] and r['n_events'] > 1),
         'false_events': false_events,
         'false_per_hour': round(false_events / hours, 1) if hours else None,
-        'video_false_alarm': pct(sum(1 for r in S if r['n_events']), len(S)),
         'err_median_f': errs[len(errs) // 2] if errs else None,
         'err_median_sec': round(errs_s[len(errs_s) // 2], 3) if errs_s else None,
         'hours': hours,
@@ -404,21 +478,24 @@ def _summarize(rows):
 def _print_summary(s, tol_sec):
     print(f"영상 수            : {s['n']} 개  (A {s['n_A']} / S {s['n_S']}, "
           f"총 {s['hours']*60:.1f}분)")
+    print("· 영상 단위 (이벤트가 하나라도 나오면 충돌 — ① 기존 판정과 같은 정의)")
+    print(f"  혼동행렬         : TP {s['tp']} / FN {s['fn']} / FP {s['fp']} / TN {s['tn']}")
+    print(f"  Recall {_fmt_pct(s['video_recall'])} / 오탐율 {_fmt_pct(s['video_false_alarm'])} / "
+          f"정확도 {_fmt_pct(s['accuracy'])} / 정밀도 {_fmt_pct(s['precision'])} / "
+          f"F1 {_fmt_pct(s['f1'])}")
+    print("· 위치 기준 (서비스에서 쓸모 있는 검출)")
     if s['n_A']:
-        print(f"Recall(시작 ±{tol_sec:g}초) : {s['recall']:.2f}%   "
+        print(f"  Recall(시작 ±{tol_sec:g}초) : {s['hit_recall']:.2f}%   "
               f"← 라벨 시작 근처에서 시작한 이벤트가 있어야 검출")
         print(f"  참고: 구간 겹침만  : {s['overlap_recall']:.2f}%   "
               f"(클립에 충돌 장면이 담기기만 한 경우까지 인정)")
         print(f"  놓침 {s['missed']}건 / 엉뚱한 곳 검출 {s['wrong_place']}건 / "
               f"검출했지만 분할 {s['split']}건")
-    print(f"오탐 이벤트        : {s['false_events']}개"
+    print(f"  오탐 이벤트      : {s['false_events']}개"
           + (f"  (영상 1시간당 {s['false_per_hour']}개)" if s['false_per_hour'] is not None else "")
           + "   ← 충돌 시작과 무관한 클립 전부")
-    if s['n_S']:
-        print(f"비충돌 영상 오탐율 : {s['video_false_alarm']:.2f}%  "
-              f"(S {s['n_S']}개 중 이벤트가 하나라도 나온 비율)")
     if s['err_median_f'] is not None:
-        print(f"시작 시점 오차     : 중앙값 {s['err_median_f']:+d}f "
+        print(f"  시작 시점 오차   : 중앙값 {s['err_median_f']:+d}f "
               f"({s['err_median_sec']:+.2f}초)  ← 가장 가까운 이벤트 기준")
 
 
@@ -430,6 +507,7 @@ def evaluate_service_path(
     r_value=config.R_VALUE,
     resize=config.RESIZE,
     clip_length=config.CLIP_LENGTH,
+    base_rows=None,
 ):
     """서비스가 실제로 쓰는 predict_events_and_clips 로 평가한다.
 
@@ -452,7 +530,7 @@ def evaluate_service_path(
     in_train = _training_video_names()
 
     print("\n" + "=" * 60)
-    print("[서비스 경로 평가]  거친 탐색 선별 + 상태머신 + 병합/길이필터 포함")
+    print("[② 서비스 판정]  서비스와 같은 함수: 거친 탐색 + 상태머신 + 병합/길이필터")
     print("=" * 60)
 
     rows = []
@@ -483,7 +561,11 @@ def evaluate_service_path(
             continue
 
         frames_read = stats.get('frames', frames)
+        base_r = (base_rows or {}).get(mp4_file, {})
         row = {'file': mp4_file, 'gt': 'A' if gt_sf is not None else 'S',
+               # 두 판정을 영상별로 나란히 — ① 기존(창 P(A)>0.5 1개↑) / ② 서비스(이벤트 1개↑)
+               'base_pred': base_r.get('pred'), 'base_first_a': base_r.get('first_a'),
+               'svc_pred': 'A' if events else 'S',
                'in_train': mp4_file in in_train, 'fps': round(fps, 2),
                'frames': frames, 'gt_start': gt_sf, 'gt_end': gt_ef,
                'n_events': len(events),
@@ -559,9 +641,9 @@ def evaluate_service_path(
            **{k: v for k, v in all_s.items() if k not in ('n', 'n_A', 'n_S', 'hours')},
            'n_in_train': n_contam, 'speed': _speed_summary(rows)}
     if clean_s:
-        out.update({'clean_n': clean_s['n'], 'clean_recall': clean_s['recall'],
-                    'clean_false_events': clean_s['false_events'],
-                    'clean_video_false_alarm': clean_s['video_false_alarm']})
+        out.update({'clean_n': clean_s['n'], 'clean_svc_hit_recall': clean_s['hit_recall'],
+                    'clean_svc_false_events': clean_s['false_events'],
+                    'clean_svc_video_false_alarm': clean_s['video_false_alarm']})
     out['rows'] = rows
     return out
 
@@ -586,11 +668,19 @@ class _Tee:
         self.file.close()
 
 
+def _info_metrics(m, prefix, rec_key, fa_key):
+    """run_info 한 줄: 재현율·오탐율·정확도·정밀도·F1 + 혼동행렬."""
+    g = lambda k: m.get(prefix + k)  # noqa: E731
+    return (f"재현율 {_fmt_pct(g(rec_key))} / 오탐율 {_fmt_pct(g(fa_key))} / "
+            f"정확도 {_fmt_pct(g('accuracy'))} / 정밀도 {_fmt_pct(g('precision'))} / "
+            f"F1 {_fmt_pct(g('f1'))} (TP {g('tp')} FN {g('fn')} FP {g('fp')} TN {g('tn')})")
+
+
 def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwargs):
     """폴더 평가 진입점 — 결과를 콘솔과 파일에 동시에 남긴다.
 
     남는 것:
-      1) 회차 폴더       outputs/evallogs/<YYMMDD_HHMM>_<모델>_<ptY|ptN>/
+      1) 회차 폴더       outputs/evallogs/<YYMMDD_HHMM>_<모델>_<ptY|ptN>[_span]/
            · 콘솔 전문 로그  eval_<모델>_<ptY|ptN>_<시각>.txt
            · 영상별 결과     eval_<모델>_<ptY|ptN>_<시각>_videos.csv
       2) 요약 한 줄      outputs/evallogs/eval_summary.csv  (append, run 열 = 회차 폴더 이름)
@@ -599,10 +689,14 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     log_dir = pathlib.Path(getattr(config, 'EVAL_LOG_DIR',
                                    pathlib.Path('outputs') / 'evallogs'))
     log_dir.mkdir(parents=True, exist_ok=True)
-    tag = getattr(config, 'PRETRAIN_TAG', '?')
-    run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, tag)
     weights = pathlib.Path(str(config.EVAL_WEIGHTS_PATH)).name
-    log_path = run_dir / f"eval_{config.MODEL_NAME}_{tag}_{stamp}.txt"
+    # 사전학습 여부는 평가하는 가중치의 이름(_ptY_/_ptN_)으로 정한다. 이름에 없으면 config 값.
+    tag = next((t for t in ('ptY', 'ptN') if f'_{t}_' in weights),
+               getattr(config, 'PRETRAIN_TAG', '?'))
+    # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다
+    name_tag = f'{tag}_span' if '_span_' in weights else tag
+    run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, name_tag)
+    log_path = run_dir / f"eval_{config.MODEL_NAME}_{name_tag}_{stamp}.txt"
     write_run_info(run_dir, [
         ('종류', '평가'),
         ('모델', config.MODEL_NAME),
@@ -633,8 +727,10 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     write_run_info(run_dir, [tuple(l.split(': ', 1)) for l in info] + [
         ('종료', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ('평가 영상 수', m.get('n_videos')),
-        ('재현율(영상 단위, %)', m.get('recall')),
-        ('서비스 경로 재현율(%)', m.get('svc_recall')),
+        ('① 기존 판정(창 P(A)>0.5 1개↑)', _info_metrics(m, 'base_', 'recall', 'false_alarm')),
+        ('② 서비스 판정(이벤트 1개↑)', _info_metrics(m, 'svc_', 'video_recall', 'video_false_alarm')),
+        (f"② 서비스 위치 기준 재현율(시작 ±{m.get('svc_hit_tol_sec')}초)", _fmt_pct(m.get('svc_hit_recall'))),
+        ('② 서비스 오탐 이벤트', m.get('svc_false_events')),
         ('학습 폴더와 겹친 영상', m.get('n_in_train')),
         ('추론 장치', speed.get('device')),
         ('처리 속도(서비스 경로)', f"초당 {s['proc_fps']:.1f} 프레임, 실시간의 {s['realtime_x']:.2f}배 "
@@ -646,7 +742,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     # 영상별 결과 CSV — 어떤 영상에서 무엇이 틀렸는지 나중에 다시 보려고
     rows = m.pop('_svc_rows', [])
     if rows:
-        per_video = run_dir / f"eval_{config.MODEL_NAME}_{tag}_{stamp}_videos.csv"
+        per_video = run_dir / f"eval_{config.MODEL_NAME}_{name_tag}_{stamp}_videos.csv"
         with open(per_video, 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
             w.writeheader()
@@ -655,14 +751,20 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
 
     # 요약 CSV 에 한 줄 덧붙인다(모델 비교용)
     summary = log_dir / 'eval_summary.csv'
+    # base_* = ① 기존 판정(창 P(A)>0.5 1개↑), svc_* = ② 서비스 판정(이벤트 1개↑).
+    # 둘의 tp~f1 은 같은 정의라 그대로 비교된다. svc_hit_recall 은 위치 기준(시작 ±허용 오차).
+    # ⚠️ 2026-10-12 이전 요약 파일의 'recall' 은 지금의 base_recall, 'svc_recall' 은
+    #    지금의 svc_hit_recall 이다(이름만 바뀜).
     cols = ['datetime', 'run', 'model', 'pretrain', 'weights', 'eval_folder', 'n_videos',
-            'tp', 'fn', 'fp', 'tn', 'recall', 'false_alarm', 'accuracy',
-            'precision', 'f1',
-            'svc_hit_tol_sec', 'svc_recall', 'svc_overlap_recall', 'svc_missed',
+            'base_tp', 'base_fn', 'base_fp', 'base_tn', 'base_recall', 'base_false_alarm',
+            'base_accuracy', 'base_precision', 'base_f1',
+            'svc_tp', 'svc_fn', 'svc_fp', 'svc_tn', 'svc_video_recall', 'svc_video_false_alarm',
+            'svc_accuracy', 'svc_precision', 'svc_f1',
+            'svc_hit_tol_sec', 'svc_hit_recall', 'svc_overlap_recall', 'svc_missed',
             'svc_wrong_place', 'svc_split', 'svc_false_events', 'svc_false_per_hour',
-            'svc_video_false_alarm', 'svc_err_median_f', 'svc_err_median_sec',
-            'n_in_train', 'clean_n', 'clean_recall', 'clean_false_events',
-            'clean_video_false_alarm',
+            'svc_err_median_f', 'svc_err_median_sec',
+            'n_in_train', 'clean_n', 'clean_svc_hit_recall', 'clean_svc_false_events',
+            'clean_svc_video_false_alarm',
             # 추론 속도 — 장치가 다르면 비교할 수 없으니 device 와 함께 본다
             'device', 'speed_proc_fps', 'speed_realtime_x', 'speed_windows_eval_pct',
             'speed_model_batch', 'speed_model_clips_per_sec', 'speed_model_ms_per_clip']

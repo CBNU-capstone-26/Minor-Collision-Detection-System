@@ -86,15 +86,50 @@ TRAIN_A_SLICE_STRIDE = 15
 # 15 = 창의 절반을 접근에 배분(접근 15 + 충돌 15). 논문 rcdata의 14와 비슷하다.
 TRAIN_A_PRE_FRAMES = 15
 
+# ---------- A 클립 방식 (실험용 스위치) ----------
+# "pre" (기본): 위 방식 그대로 — 충돌 영상 1개당 창 1개(충돌 시작 PRE 프레임 전부터 30프레임).
+#        충돌이 15프레임보다 길면 뒤쪽(충돌 끝)은 학습에 안 들어간다.
+# "span": 접근(충돌 시작 PRE 프레임 전)부터 충돌 종료까지를 30프레임 창 여러 개로 덮고,
+#        그 창을 '전부' A로 학습하되 충돌 1건의 무게 합은 1로 나눠 준다.
+#          · 첫 창(접근 + 충돌 시작, = 'pre'의 창) : TRAIN_SPAN_FIRST_WEIGHT (기본 ½)
+#          · 나머지 창들(충돌 끝 쪽)                : 남은 무게를 똑같이 나눔 (창 5개면 각 1/10)
+#        → 구간 전체가 학습되고, 충돌은 1건으로 세며(A:S 균형 그대로), 접근 창은 항상 절반을
+#          가져가 '접근 없는 흔들림 위주 창'으로 쏠리지 않는다.
+#        구간이 창 하나에 들어가면 창 1개(무게 1) = 'pre'와 같다. RC 충돌(12~20프레임)은 접근
+#        15를 더해 27~35프레임이라 창 1~2개(2개여도 1~5프레임 차이)라 사실상 'pre'와 같고,
+#        realdata는 대부분 창 2~6개다.
+#        ⚠️ 충돌 끝 쪽 창도 A로 배우므로 라벨의 충돌 종료 프레임이 정확해야 한다.
+#        모델 구조·추론(서비스·평가)은 그대로다.
+# 학습 명령에서 고른다:  python -m model.main --mode train --a-mode span
+# (환경변수 TRAIN_A_MODE=span 으로도 된다. 둘 다 없으면 "pre")
+# ⚠️ 켜면 TRAIN_A_SLICE_ENABLED 는 무시된다.
+TRAIN_A_MODE = os.getenv("TRAIN_A_MODE", "pre").strip().lower()
+TRAIN_SPAN_FIRST_WEIGHT = 0.5  # 첫 창(접근 + 충돌 시작)의 무게. 나머지 창이 1 − 이 값을 나눈다
+# 창 간격 상한(프레임). 구간을 이 간격 이하로 고르게 나눠 창을 놓는다
+# (15 = 창 절반씩 겹침. 30 이하면 구간에 빈틈이 없다).
+TRAIN_SPAN_WINDOW_STRIDE = 15
+# 충돌 하나의 최대 창 수. 넘으면 간격을 넓혀 이 개수로 구간 전체를 덮는다
+# (6개면 접근 포함 175프레임까지 빈틈 없음).
+TRAIN_SPAN_MAX_WINDOWS = 6
+# 한 번에 GPU에 올리는 최대 창 수. 충돌 창이 늘어 배치의 창 수가 이 값을 넘으면 섞어서
+# 고르게 나눠 역전파하고 기울기를 합쳐 한 번에 갱신한다(손실은 같고, BN 통계만 조각
+# 단위로 계산된다). None = TRAIN_BATCH_SIZE × 2.
+# 배치 15의 창 수는 평균 약 17개로 추정된다(로컬 realdata 평균 2.6개·RC 1.75개 기준).
+# 긴 실제 충돌 여러 개가 한 배치에 몰리면 30개 가까이 된다. 'pre' 학습이 이미 GPU
+# 메모리를 꽉 채운다면 TRAIN_BATCH_SIZE 로 낮춘다(그러면 최대 메모리가 'pre'와 같다).
+TRAIN_SPAN_MAX_WINDOWS_PER_STEP = None
+
 TRAIN_S_SLICE_ENABLED = True
-# 논문은 비충돌 영상을 빈틈없이(=CLIP_LENGTH 간격) 잘라 전부 넣는다. 그대로 하면
-# S 클립이 A의 10배가 되고(1:10.4), batch 15의 33%에 A가 한 개도 안 들어가
-# 모델이 '전부 S'로 붕괴한다(실측: A recall 0.000).
-# 연속한 S 클립은 같은 주차장·같은 차를 1초 차이로 본 것이라 사실상 중복이므로,
-# 간격을 3초(90프레임)로 벌려 중복만 덜어낸다. A:S 1:10.4 → 약 1:4.3,
-# 에포크 시간도 2.6배 짧아진다. 모든 클립을 매 에포크 한 번씩 보는 성질은 유지된다
-# (WeightedRandomSampler 로 비율을 맞추면 S 클립 일부가 에포크마다 누락된다).
-TRAIN_S_SLICE_STRIDE = 90
+# 비충돌(S) 영상을 몇 프레임 간격으로 잘라 클립을 만들지.
+# 30 (2026-10-12~) = 논문과 같이 빈틈없이(=CLIP_LENGTH 간격) 잘라 S 영상의 거의 모든
+#   순간을 학습한다. 90(3초 간격, 2026-09~10-12)은 실제 S 영상에서 움직임 있는 순간
+#   (차가 박스 근처를 지나가는 등)을 35%만 담아(30은 96%), 그런 순간을 충돌로 보는
+#   오탐(S→A)을 학습으로 막지 못했다. RC S는 25% → 81%.
+#   대가: A:S 약 1:7.1 → 1:18.6(서버 추정, RC 833 + realdata), 에포크 시간 약 2.4배.
+# ⚠️ 가중치 없이 1:10.4~1:12.9 에서 3에포크 내내 A recall 0.000('전부 S'로 붕괴)이
+#   나온 적이 있다(아래 TRAIN_CLASS_WEIGHTS 주석). 첫 몇 에포크의 val_real recall 을
+#   지켜보고, 계속 0이면 TRAIN_CLASS_WEIGHTS 를 켠다.
+TRAIN_S_SLICE_STRIDE = 30
 TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 때 상한용
 
 # 클래스 가중치(CrossEntropyLoss weight). S 슬라이싱으로 A:S 불균형이 커지면
@@ -106,8 +141,9 @@ TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 �
 #   가중치 없이 학습했더니 3에포크 내내 A recall 0.000 — '전부 S'로 붕괴했다.
 # 값 선택: 역빈도 그대로(12.9)는 오탐이 급증할 위험이 커서 제곱근 완화값을 쓴다.
 #   sqrt(12.9) ≈ 3.6. 이래도 recall이 0이면 12.9 쪽으로 올린다.
-# → stride 90 으로 불균형을 1:4.3 까지 낮췄으므로 손실 가중은 끈다.
-#   둘을 같이 걸면 A를 이중으로 강조해 오탐이 급증한다.
+# → S 간격 90(A:S 약 1:7.1) 동안은 손실 가중을 껐다. 2026-10-12 간격을 30으로 바꿔
+#   약 1:18.6이 됐지만 일단 가중 없이 학습해 본다. val_real recall 이 0에 머물면
+#   sqrt(18.6) ≈ 4.3 → (1.0, 4.3) 부터 켠다.
 TRAIN_CLASS_WEIGHTS = None
 TARGET_ID = 0
 USE_AMP = True
@@ -116,8 +152,10 @@ USE_CHANNELS_LAST = True
 # ---------- 사전학습 / 입력 정규화 ----------
 # 백본은 pytorchvideo X3D-M. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
 # (사전학습은 파라미터 '초기값'만 바꾸므로 모델 크기·추론 속도는 동일)
-# 사전학습 사용 여부. 환경변수로 덮어써서 같은 코드로 A/B를 돌릴 수 있다:
-#     PRETRAINED=0 python main.py --mode train      (scratch 학습)
+# 사전학습 사용 여부. 학습 명령으로 고른다(환경변수 PRETRAINED=0 도 같다):
+#     python -m model.main --mode train --scratch    (무작위 초기화 = scratch 학습)
+# scratch 면 백본도 분류 헤드와 같은 학습률로 학습하고(사전학습 땐 백본 ×0.1),
+# 학습률 기본값은 TRAIN_SCRATCH_LEARNING_RATE 다(아래).
 # ※ 논문(Hwang & Lee 2024)은 3D-CNN을 scratch로 학습했으나 그 이유나 비교실험을
 #   제시하지 않았다. 어느 쪽이 나은지는 우리 데이터로 직접 비교해야 한다.
 PRETRAINED = os.getenv("PRETRAINED", "1").strip().lower() not in ("0", "false", "no")
@@ -162,6 +200,13 @@ TRAIN_MONITOR_SMOOTH = 3
 TRAIN_TOPK_CANDIDATES = 3
 TRAIN_TOPK_MIN_GAP = 3
 TRAIN_LEARNING_RATE = 0.00003  # X3D-M 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
+# scratch(무작위 초기화) 학습률 — 모든 파라미터에 같은 값(AdamW). 검증된 값이 아니라 출발점이다.
+#   · 논문(같은 과제·RC 데이터, Adam, batch 15, scratch): 1e-5. 다만 모델이 I3D 계열이다.
+#   · X3D 공식 scratch(Kinetics 24만 영상): SGD 0.1/batch 128(batch 15면 약 0.012),
+#     300에포크, 35에포크 워밍업, cosine — 대규모 데이터용이라 그대로 옮길 수 없다.
+#   · 그 사이(1e-4)에서 시작하고, 서버에서 1e-5 / 1e-4 / 1e-3 을 짧게(약 10에포크) 돌려
+#     val_real 균형 손실이 가장 잘 내려가는 값을 고른다:  --scratch --lr 1e-3
+TRAIN_SCRATCH_LEARNING_RATE = 0.0001
 # AdamW의 decoupled weight decay. ⚠️ Adam에 weight_decay를 주면 L2 페널티가
 # 적응적 학습률에 의해 파라미터마다 왜곡되므로, 정규화 목적이면 AdamW를 써야 한다.
 #
