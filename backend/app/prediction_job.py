@@ -65,7 +65,11 @@ def run_prediction_task(self, task_id: int):
         video = db.get(db_models.Video, task.video_id)
         model = _get_model()
 
-        from predict_cam import predict_events_and_clips
+        try:
+            from inference import predict_events_and_clips
+        except ImportError:
+            # 이전 백본 폴더("s3d model" 등, MODEL_VARIANT)는 옛 파일명 그대로다
+            from predict_cam import predict_events_and_clips
 
         # 진행률(%)과 남은 시간(초)을 Celery 상태(Redis)에 기록 → /tasks 가 읽어 화면에 전달.
         # 진행률은 0~99 — 100%는 작업 완료(SUCCESS)로만 표시한다. 남은 시간은 분석 함수가

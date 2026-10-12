@@ -63,7 +63,7 @@
 #   torch          # >= 2.5.1 이면 동작 (인덱스 제공 최신 권장)
 #   torchvision    # torch와 짝 맞춰 자동 설치 — S3D 백본 + Kinetics-400 사전학습 제공
 
-# ---- 영상 처리 / 수치 연산 (dataset·predict_cam·evaluate) ----
+# ---- 영상 처리 / 수치 연산 (dataset·inference·evaluate) ----
 # Python 버전에 따라 제공되는 최신 버전이 다르므로 하한(>=)만 지정해 이식성 확보.
 # (정확 핀(==)은 특정 Python에서만 휠이 있어 resolution 실패 위험 — 예: numpy 2.4.x는 Python 3.11+ 전용)
 # 로컬 검증(Python 3.11.15) 당시 실제 버전: numpy 2.4.6 / opencv 4.13.0.92 / pillow 12.2.0 / tqdm 4.68.1

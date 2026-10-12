@@ -40,7 +40,7 @@ def run_train():
 
 
 def run_predict():
-    from predict_cam import predict_hit_and_run_final
+    from inference import predict_hit_and_run_final
     model, _ = _load_model(config.PREDICT_WEIGHTS_PATH)
     out_path, events = predict_hit_and_run_final(model)
     if out_path is None:

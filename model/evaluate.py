@@ -446,7 +446,7 @@ def evaluate_service_path(
                     영상의 여분). 사용자가 헛걸음하게 되는 클립 수다.
     """
     import tempfile
-    from predict_cam import predict_events_and_clips
+    from inference import predict_events_and_clips
 
     tol_sec = float(getattr(config, 'EVAL_HIT_TOLERANCE_SEC', 1.0))
     in_train = _training_video_names()
