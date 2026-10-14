@@ -40,9 +40,16 @@ def _get_model():
         str(model_config.SERVICE_WEIGHTS_PATH), map_location="cpu", weights_only=True)
     model.load_state_dict(state_dict)
     model.eval()
-    _model = model
     print(f"[worker] 모델 로드 완료 — {getattr(model_config, 'MODEL_NAME', '?')} "
           f"(device={device}, weights={model_config.SERVICE_WEIGHTS_PATH.name})")
+    # 추론 실행 방식을 모델 로드 때 정해 둔다(이 컴퓨터에서 처음이면 자가 검사, 이후엔 저장된 결과).
+    # 실패해도 분석은 PyTorch 로 돌아야 하므로 여기서 예외를 막는다.
+    try:
+        from infer_runtime import get_runner
+        get_runner(model)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] 추론 실행 방식 선택 실패 — PyTorch 로 진행: {exc}")
+    _model = model
     return _model
 
 

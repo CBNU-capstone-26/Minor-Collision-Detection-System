@@ -12,6 +12,7 @@ from pathlib import Path
 
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported
+from infer_runtime import get_runner
 
 # 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
 _FFMPEG = shutil.which("ffmpeg")
@@ -548,8 +549,11 @@ def predict_events_and_clips(
 
     target_bbox = [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])]
 
-    handle = model.inception5b.register_forward_hook(
-        get_activation('inception5b'))
+    # 3D-CNN 실행기 — 서버 컴퓨터에 맞는 가장 빠른 방식(infer_runtime.py, 처음 한 번만 고름).
+    # CAM 히트맵 합성(개발용, 기본 꺼짐)을 켰을 때만 예전처럼 PyTorch + hook 으로 특징맵을 받는다.
+    runner = None if cam_overlay else get_runner(model)
+    handle = (model.inception5b.register_forward_hook(get_activation('inception5b'))
+              if cam_overlay else None)
     try:
         # ── 1패스: 추론용 224×224 프레임만 메모리에 보관 (원본 프레임은 보관 X) ──
         # 원본 해상도 프레임을 전부 RAM에 들면 영상 길이×해상도에 비례해 메모리가
@@ -686,10 +690,13 @@ def predict_events_and_clips(
                         clips = clips.contiguous(
                             memory_format=torch.channels_last_3d)
 
-                    outputs = model(clips)
+                    if runner is not None:
+                        outputs, feat_maps = runner(clips), None
+                    else:
+                        outputs = model(clips)
+                        feat_maps = activation['inception5b']
                     probs = F.softmax(outputs, dim=1)
                     pred_classes = outputs.argmax(dim=1)
-                    feat_maps = activation['inception5b']
 
                     for offset, window_idx in enumerate(batch_window_starts):
                         # 판정·CAM 은 창 끝이 아니라 '창 시작 + display_offset' 프레임에
@@ -931,9 +938,11 @@ def predict_events_and_clips(
         if stats is not None:
             stats.update(frames=real_frame_count, decode_sec=decode_sec, flow_sec=flow_sec,
                          infer_sec=infer_sec[0], render_sec=time.time() - t_render,
-                         windows_total=len(window_starts), windows_eval=len(window_pred))
+                         windows_total=len(window_starts), windows_eval=len(window_pred),
+                         backend=runner.name if runner is not None else 'torch(CAM)')
         print(f"[predict_events_and_clips] {len(results)}건 사고구간 클립 생성")
         return results
 
     finally:
-        handle.remove()
+        if handle is not None:
+            handle.remove()

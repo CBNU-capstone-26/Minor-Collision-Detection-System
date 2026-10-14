@@ -319,6 +319,25 @@ PREDICT_EVENT_MERGE_GAP_SEC = 3.0
 #   (이전 값 40: 옛 모델로 stride 1 에서 '단발 29f / 지속 48f 이상' 사이를 자른 값)
 PREDICT_MIN_EVENT_SPAN_FRAMES = 35
 
+# ---------- 추론 실행 방식 (서비스·평가 공통, infer_runtime.py) ----------
+# 서버 컴퓨터 사양이 정해져 있지 않아, 그 컴퓨터에서 쓸 수 있는 방식을 처음 한 번 자가 검사해
+# 가장 빠른 것을 고른다. PyTorch 와 결과(P(A))가 같은 방식만 통과한다(정밀도는 FP32 그대로).
+#   auto(기본) | torch | openvino | onnxruntime        (환경변수 INFER_BACKEND 로도 지정)
+#   · 모델이 GPU(CUDA)에 있으면 auto 는 PyTorch GPU 를 쓴다.
+#   · 2026-10-14 개발 PC(i5-1135G7, Linux) 측정: PyTorch 대비 OpenVINO 약 3~4배, ONNX Runtime 약 1.8배.
+#   · openvino·onnxruntime 이 설치 안 됐거나, 변환·검사가 실패하면 다음 방식(최후엔 PyTorch)으로 넘어간다.
+#   · 검사 결과·변환 파일은 INFER_CACHE_DIR 에 저장되고, 가중치·패키지 버전·CPU/GPU·OS 가 같으면
+#     다음부터는 속도를 다시 재지 않고 서버를 띄울 때마다 창 1개로 결과만 빠르게 확인한다(수 초).
+#     처음 한 번의 전체 검사(수십 초)를 미리 해 두기: python -m model.main --mode check-backend
+#   · CAM 히트맵 합성(PREDICT_CLIP_CAM_OVERLAY, 개발용)을 켜면 그 경로는 PyTorch 로 돈다.
+INFER_BACKEND = os.getenv("INFER_BACKEND", "auto").strip().lower()
+# GPU FP16(autocast). Tensor Core 가 있는 NVIDIA GPU(연산능력 7.0 이상)에서만 켜지고 자가 검사도 거친다.
+# 학습 서버에서 python -m model.fp16_check 로 속도·평가 결과를 확인한 뒤 켠다(환경변수 INFER_FP16=1).
+INFER_FP16 = os.getenv("INFER_FP16", "0").strip().lower() in ("1", "true", "yes")
+INFER_CHECK_MAX_PROB_DIFF = 1e-3   # 자가 검사: FP32 방식들의 P(A) 허용 차이 (개발 PC 실측 최대 8e-5)
+INFER_FP16_MAX_PROB_DIFF = 1e-2    # 자가 검사: FP16 의 P(A) 허용 차이
+INFER_CACHE_DIR = _ROOT / "weights" / ".infer_cache"   # 변환 파일(ONNX)·자가 검사 결과
+
 # ---------- 실제영상 정확도 평가 전용 ----------
 # 평가할 가중치. 여러 학습 결과를 비교할 땐 환경변수로 골라 쓴다:
 #     EVAL_WEIGHTS=weights/hitandrun_s3d_..._ptN_0.31.pth python main.py --mode eval

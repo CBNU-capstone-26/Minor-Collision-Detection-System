@@ -82,5 +82,12 @@ ultralytics>=8.3.0  # YOLO11 지원(8.3.0+). matplotlib·pyyaml·scipy 등 의�
 # 설치 시 fvcore·iopath·av 등이 함께 설치된다.
 pytorchvideo==0.1.5
 
+# ---- 추론 가속 (선택 — 없거나 실패하면 PyTorch 로 자동 대체, model/infer_runtime.py) ----
+# 서버 컴퓨터에서 처음 한 번 자가 검사해, PyTorch 와 결과가 같은 것 중 가장 빠른 방식을 쓴다
+# (정밀도 FP32 그대로). Windows·macOS(Intel·Apple Silicon)·Linux 모두 pip 패키지가 있다.
+openvino==2026.4.1    # Intel CPU 에서 빠름 (개발 PC 측정: PyTorch 대비 약 3~4배)
+onnxruntime==1.31.0   # 그 밖의 CPU(AMD·Apple Silicon 등)
+onnx==1.23.2          # 위 두 방식이 읽는 변환 파일(ONNX)을 만들 때 필요
+
 # ---- 테스트/스크립트용 ----
 requests==2.34.2

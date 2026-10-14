@@ -87,3 +87,10 @@ pytorchvideo>=0.1.5
 # ---- 학습 곡선 그래프 (trainplot.py — 학습 중 매 에포크 PNG 생성) ----
 # 없으면 그래프만 건너뛰고 학습은 계속된다. 로컬 검증: 3.11.1
 matplotlib>=3.7
+
+# ---- 추론 가속 (선택 — CPU 로 평가할 때만 의미. 없으면 PyTorch 로 평가) ----
+# 평가는 서비스와 같은 추론 실행기(model/infer_runtime.py)를 쓴다. GPU 서버에서는 PyTorch GPU 를
+# 쓰므로 필요 없다. CPU 에서 평가를 빠르게 하려면 설치한다.
+# openvino>=2025.0
+# onnxruntime>=1.20
+# onnx>=1.16

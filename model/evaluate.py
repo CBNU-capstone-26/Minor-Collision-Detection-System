@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported
+from infer_runtime import get_runner
 from runlog import make_run_dir, write_run_info
 
 
@@ -31,6 +32,8 @@ def _evaluate_folder_impl(
     device = next(model.parameters()).device
     model.eval()
     window_stride = max(1, int(window_stride))
+    # 서비스와 같은 실행기(infer_runtime.py)로 추론해야 평가 결과·속도가 서비스와 같다
+    runner = get_runner(model)
 
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
@@ -146,7 +149,7 @@ def _evaluate_folder_impl(
                     clips = clips.contiguous(
                         memory_format=torch.channels_last_3d)
 
-                outputs = model(clips)
+                outputs = runner(clips)
                 pred_classes = outputs.argmax(dim=1)
                 if (pred_classes == 1).any().item():
                     predicted_label = 1
@@ -200,7 +203,7 @@ def _evaluate_folder_impl(
     _print_comparison(base, svc, svc_rows, window_stride)
 
     # 추론 속도: ① 모델만 ② 서비스 경로 전체(위에서 영상별로 잰 시간)
-    speed = {'device': _device_name(device), 'model': benchmark_model(
+    speed = {'device': f'{_device_name(device)} · 실행 방식 {runner.name}', 'model': benchmark_model(
         model, clip_length=clip_length, resize=resize), 'service': svc.pop('speed')}
     _print_speed(speed)
     sb = {b['batch']: b for b in speed['model']}
@@ -317,7 +320,7 @@ def _device_name(device):
 
 def benchmark_model(model, clip_length=config.CLIP_LENGTH, resize=config.RESIZE,
                     batch_sizes=None, min_sec=3.0, max_iters=30):
-    """3D-CNN 순수 추론 속도 — 영상 디코딩·크롭·전처리 없이 모델만 잰다.
+    """3D-CNN 순수 추론 속도 — 영상 디코딩·크롭·전처리 없이 모델만 잰다(서비스와 같은 실행 방식).
 
     서비스는 창 간격 1(PREDICT_WINDOW_STRIDE)이라 영상을 빠짐없이 훑으려면 프레임
     하나당 창(30프레임 클립) 하나를 추론해야 한다. 그래서 '초당 처리한 창 수'가 곧
@@ -328,18 +331,18 @@ def benchmark_model(model, clip_length=config.CLIP_LENGTH, resize=config.RESIZE,
                                          int(config.EVAL_INFER_BATCH_SIZE)})
     sync = (torch.cuda.synchronize if is_cuda_like(device) else (lambda: None))
     out = []
-    model.eval()
+    runner = get_runner(model)          # 서비스와 같은 실행 방식으로 잰다
     with torch.inference_mode():
         for bs in batch_sizes:
             x = torch.randn(bs, 3, clip_length, resize[1], resize[0], device=device)
             if is_channels_last_3d_supported(device):
                 x = x.contiguous(memory_format=torch.channels_last_3d)
             for _ in range(2):                       # 첫 호출 오버헤드(cuDNN 탐색 등) 제외
-                model(x)
+                runner(x)
             sync()
             n, t0 = 0, time.perf_counter()
             while n < max_iters and (time.perf_counter() - t0) < min_sec:
-                model(x)
+                runner(x)
                 n += 1
             sync()
             sec = time.perf_counter() - t0
