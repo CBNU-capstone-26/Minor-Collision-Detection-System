@@ -67,7 +67,11 @@ celery==5.6.3
 redis==8.0.0
 
 # ---- 영상처리 / 수치연산 (추론·CAM 클립 생성; torch는 위 별도 스텝) ----
-opencv-python-headless==4.13.0.92
+# OpenCV 는 opencv-python 하나만 둔다. 차량 감지용 ultralytics 가 opencv-python 을 필수로 요구해서
+# headless 판을 따로 적으면 둘이 함께 깔려 같은 cv2 를 덮어쓴다(2026-08-29~10-15 실제로 그랬음).
+# ⚠️ Linux 서버·최소 도커 이미지는 화면 라이브러리가 필요하다: apt install -y libgl1 libglib2.0-0
+#    (Windows·macOS 는 그대로 된다)
+opencv-python==5.0.0.93
 imageio-ffmpeg==0.6.0  # ffmpeg 바이너리 내장(libx264). 시스템 ffmpeg가 없는 macOS·Windows에서 CAM 클립 H.264 변환용
 numpy==2.4.6
 pillow==12.2.0
