@@ -55,6 +55,8 @@ class EventOut(BaseModel):
     crash_prob: Optional[float] = None
     has_clip: bool = False
     has_raw_clip: bool = False   # 합성 없는 원본 사고 클립을 내려받을 수 있는지
+    analyzed_at: Optional[datetime] = None   # 분석이 끝나 이 클립이 만들어진 시각(UTC, 시간대 포함)
+    analysis_no: Optional[int] = None        # 이 클립을 만든 분석이 그 영상의 몇 번째 분석인지(실패·취소 포함, 1부터)
 
 
 class ActiveTaskOut(BaseModel):
@@ -97,6 +99,17 @@ class LastTaskOut(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class AnalysisHistoryOut(BaseModel):
+    """영상의 분석 1회 — 재생 화면 오른쪽 '분석 이력'. 시각은 모두 UTC(시간대 포함)."""
+    analysis_no: int                       # 이 영상의 몇 번째 분석인지(실패·취소 포함, 1부터)
+    task_id: int
+    status: str                            # PENDING/PROCESSING/SUCCESS/FAILURE/CANCELLED
+    error_message: Optional[str] = None
+    requested_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None  # 이력 기능 전 분석은 클립이 만들어진 시각으로 대신(없으면 None)
+    event_count: Optional[int] = None       # 찾은 클립 수 — 이력 기능 전 분석은 모름(None)
+
+
 class VideoOut(BaseModel):
     id: int
     video_name: str
@@ -113,6 +126,7 @@ class VideoOut(BaseModel):
     events: list[EventOut] = []
     last_task: Optional[LastTaskOut] = None
     analysis_done: bool = False   # 분석을 한 번이라도 완료(SUCCESS)했는지
+    analysis_history: list[AnalysisHistoryOut] = []   # 영상 상세(GET /videos/{id})에서만 채운다
 
 
 

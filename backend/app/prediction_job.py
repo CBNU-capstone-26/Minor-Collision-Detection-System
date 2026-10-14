@@ -3,6 +3,7 @@
 torch/opencv/모델 임포트는 모두 **태스크 내부에서 지연 로딩**한다.
 → FastAPI 웹 프로세스는 ML 의존성 없이도 이 모듈을 임포트(.delay 호출)할 수 있다.
 """
+from datetime import datetime
 from pathlib import Path
 
 from app.worker import celery_app
@@ -131,6 +132,8 @@ def run_prediction_task(self, task_id: int):
             ))
 
         task.status = "SUCCESS"
+        task.finished_at = datetime.utcnow()
+        task.event_count = len(results)
         db.commit()
         return {"task_id": task_id, "events": len(results)}
 
@@ -140,6 +143,7 @@ def run_prediction_task(self, task_id: int):
         if task is not None:
             task.status = "FAILURE"
             task.error_message = str(exc)[:2000]
+            task.finished_at = datetime.utcnow()
             db.commit()
         raise
     finally:

@@ -44,14 +44,21 @@ def _wait_for_db(timeout_sec=60):
 _wait_for_db()
 Base.metadata.create_all(bind=engine)
 
-# 기존 테이블에 detected_vehicles 컬럼 마이그레이션 보장
-with engine.connect() as conn:
-    try:
-        from sqlalchemy import text
-        conn.execute(text("ALTER TABLE videos ADD COLUMN detected_vehicles TEXT NULL;"))
-        conn.commit()
-    except Exception:
-        pass
+def _ensure_column(table, column_ddl):
+    """나중에 추가한 컬럼을 기존 테이블에도 넣는다 (create_all 은 이미 있는 테이블을 고치지 않는다).
+    이미 있으면 MySQL 이 오류를 내므로 그냥 넘어간다."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_ddl};"))
+            conn.commit()
+        except Exception:
+            pass
+
+
+_ensure_column("videos", "detected_vehicles TEXT NULL")
+_ensure_column("analysis_tasks", "finished_at DATETIME NULL")   # 분석 이력: 끝난 시각
+_ensure_column("analysis_tasks", "event_count INT NULL")        # 분석 이력: 찾은 클립 수
 
 app.include_router(auth.router)
 app.include_router(videos.router)

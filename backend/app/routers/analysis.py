@@ -1,4 +1,5 @@
 """분석 요청 / 태스크 상태 / 이벤트·클립 조회 라우터."""
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -136,6 +137,7 @@ def cancel_task(
     if task.status in ACTIVE_STATUSES:
         task.status = "CANCELLED"
         task.error_message = "사용자가 작업을 취소함"
+        task.finished_at = datetime.utcnow()
         if task.celery_task_id:
             try:
                 from app.worker import celery_app
