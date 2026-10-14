@@ -5,6 +5,8 @@ services:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: capstone_db
     ports:
+      # macOS native MySQL commonly uses 3306; expose this project's
+      # container on 3307 so both databases can run at the same time.
       - "3306:3306"
     # 데이터 영구 보존: named volume을 MySQL 데이터 디렉터리에 마운트
     # (컨테이너를 삭제·재생성해도 mysql_data 볼륨에 데이터가 유지됨)

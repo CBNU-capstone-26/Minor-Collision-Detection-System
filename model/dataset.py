@@ -26,7 +26,7 @@ class HitAndRunDataset(Dataset):
         self.resize = resize
         # augment=True → 학습용(랜덤 증강 적용), False → 검증용(증강 없음, 결정적)
         self.augment = augment
-        # 정규화 통계는 사전학습(S3D Kinetics-400)과 동일하게 config에서 일괄 관리
+        # 정규화 통계는 사전학습(Kinetics-400)과 동일하게 config에서 일괄 관리
         self.mean = torch.tensor(
             config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
         self.std = torch.tensor(

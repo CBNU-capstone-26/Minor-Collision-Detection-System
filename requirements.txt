@@ -31,6 +31,7 @@
 #       --index-url https://download.pytorch.org/whl/cpu torch==2.12.0 torchvision==0.27.0
 #   cd backend && ../venv311/bin/python -m uvicorn app.main:app --port 8000
 #   cd backend && ../venv311/bin/celery -A app.worker worker --concurrency=1
+#     (서비스 백본은 model/ 의 x3d. 로컬에 "s3d model/" 이 있으면 MODEL_VARIANT=s3d 로 바꿔 띄울 수 있다)
 #   cd ui && npm install && npm run dev
 #
 # torch/torchvision 은 PyTorch 전용 인덱스에서 받아야 하므로 별도 스텝으로 설치합니다.
@@ -42,8 +43,9 @@
 #   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.12.0 torchvision==0.27.0
 #
 # macOS: 위 torch 명령 그대로 사용 가능(맥은 CPU 휠이 기본).
-# GPU(CUDA)로 추론하려면 --index-url 을 https://download.pytorch.org/whl/cu121 등으로 바꾸고
-# model/config.py 의 INFER_DEVICE_TYPE="cuda" 로 설정하세요.
+# GPU(CUDA)로 추론하려면 --index-url 을 https://download.pytorch.org/whl/cu121 등으로 바꾸세요.
+# 서비스 백본 폴더(model/)의 config.py 는 INFER_DEVICE_TYPE="cuda" 라 GPU 가 있으면
+# 그대로 쓰고, 없으면 경고를 찍고 CPU 로 자동 전환한다.
 # ================================================================
 
 # ---- 웹 (FastAPI) ----
@@ -53,6 +55,7 @@ starlette==1.2.1
 pydantic==2.13.4
 pydantic-core==2.46.4
 python-multipart==0.0.32
+pyjwt==2.15.1  # 로그인 토큰(JWT) 서명·만료
 
 # ---- DB (MySQL local / PostgreSQL Supabase remote) ----
 sqlalchemy==2.0.50
@@ -60,10 +63,10 @@ pymysql==1.2.0
 psycopg[binary]>=3.2.0
 cryptography==48.0.0
 
-# Local .env loading
+# Local .env loading for this branch's DB connection settings.
 python-dotenv>=1.0.0
 
-# S3 호환 객체 저장소 (Cloudflare R2 등)
+# Existing videos are stored in Cloudflare R2 / S3-compatible object storage.
 boto3>=1.35.0
 
 # ---- 비동기 작업 (Celery + Redis) ----
@@ -71,15 +74,31 @@ celery==5.6.3
 redis==8.0.0
 
 # ---- 영상처리 / 수치연산 (추론·CAM 클립 생성; torch는 위 별도 스텝) ----
-opencv-python-headless==4.13.0.92
+# OpenCV는 opencv-python 하나만 둔다. 차량 감지용 ultralytics가 opencv-python을 필수로 요구해서
+# headless 판을 따로 적으면 둘이 함께 깔려 같은 cv2를 덮어쓴다(2026-08-29~10-15 실제로 그랬음).
+# ⚠️ Linux 서버·최소 도커 이미지는 화면 라이브러리가 필요하다: apt install -y libgl1 libglib2.0-0
+#    (Windows·macOS는 그대로 된다)
+opencv-python==5.0.0.93
+imageio-ffmpeg==0.6.0  # ffmpeg 바이너리 내장(libx264). 시스템 ffmpeg가 없는 macOS·Windows에서 CAM 클립 H.264 변환용
 numpy==2.4.6
 pillow==12.2.0
 tqdm==4.68.1
-pytorchvideo==0.1.5
 
 # ---- 차량 자동탐지 (라이브 서비스 /detect-vehicles; YOLO11) ----
 # ※ torch/torchvision 은 위 '별도 스텝'으로 이미 설치됨. YOLO11x 가중치는 첫 실행 시 자동 다운로드.
 ultralytics>=8.3.0  # YOLO11 지원(8.3.0+). matplotlib·pyyaml·scipy 등 의존성 함께 설치됨
+
+# ---- X3D 백본 (서비스 기본 백본) ----
+# x3d_m 모델 정의를 제공한다. MODEL_VARIANT=s3d 로만 쓸 땐 불필요.
+# 설치 시 fvcore·iopath·av 등이 함께 설치된다.
+pytorchvideo==0.1.5
+
+# ---- 추론 가속 (선택 — 없거나 실패하면 PyTorch로 자동 대체, model/infer_runtime.py) ----
+# 서버 컴퓨터에서 처음 한 번 자가 검사해, PyTorch와 결과가 같은 것 중 가장 빠른 방식을 고른다.
+# (정밀도 FP32 그대로). Windows·macOS(Intel·Apple Silicon)·Linux 모두 pip 패키지가 있다.
+openvino==2026.4.1    # Intel CPU에서 빠름 (개발 PC 측정: PyTorch 대비 약 3~4배)
+onnxruntime==1.31.0   # 그 밖의 CPU(AMD·Apple Silicon 등)
+onnx==1.23.2          # 위 두 방식이 읽는 변환 파일(ONNX)을 만들 때 필요
 
 # ---- 테스트/스크립트용 ----
 requests==2.34.2
