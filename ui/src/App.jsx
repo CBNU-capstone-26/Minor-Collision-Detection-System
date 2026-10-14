@@ -936,7 +936,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [isDrawing, setIsDrawing] = useState(false);
   const bboxOverlayRef = useRef(null);
   const videoElRef = useRef(null); // 실제 <video> 엘리먼트 (원본 해상도 환산용)
-  const [showBBoxPanel, setShowBBoxPanel] = useState(false);
 
   // YOLO 차량 자동 탐지 및 마우스 Hover 관련 상태
   const [isDetectingVehicles, setIsDetectingVehicles] = useState(false);
@@ -1276,8 +1275,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setSelectionMode("manual");
     setIsBBoxMode(true);
     setHoveredDetectedBox(null);
-    setShowBBoxPanel(true);
-    showToast("🖱️ 수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요.", "info");
+    showToast("🖱️ 직접 차량 지정 모드: 마우스로 드래그하여 사고 차량을 지정해 주세요.", "info");
   };
 
   // 탐지/지정 모드 해제
@@ -1308,8 +1306,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       setIsPlaying(false);
     }
     setSelectionMode("auto");
-    setIsDetectingVehicles(true);
-    showToast("YOLO 모델로 차량을 탐지 중입니다...", "info");
+    setIsDetectingVehicles(true);   // 진행 표시는 영상 위 로딩으로 한다(알림 없음)
 
     const controller = new AbortController();
     detectAbortControllerRef.current = controller;
@@ -1319,11 +1316,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       const list = res.detected_vehicles || [];
       setDetectedBoxes(list);
       setIsBBoxMode(true);
-      setShowBBoxPanel(true);
+      // 탐지 성공은 알리지 않는다(영상 위에 차량이 바로 표시됨). 한 대도 없을 때만 다음 행동을 안내한다.
       if (list.length === 0) {
-        showToast("탐지된 차량이 없습니다. 수동 차량 지정을 이용해 주세요.", "warning");
-      } else {
-        showToast(`${list.length}대의 차량이 탐지되었습니다! 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`, "success");
+        showToast("탐지된 차량이 없습니다. 직접 차량 지정을 이용해 주세요.", "warning");
       }
     } catch (err) {
       if (err.name === "AbortError") {
@@ -2089,9 +2084,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
                   disabled={isAnalyzing}
                   onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
-                  title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다" : "YOLO 알고리즘으로 현재 정지 화면의 차량을 자동 탐지하여 선택합니다"}
+                  title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다" : "현재 화면의 차량을 자동으로 찾아 표시합니다"}
                 >
-                  {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
+                  {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 차량 탐지"}
                 </button>
 
                 <button
@@ -2104,9 +2099,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       handleStartManualDesignate();
                     }
                   }}
-                  title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "수동 지정 모드 종료" : "직접 드래그하여 차량 지정")}
+                  title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "직접 지정 모드 종료" : "직접 드래그하여 차량 지정")}
                 >
-                  {selectionMode === "manual" ? "수동 지정 종료" : "수동 차량 지정"}
+                  {selectionMode === "manual" ? "직접 지정 종료" : "직접 차량 지정"}
                 </button>
 
                 {selectionMode !== "none" && (
@@ -2368,15 +2363,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
             {/* 우측/중앙: 메인 비디오 플레이어 */}
             <section className="player-section">
-              {/* 지정 모드 안내문 (영상 상단을 가리지 않도록 비디오 플레이어 바깥 위에 배치) */}
-              {selectionMode !== "none" && (
+              {/* 수동 지정 모드 안내문 (영상 상단을 가리지 않도록 비디오 플레이어 바깥 위에 배치).
+                  자동 탐지 모드에는 안내 바를 띄우지 않는다. */}
+              {selectionMode === "manual" && (
                 <div className="bbox-mode-guide-bar">
-                  <span className="bbox-guide-icon">{selectionMode === "auto" ? "🔍" : "🖱️"}</span>
-                  <span>
-                    {selectionMode === "auto"
-                      ? "YOLO 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다."
-                      : "수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요."}
-                  </span>
+                  <span className="bbox-guide-icon">🖱️</span>
+                  <span>직접 차량 지정 모드: 마우스로 드래그하여 사고 차량을 지정해 주세요.</span>
                 </div>
               )}
 
@@ -2491,6 +2483,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       pointerEvents: isBBoxMode ? "none" : "auto",
                     }}
                   />
+
+                  {/* 차량 자동 탐지 중: 영상 화면 위에 로딩 표시 */}
+                  {isDetectingVehicles && (
+                    <div className="vehicle-detect-loading" role="status" aria-live="polite">
+                      <div className="vehicle-detect-spinner" />
+                      <span>차량을 찾는 중…</span>
+                    </div>
+                  )}
 
                   {/* 저장된 바운딩 박스 렌더링 (단일 박스) */}
                   {bboxList.map((box) => (
@@ -2682,76 +2682,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                 </div>
               </div>
 
-              {/* 바운딩박스 좌표 결과 패널 */}
-              {showBBoxPanel && (
-                <div className="bbox-result-panel">
-                  <div className="bbox-panel-header">
-                    <div className="bbox-panel-title">
-                      <span className="bbox-panel-icon">📦</span>
-                      <span>사고 차량 바운딩박스 좌표</span>
-                    </div>
-                    <div className="bbox-panel-actions">
-                      {bboxList.length > 0 && (
-                        <button
-                          className="bbox-clear-btn"
-                          onClick={() => setBboxList([])}
-                          title="전체 박스 초기화"
-                        >
-                          초기화
-                        </button>
-                      )}
-                      <button
-                        className="bbox-panel-close-btn"
-                        onClick={() => setShowBBoxPanel(false)}
-                        title="패널 닫기"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-
-                  {bboxList.length === 0 ? (
-                    <div className="bbox-empty-hint">
-                      <span>🖱️</span>
-                      <span>영상 화면에서 드래그하여 박스를 그려보세요.</span>
-                    </div>
-                  ) : (
-                    <div className="bbox-coord-list">
-                      {bboxList.map((box, idx) => (
-                        <div key={box.id} className="bbox-coord-row">
-                          <span className="bbox-coord-index">#{idx}</span>
-                          <code className="bbox-coord-value">
-                            (car, {idx}, {box.xmin}, {box.ymin}, {box.xmax}, {box.ymax})
-                          </code>
-                          <button
-                            className="bbox-row-delete-btn"
-                            onClick={() => setBboxList((prev) => prev.filter((b) => b.id !== box.id))}
-                            title="삭제"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {bboxList.length > 0 && (
-                    <button
-                      className="bbox-copy-btn"
-                      onClick={() => {
-                        const text = bboxList
-                          .map((box, idx) => `(car, ${idx}, ${box.xmin}, ${box.ymin}, ${box.xmax}, ${box.ymax})`)
-                          .join("\n");
-                        navigator.clipboard.writeText(text).then(() => {
-                          alert("좌표가 클립보드에 복사되었습니다!");
-                        });
-                      }}
-                    >
-                      📋 좌표 전체 복사
-                    </button>
-                  )}
-                </div>
-              )}
             </section>
           </div>
         </main>

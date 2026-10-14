@@ -3873,213 +3873,7 @@ body.dark-mode .auto-detect-btn:hover {
 }
 
 
-
-/* 바운딩박스 결과 패널 */
-.bbox-result-panel {
-  margin-top: 12px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-}
-
-.bbox-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-
-.bbox-panel-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 800;
-  color: #1f2937;
-}
-
-.bbox-panel-icon {
-  font-size: 18px;
-}
-
-.bbox-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.bbox-clear-btn {
-  padding: 4px 12px;
-  border-radius: 6px;
-  border: 1px solid #fca5a5;
-  background: #fee2e2;
-  color: #b91c1c;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.bbox-clear-btn:hover {
-  background: #fecaca;
-  border-color: #ef4444;
-}
-
-.bbox-panel-close-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.bbox-panel-close-btn:hover {
-  background: #e2e8f0;
-  color: #1f2937;
-}
-
-/* 빈 상태 힌트 */
-.bbox-empty-hint {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px dashed #cbd5e1;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* 좌표 목록 */
-.bbox-coord-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.bbox-coord-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-}
-
-.bbox-coord-index {
-  font-size: 11px;
-  font-weight: 800;
-  color: #ef4444;
-  min-width: 24px;
-}
-
-.bbox-coord-value {
-  flex: 1;
-  font-family: "Courier New", Courier, monospace;
-  font-size: 12px;
-  font-weight: 700;
-  color: #1e3a8a;
-  background: #eff6ff;
-  padding: 4px 8px;
-  border-radius: 5px;
-  border: 1px solid #bfdbfe;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-  overflow-x: auto;
-}
-
-.bbox-row-delete-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  border: none;
-  background: #fee2e2;
-  color: #b91c1c;
-  font-size: 11px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-}
-
-.bbox-row-delete-btn:hover {
-  background: #fecaca;
-  transform: scale(1.1);
-}
-
-/* 좌표 전체 복사 버튼 */
-.bbox-copy-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  margin-top: 12px;
-  padding: 10px 16px;
-  border-radius: 8px;
-  border: 2px solid #3b82f6;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.bbox-copy-btn:hover {
-  background: #dbeafe;
-  border-color: #2563eb;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
-}
-
-/* 다크 모드 (BBOX 패널) */
-body.dark-mode .bbox-result-panel {
-  background: #0d1520;
-  border-color: #1a2a3c;
-}
-
-body.dark-mode .bbox-panel-title {
-  color: #f8fafc;
-}
-
-body.dark-mode .bbox-coord-row {
-  background: #0e1724;
-  border-color: #1a2a3c;
-}
-
-body.dark-mode .bbox-coord-index {
-  color: #ef4444;
-}
-
-body.dark-mode .bbox-coord-value {
-  background: rgba(6, 182, 212, 0.12);
-  border-color: rgba(6, 182, 212, 0.35);
-  color: #38bdf8;
-}
-
-body.dark-mode .bbox-empty-hint {
-  background: #080d14;
-  border-color: #1a2a3c;
-  color: #7e91a6;
-}
-
+/* 다크 모드 (차량 지정 버튼) */
 body.dark-mode .bbox-designate-btn:not(.active) {
   background: #0e1724;
   border-color: #1a2a3c;
@@ -4090,39 +3884,6 @@ body.dark-mode .bbox-designate-btn:not(.active):hover {
   background: #121e2d;
   border-color: #00e699;
   color: #00e699;
-}
-
-body.dark-mode .bbox-panel-close-btn {
-  background: #0e1724;
-  border-color: #1a2a3c;
-  color: #7e91a6;
-}
-
-body.dark-mode .bbox-panel-close-btn:hover {
-  background: #142233;
-  color: #f8fafc;
-}
-
-body.dark-mode .bbox-clear-btn {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: #ef4444;
-  color: #f87171;
-}
-
-body.dark-mode .bbox-clear-btn:hover {
-  background: #ef4444;
-  color: #ffffff;
-}
-
-body.dark-mode .bbox-copy-btn {
-  background: rgba(0, 230, 153, 0.15);
-  border-color: #00e699;
-  color: #00e699;
-}
-
-body.dark-mode .bbox-copy-btn:hover {
-  background: rgba(0, 230, 153, 0.28);
-  border-color: #00f5a0;
 }
 
 /* ============================================================
@@ -7209,4 +6970,30 @@ body.dark-mode .clip-download-btn {
 /* 클립 창 바깥 배경은 다른 창보다 더 어둡게 — 영상 주변 밝기를 낮춘다 */
 .clip-viewer-overlay {
   background: rgba(2, 6, 23, 0.72);
+}
+
+/* 차량 자동 탐지 중 — 영상 화면 위 로딩 표시 */
+.vehicle-detect-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #f1f5f9;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none; /* 영상 밖의 취소 버튼 등은 그대로 누를 수 있게 */
+}
+
+.vehicle-detect-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3.5px solid rgba(255, 255, 255, 0.18);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: splash-spin 0.85s infinite linear;
 }
