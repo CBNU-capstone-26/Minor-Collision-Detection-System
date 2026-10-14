@@ -15,98 +15,6 @@ button {
   font-family: inherit;
 }
 
-/* ---------------- 스플래시 로딩 화면 ---------------- */
-.app-splash-screen {
-  position: fixed;
-  inset: 0;
-  background: #05070e;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 99999;
-  overflow: hidden;
-}
-
-.app-splash-bg {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.cosmic-stars {
-  position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(1.5px 1.5px at 20px 30px, #ffffff, rgba(0, 0, 0, 0)),
-    radial-gradient(1.5px 1.5px at 40px 70px, rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0)),
-    radial-gradient(2px 2px at 90px 40px, rgba(255, 255, 255, 0.9), rgba(0, 0, 0, 0)),
-    radial-gradient(1.5px 1.5px at 160px 120px, #ffffff, rgba(0, 0, 0, 0));
-  background-repeat: repeat;
-  background-size: 200px 200px;
-  opacity: 0.6;
-}
-
-.cosmic-glow-limb {
-  position: absolute;
-  bottom: -35vw;
-  right: -25vw;
-  width: 90vw;
-  height: 90vw;
-  border-radius: 50%;
-  background: transparent;
-  border: 2px solid rgba(56, 189, 248, 0.45);
-  box-shadow:
-    0 0 160px 50px rgba(56, 189, 248, 0.35),
-    inset 0 0 120px 40px rgba(56, 189, 248, 0.25);
-}
-
-.app-splash-content {
-  position: relative;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.app-splash-title {
-  font-size: 44px;
-  font-weight: 800;
-  color: #ffffff;
-  letter-spacing: -0.03em;
-  margin: 0 0 8px;
-  text-shadow: 0 0 24px rgba(255, 255, 255, 0.4);
-}
-
-.app-splash-subtitle {
-  font-size: 15px;
-  color: #94a3b8;
-  margin: 0 0 32px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-
-.app-splash-spinner-ring {
-  width: 40px;
-  height: 40px;
-  border: 3.5px solid rgba(255, 255, 255, 0.12);
-  border-top-color: #38bdf8;
-  border-radius: 50%;
-  animation: splash-spin 0.85s infinite linear;
-  box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
-}
-
-@keyframes splash-spin {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-
 /* ---------------- 로그인 ---------------- */
 .login-layout {
   min-height: 100vh;
@@ -6681,12 +6589,6 @@ body.dark-mode .public-scan-road {
   flex-direction: column;
 }
 
-.app-splash-logo {
-  display: block;
-  width: min(320px, 72vw);
-  height: auto;
-}
-
 .public-brand {
   min-height: 34px;
 }
@@ -7422,5 +7324,15 @@ body.dark-mode .clip-download-btn {
   border: 3.5px solid rgba(255, 255, 255, 0.18);
   border-top-color: #38bdf8;
   border-radius: 50%;
-  animation: splash-spin 0.85s infinite linear;
+  animation: spinner-spin 0.85s infinite linear;
+}
+
+@keyframes spinner-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }

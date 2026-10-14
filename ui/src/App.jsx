@@ -118,22 +118,6 @@ function SearchIcon({ size = 16 }) {
   );
 }
 
-function AppLoadingScreen() {
-  return (
-    <div className="app-splash-screen">
-      <div className="app-splash-bg">
-        <div className="cosmic-stars" />
-        <div className="cosmic-glow-limb" />
-      </div>
-      <div className="app-splash-content">
-        <img className="app-splash-logo" src="/siot-logo-loading.svg" alt="SIOT" />
-        <p className="app-splash-subtitle">주차 사고 이벤트 감지 시스템</p>
-        <div className="app-splash-spinner-ring" />
-      </div>
-    </div>
-  );
-}
-
 // 로그인이 만료돼 돌아왔으면(/login?expired=1) 로그인 창을 열고 안내한다
 const AUTH_EXPIRED_MSG = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
 const cameFromExpiredLogin = () => new URLSearchParams(window.location.search).has("expired");
@@ -3671,8 +3655,8 @@ function RequireAuth({ children }) {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
   const [user, setUser] = useState(() => !!getToken());
-  const [isInitializing, setIsInitializing] = useState(true);
 
+  // 저장된 사용자 정보로 바로 화면을 그리고, 최신 정보는 뒤에서 받아 갱신한다
   useEffect(() => {
     if (getToken()) {
       api.getMe().then((u) => {
@@ -3680,10 +3664,6 @@ export default function App() {
         saveAuth(getToken(), u);
       }).catch(() => { });
     }
-    const timer = setTimeout(() => {
-      setIsInitializing(false);
-    }, 1000);
-    return () => clearTimeout(timer);
   }, []);
 
   const handleUpdateUser = (updatedUser) => {
@@ -3696,10 +3676,6 @@ export default function App() {
     setCurrentUser(null);
     setUser(false);
   };
-
-  if (isInitializing) {
-    return <AppLoadingScreen />;
-  }
 
   return (
 
