@@ -131,6 +131,15 @@ TRAIN_S_SLICE_ENABLED = True
 #   지켜보고, 계속 0이면 TRAIN_CLASS_WEIGHTS 를 켠다.
 TRAIN_S_SLICE_STRIDE = 30
 TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 때 상한용
+# 실제 영상(realdata) S 는 0번 차량 박스 외에 1번 차량 박스로도 클립을 만든다(시작점은 같고 박스만 다름).
+#   · 1번 차량도 주차된 차이고 옆으로 차가 지나가는 장면이 담겨, 서비스에서 사용자가 박스를 치는
+#     상황(주차된 피해 차량)과 같은 종류의 비충돌 샘플이 된다. 두 크롭은 대부분 겹치지 않는다.
+#   · 2026-10-14 평가 S 를 늘리려 ReS 8개를 평가로 옮기면서 줄어든 실제 S 를 보충한다
+#     (실제 S 클립 426 → 852, 전체 A:S 는 약 1:19 로 거의 그대로).
+#   · RC S 는 0번만 쓴다(RC 까지 넣으면 S 클립이 약 1.7배가 되어 불균형이 커진다).
+#   · 학습/검증 분할은 영상 단위라 같은 영상의 0번·1번 크롭이 학습과 검증으로 갈리지 않는다.
+#     평가(data/eval)는 지금처럼 0번 박스만 쓴다.
+TRAIN_S_REAL_USE_CAR1 = True
 
 # 클래스 가중치(CrossEntropyLoss weight). S 슬라이싱으로 A:S 불균형이 커지면
 # 모델이 S로 치우쳐 '미검출'이 늘 수 있다. (없음=None, 예: (1.0, 3.0) → A 3배)
@@ -169,8 +178,10 @@ NORM_MEAN = (0.45, 0.45, 0.45)
 NORM_STD = (0.225, 0.225, 0.225)
 
 # ---------- 학습 전용 ----------
-# 학습 '작업용' 경로. 학습 중 best 가중치를 해당 파일로 갱신 저장했놓고, 학습 종료 시
-# 규칙 파일명: (hitandrun_[모델]_[YYMMDD_HHMM]_[N]ep_[earlyY|N]_[ptY|N]_[손실율]) 으로 rename 된다(train.py).
+# 최종 가중치를 둘 폴더(= 이 경로의 폴더, 파일 이름은 쓰지 않는다). 학습 중 best·후보는
+# 회차 폴더(outputs/trainlogs/<회차>/work_best.pth, work_cand_ep*.pth)에 저장하고, 학습이
+# 끝나면 규칙 파일명 (hitandrun_[모델]_[YYMMDD_HHMM]_[N]ep_[earlyY|N]_[ptY|N]_[손실율]) 으로
+# 이 폴더에 옮긴다(train.py). 회차마다 따로라 같은 조건의 학습을 동시에 돌려도 섞이지 않는다.
 # [YYMMDD_HHMM] : 학습 시작 시각(= outputs/trainlogs 회차 폴더 이름의 시각), [N]ep : best 에포크,
 # [earlyY|N] : 조기 종료 여부, [손실율] : best 저장 당시 판단 지표 값
 TRAIN_BEST_MODEL_SAVE_PATH = (

@@ -108,11 +108,9 @@ if __name__ == "__main__":
     if args.lr is not None and args.lr <= 0:
         parser.error("--lr 은 0보다 커야 합니다.")
     if args.scratch:
-        # 이름표(ptN)와 작업용 파일 경로도 함께 바꾼다 — config 가 읽힐 때 이미 정해진 값이라서
+        # 이름표(ptN)도 함께 바꾼다 — config 가 읽힐 때 이미 정해진 값이라서
         config.PRETRAINED = False
         config.PRETRAIN_TAG = "ptN"
-        config.TRAIN_BEST_MODEL_SAVE_PATH = config.TRAIN_BEST_MODEL_SAVE_PATH.with_name(
-            f"hitandrun_{config.MODEL_NAME}_ptN_best.pth")
     if args.a_mode:
         config.TRAIN_A_MODE = args.a_mode
     if args.weights:

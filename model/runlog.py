@@ -16,12 +16,17 @@ def make_run_dir(parent, model_name, tag, when=None):
     when = when or datetime.now()
     stamp = when.strftime('%y%m%d_%H%M')
     base = Path(parent) / f'{stamp}_{model_name}_{tag}'
+    base.parent.mkdir(parents=True, exist_ok=True)
     path, n = base, 1
-    while path.exists():
-        n += 1
-        path = base.with_name(f'{base.name}_{n}')
-    path.mkdir(parents=True)
-    return path, stamp
+    while True:
+        # 있는지 본 뒤 만드는 대신 '만들어 보고 이미 있으면 다음 번호'로 한다.
+        # 두 학습이 같은 순간에 시작해도 같은 폴더를 함께 쓰는 일이 없다.
+        try:
+            path.mkdir()
+            return path, stamp
+        except FileExistsError:
+            n += 1
+            path = base.with_name(f'{base.name}_{n}')
 
 
 def write_run_info(run_dir, items):

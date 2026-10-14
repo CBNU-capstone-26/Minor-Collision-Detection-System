@@ -54,6 +54,16 @@ class EarlyStopping:
             self.best_epoch = epoch
 
 
+def _unique_path(path):
+    """path 가 이미 있으면 이름 뒤에 _2, _3 … 을 붙인 경로(다른 학습의 결과를 덮어쓰지 않게)."""
+    path, n = Path(path), 1
+    out = path
+    while out.exists():
+        n += 1
+        out = path.with_name(f'{path.stem}_{n}{path.suffix}')
+    return out
+
+
 def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None):
     # CUDA: 멀티워커 + prefetch 활성화 (① Ryzen 7 5700X 16스레드 기준)
     # CPU : Windows 멀티프로세싱 충돌 방지 및 디바이스 컨텍스트 공유 불가 문제로 단일 프로세스 사용
@@ -183,11 +193,6 @@ def train_model(
     first_w = float(getattr(config, 'TRAIN_SPAN_FIRST_WEIGHT', 0.5))
     step_cap = int(getattr(config, 'TRAIN_SPAN_MAX_WINDOWS_PER_STEP', None) or batch_size * 2)
     if span:
-        # 작업용 best·후보 파일도 따로 둔다. 같은 이름이면 'pre' 학습을 동시에 돌릴 때
-        # 시작 시 '이전 학습의 후보 파일'로 보고 서로의 파일을 지운다.
-        _sp = Path(save_path)
-        save_path = _sp.with_name(_sp.name.replace('_best', '_span_best') if '_best' in _sp.name
-                                  else f'{_sp.stem}_span{_sp.suffix}')
         print(f"[A 방식] span — 접근~충돌 종료를 창 여러 개로 전부 학습(충돌 1건 무게 1: "
               f"첫 창 {first_w:g} + 나머지 창이 {1 - first_w:g}를 나눔), 비충돌은 창 1개")
         for dom in ('rc', 'real'):
@@ -203,6 +208,11 @@ def train_model(
     else:
         print("[A 방식] pre — 충돌 영상당 창 1개(충돌 시작 "
               f"{getattr(config, 'TRAIN_A_PRE_FRAMES', 0)}프레임 전부터)")
+    # 실제 영상 S 의 1번 차량 클립 (config.TRAIN_S_REAL_USE_CAR1)
+    car1 = [s for s in train_dataset.samples if s.get('car_id') == 1 and s['label'] == 0]
+    s_car_info = (f"0번 + 실제 영상 S 는 1번도 (1번 클립 {len(car1)}개, "
+                  f"영상 {len({s['video_key'] for s in car1})}개)" if car1 else "0번만")
+    print(f"[S 클립 차량] {s_car_info}")
 
     train_loader = _make_loader(
         Subset(train_dataset, train_idx), batch_size=batch_size,
@@ -221,6 +231,12 @@ def train_model(
     run_dir, run_stamp = make_run_dir(
         config.TRAIN_LOG_DIR, config.MODEL_NAME, run_tag, run_started)
     print(f"[로그] 이번 학습 산출물 폴더: {run_dir}")
+    # 학습 중 best·후보 가중치(작업용)는 이 회차 폴더 안에 둔다. 회차 폴더는 학습마다 새로
+    # 만들어지므로, 같은 조건(ptY끼리 등)의 학습을 동시에 돌려도 서로의 파일을 덮어쓰거나
+    # 지우지 않는다. 학습이 끝나면 규칙 파일명으로 weights_dir(= save_path 의 폴더)에 옮긴다.
+    # 중간에 멈춘 학습의 best 는 이 폴더의 work_best.pth 에 남는다.
+    weights_dir = Path(save_path).parent
+    work_best = run_dir / 'work_best.pth'
     # 그때의 설정을 그대로 남긴다 — 나중에 config.py 가 바뀌어도 이 회차 조건을 알 수 있다
     shutil.copy2(config.__file__, run_dir / 'config_snapshot.py')
     # 학습/검증에 쓴 영상 목록 — 평가 영상과 겹치지 않았는지 나중에 확인할 수 있다
@@ -239,12 +255,14 @@ def train_model(
         ('사전학습', f"{config.PRETRAIN_TAG} ("
                      f"{'Kinetics-400 사전학습' if config.PRETRAINED else 'scratch, 무작위 초기화'})"),
         ('학습률', f"헤드 {learning_rate:g} / 백본 {learning_rate * backbone_lr_mult:g}"),
+        ('S 클립 차량', s_car_info),
         ('A 클립 방식', (f'span (접근~충돌 종료를 창 여러 개로 전부 학습, 첫 창 무게 {first_w:g})'
                        if span else f"pre (충돌 시작 {getattr(config, 'TRAIN_A_PRE_FRAMES', 0)}"
                             "프레임 전부터 창 1개)")),
         ('시작', run_started.strftime('%Y-%m-%d %H:%M:%S')),
         ('종료', '(학습 중이거나 중간에 멈춤)'),
         ('최종 가중치', '(학습이 끝나면 기록됨)'),
+        ('작업 중 best 가중치', f'{work_best} (학습이 끝나면 최종 가중치로 옮겨짐)'),
         ('데이터 폴더', str(data_dir)),
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
     ]
@@ -343,7 +361,7 @@ def train_model(
         scaler = torch.amp.GradScaler("cuda")
 
     early_stopping = EarlyStopping(
-        patience=early_stopping_patience, path=save_path)
+        patience=early_stopping_patience, path=work_best)
 
     # ── best 판단 지표 / 후보 저장 (config 의 TRAIN_MONITOR_* 주석 참고) ──
     # 판단 지표 = val_real '클래스 균형 손실'의 최근 N에포크 평균. best 저장·LR 감소·
@@ -353,13 +371,7 @@ def train_model(
     min_gap = max(1, int(getattr(config, 'TRAIN_TOPK_MIN_GAP', 3)))
     bal_hist = []
     cands = []   # [{'epoch', 'score', 'path'}] — 서로 min_gap 이상 떨어진 상위 topk
-    cand_dir = Path(save_path).parent
-    cand_stem = Path(save_path).stem.replace('_best', '')   # 예: hitandrun_x3d_ptY
-    # 중단된 이전 학습이 남긴 작업용 후보 파일은 이번 것과 섞이지 않게 지운다
-    # (작업용 best 파일도 새 학습이 덮어쓰는 것과 같은 취급).
-    for stale in sorted(cand_dir.glob(f'{cand_stem}_cand_ep*.pth')):
-        stale.unlink()
-        print(f'[후보] 이전 학습의 작업용 후보 파일 삭제: {stale.name}')
+    # 후보도 회차 폴더 안에 둔다(새 폴더라 이전 학습의 파일과 섞일 일이 없다)
 
     def _update_candidates(epoch_no, score):
         """epoch_no 의 가중치를 후보로 둘지 정한다. 저장했으면 True.
@@ -381,7 +393,7 @@ def train_model(
                 return False
             worst['path'].unlink(missing_ok=True)
             cands.remove(worst)
-        path = cand_dir / f'{cand_stem}_cand_ep{epoch_no}.pth'
+        path = run_dir / f'work_cand_ep{epoch_no}.pth'
         torch.save(model.state_dict(), path)
         cands.append({'epoch': epoch_no, 'score': score, 'path': path})
         return True
@@ -653,9 +665,10 @@ def train_model(
     loss_str = f'{early_stopping.val_loss_min:.4f}'
     final_name = (f'hitandrun_{config.MODEL_NAME}_{date_str}_'
                   f'{epoch_str}_{early_str}_{run_tag}_{loss_str}.pth')
-    final_path = Path(save_path).with_name(final_name)
-    # 학습 중엔 save_path(작업용)로 저장해 두고, 종료 시 규칙 파일명으로 이동
-    os.replace(save_path, final_path)
+    # 학습 중엔 회차 폴더의 work_best.pth 로 저장해 두고, 종료 시 규칙 파일명으로 옮긴다
+    # (회차 폴더와 weights 가 다른 디스크여도 되게 shutil.move. 같은 이름이 있으면 _2 를 붙인다)
+    final_path = _unique_path(weights_dir / final_name)
+    shutil.move(str(work_best), str(final_path))
     print(f'\n최종 가중치 저장: {final_path}')
 
     # ── 후보 정리 ──
@@ -669,10 +682,10 @@ def train_model(
             c['path'].unlink(missing_ok=True)
             dest_name = final_path.name
         else:
-            dest = c['path'].with_name(
+            dest = _unique_path(weights_dir / (
                 f"hitandrun_{config.MODEL_NAME}_{date_str}_{run_tag}_"
-                f"cand{rank}_ep{c['epoch']}_{c['score']:.4f}.pth")
-            os.replace(c['path'], dest)
+                f"cand{rank}_ep{c['epoch']}_{c['score']:.4f}.pth"))
+            shutil.move(str(c['path']), str(dest))
             dest_name = dest.name
             print(f'후보 {rank}위 저장: {dest}')
         cand_info.append({'rank': rank, 'epoch': c['epoch'],
@@ -682,6 +695,7 @@ def train_model(
     info = dict(run_info)
     info['종료'] = run_finished.strftime('%Y-%m-%d %H:%M:%S')
     info['최종 가중치'] = str(final_path)
+    info['작업 중 best 가중치'] = '(최종 가중치로 옮김)'
     info['best 에포크'] = (f"{early_stopping.best_epoch} "
                           f"({'조기 종료' if early_stopping.early_stop else '끝까지 학습'})")
     info['후보 가중치'] = ', '.join(c['file'] for c in cand_info if c['rank'] > 1) or '없음'

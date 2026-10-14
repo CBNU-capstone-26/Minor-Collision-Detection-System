@@ -77,19 +77,29 @@ class HitAndRunDataset(Dataset):
             # 영상 메타는 한 번만 읽는다(S 슬라이싱의 총프레임 + 지터 환산용 fps).
             total, fps = self._video_meta(mp4_path)
 
-            def _add(sf, wins=None):
+            def _add(sf, wins=None, car=None):
+                car = target_id if car is None else car
                 sample = {
                     'file_name': file_name,
                     'video_key': mp4_path,   # 분할을 '영상 단위'로 묶기 위한 키
                     'mp4_path': mp4_path,
                     'label': label,
                     'start_f': sf,
-                    'bbox': target_bbox,
+                    'bbox': target_bbox if car == target_id else bboxes[car],
+                    'car_id': car,           # 크롭 기준 차량 번호
                     'fps': fps,              # 시간 지터를 '초' 기준으로 맞추기 위함
                 }
                 if wins is not None:
                     sample['win_starts'] = wins  # span: 구간을 덮는 창들의 시작 프레임
                 samples.append(sample)
+
+            # S 클립을 만들 차량: 기본은 대상 차량(0번) 하나. 실제 영상 S 는 1번 차량도
+            # (config.TRAIN_S_REAL_USE_CAR1). RC S 는 0번만.
+            s_cars = [target_id]
+            if (label == 0 and getattr(config, 'TRAIN_S_REAL_USE_CAR1', False)
+                    and 'realdata' in os.path.normpath(mp4_path).split(os.sep)
+                    and 1 in bboxes and target_id != 1):
+                s_cars.append(1)
 
             if label == 1:
                 # 충돌(A): 창을 start_f 보다 TRAIN_A_PRE_FRAMES 앞에서 시작해
@@ -114,7 +124,8 @@ class HitAndRunDataset(Dataset):
                 else:
                     _add(a_start)
             elif not getattr(config, 'TRAIN_S_SLICE_ENABLED', False):
-                _add(start_f)
+                for car in s_cars:
+                    _add(start_f, car=car)
             else:
                 # 비충돌(S)은 영상 전체를 클립 길이 단위로 잘라 전부 학습에 넣는다.
                 # (기존엔 맨 앞 30프레임 1개뿐이라 '차가 지나가지만 충돌 아님'을
@@ -127,8 +138,9 @@ class HitAndRunDataset(Dataset):
                     starts = [0]
                 if cap_n > 0:
                     starts = starts[:cap_n]
-                for sf in starts:
-                    _add(sf)
+                for car in s_cars:
+                    for sf in starts:
+                        _add(sf, car=car)
         return samples
 
     def _span_starts(self, a_start, last, total):
