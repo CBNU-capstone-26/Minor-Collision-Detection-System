@@ -33,15 +33,20 @@ def _active_task_for_video(video_id: int, db: Session):
             .order_by(db_models.AnalysisTask.id).first())
 
 
-def _progress(task: db_models.AnalysisTask):
-    """처리 중이면 Celery 상태(Redis)에서 (진행도 %, 남은 시간 초, 최소추정 여부)를 읽어온다."""
+def _progress(task: db_models.AnalysisTask) -> dict:
+    """처리 중이면 Celery 상태(Redis)에서 진행 정보를 읽어온다 — 진행도 %(소수 첫째 자리), 지금 단계,
+    그 단계의 개수·순번(의심 구간·클립), 단계의 남은 시간(초). 모르면 비어 있다."""
+    empty = {"progress": None, "eta_sec": None, "eta_is_min": False, "stage": None,
+             "stage_count": None, "stage_index": None}
     if task.status != "PROCESSING" or not task.celery_task_id:
-        return None, None, False
+        return empty
     from app.worker import celery_app
     res = celery_app.AsyncResult(task.celery_task_id)
     if res.state == "PROGRESS" and isinstance(res.info, dict):
-        return res.info.get("percent"), res.info.get("eta"), bool(res.info.get("eta_min"))
-    return None, None, False
+        i = res.info
+        return {"progress": i.get("percent"), "eta_sec": i.get("eta"), "eta_is_min": bool(i.get("eta_min")),
+                "stage": i.get("stage"), "stage_count": i.get("count"), "stage_index": i.get("index")}
+    return empty
 
 
 def _enqueue(video_id: int, bbox: dict, db: Session) -> api_schemas.AnalyzeResponse:
@@ -95,13 +100,11 @@ def list_active_tasks(
              .order_by(db_models.AnalysisTask.id).all())
     out = []
     for t in tasks:
-        progress, eta_sec, eta_min = _progress(t)
         out.append(api_schemas.ActiveTaskOut(
             task_id=t.id, video_id=t.video_id, video_name=t.video.video_name,
             recording_date=t.video.recording_date,
             camera_location=t.video.camera_location or "주차장",
-            status=t.status, progress=progress, eta_sec=eta_sec, eta_is_min=eta_min,
-            created_at=t.created_at))
+            status=t.status, created_at=t.created_at, **_progress(t)))
     return out
 
 
@@ -114,13 +117,10 @@ def get_task_status(
     task = _get_owned_task(task_id, db, user)
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.task_id == task.id).all()
-    progress, eta_sec, eta_min = _progress(task)
     return api_schemas.TaskStatusOut(
         task_id=task.id,
         status=task.status,
-        progress=progress,
-        eta_sec=eta_sec,
-        eta_is_min=eta_min,
+        **_progress(task),
         error_message=task.error_message,
         events=[to_event_out(e) for e in events],
     )

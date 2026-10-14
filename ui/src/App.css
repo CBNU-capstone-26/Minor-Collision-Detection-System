@@ -277,7 +277,8 @@ button {
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  /* 가운데(분석 진행 칸)를 넓게 — 왼쪽은 로고+검색창 자리만, 오른쪽은 프로필 버튼뿐 */
+  grid-template-columns: minmax(440px, 1fr) minmax(0, 1.8fr) minmax(120px, 0.6fr);
   align-items: center;
   padding: 0 24px;
   position: sticky;
@@ -4406,7 +4407,7 @@ body.dark-mode .upload-cancel-btn:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: 680px;
+  max-width: 900px;
   padding: 5px 18px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -4418,7 +4419,14 @@ body.dark-mode .upload-cancel-btn:disabled {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 340px; /* '서버에 분석을 요청하는 중'이 잘리지 않게 */
+  min-width: 420px; /* '45% · 의심 구간 2/3 자세히 보는 중...' 같은 단계 문구가 잘리지 않게 */
+}
+
+/* 분석 단계 문구 뒤의 움직이는 점 — 고정 폭이라 점 개수가 바뀌어도 뒤 글자가 흔들리지 않는다 */
+.phase-dots {
+  display: inline-block;
+  width: 1.6em; /* 점 4개 자리 */
+  text-align: left;
 }
 
 .analysis-status-info {
@@ -4436,8 +4444,21 @@ body.dark-mode .upload-cancel-btn:disabled {
 }
 
 .analysis-status-eta {
+  flex: 1;
+  min-width: 0;
+  text-align: right; /* 단계 문구를 오른쪽 끝의 % 바로 옆에 붙인다 */
   color: #64748b;
   white-space: nowrap;
+}
+
+/* 진행률 — 맨 오른쪽. 숫자 폭을 고정해 % 가 바뀌어도 단계 문구가 흔들리지 않게 */
+.analysis-status-pct {
+  flex-shrink: 0;
+  min-width: 3.2em;
+  text-align: right;
+  font-weight: 700;
+  color: #1e293b;
+  font-variant-numeric: tabular-nums;
 }
 
 .analysis-progress-track {
@@ -4613,6 +4634,10 @@ body.dark-mode .analysis-status-box {
 }
 
 body.dark-mode .analysis-status-label {
+  color: #f8fafc;
+}
+
+body.dark-mode .analysis-status-pct {
   color: #f8fafc;
 }
 
@@ -5212,7 +5237,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 
 @media (max-width: 1200px) {
   .top-navbar {
-    grid-template-columns: minmax(0, 1fr) minmax(180px, 1.2fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 1.6fr) auto;
     gap: 16px;
   }
 
@@ -5229,7 +5254,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
   .analysis-status-box {
     min-width: 0;
     width: 100%;
-    max-width: 420px;
+    max-width: 560px;
   }
 
   .analysis-status-idle {

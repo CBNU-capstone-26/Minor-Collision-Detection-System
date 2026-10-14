@@ -951,7 +951,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [showJobsDropdown, setShowJobsDropdown] = useState(false);
   const [now, setNow] = useState(() => Date.now()); // 진행률 계산용 현재시각(0.5s마다 갱신)
   const selectedVideoIdRef = useRef(null); // 폴링 중 최신 선택 영상 추적(stale closure 방지)
-  const progressMaxRef = useRef({}); // 작업별 최대 진행률(진행바가 뒤로 가지 않게)
+  const progressSmoothRef = useRef({}); // 작업별 화면 진행률(부드럽게 움직이고 뒤로 가지 않게)
   const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 간다
   const pollingRef = useRef(new Set()); // 이미 상태를 확인 중인 작업(중복 폴링 방지)
   const [clipEvent, setClipEvent] = useState(null); // 사고 클립 팝업 대상 이벤트
@@ -1422,10 +1422,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           prev.map((j) => {
             if (j.taskId !== taskId) return j;
             const next = { ...j, status: status.status };
-            if (typeof status.progress === "number") next.progress = status.progress;
+            if (typeof status.progress === "number") {
+              next.progress = status.progress;
+              next.progressAt = receivedAt;             // 받은 시각 — 진행 속도 계산용
+            }
             next.etaSec = status.eta_sec ?? null;
             next.etaMin = !!status.eta_is_min;
             next.etaAt = receivedAt;
+            next.phase = status.stage ?? null;          // 지금 단계(훑어보기 등)
+            next.phaseCount = status.stage_count ?? null;
+            next.phaseIndex = status.stage_index ?? null;
             return next;
           }));
         setTimeout(poll, 2000); // PENDING/PROCESSING → 재시도
@@ -1482,6 +1488,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             etaSec: t.eta_sec ?? null,
             etaMin: !!t.eta_is_min,
             etaAt: Date.now(),
+            phase: t.stage ?? null,
+            phaseCount: t.stage_count ?? null,
+            phaseIndex: t.stage_index ?? null,
+            progressAt: Date.now(),
           };
           setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === t.task_id) ? prev : [...prev, job]));
           pollTask(t.task_id, t.video_id);
@@ -1635,59 +1645,81 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     return () => clearInterval(id);
   }, [analyzingJobs.length]);
 
-  // 작업별 진행률(%) / 남은 시간(초).
-  // 백엔드가 디코딩·선별·추론·렌더링 전 단계에서 '실제' 진행도를 보고하므로
-  // 가짜 시간기반 추정을 만들지 않는다. (예전엔 정적 공식으로 큰 예상시간을
-  // 띄우다가 실제 진행도가 도착하면 진행바가 뒤로 점프하는 문제가 있었다.)
-  // 남은 시간 표시: 1분 넘으면 분·초, 1시간 넘으면 시간·분.
-  // isMin: 거친 탐색 중이라 촘촘히 볼 구간 수를 아직 몰라 '최소 이만큼'인 경우 → '이상'
-  const formatRemain = (sec, isMin = false) => {
-    const tail = isMin ? "이상 남음" : "남음";
-    if (sec <= 1 && !isMin) return "곧 완료";
-    if (sec < 60) return `약 ${Math.max(1, sec)}초 ${tail}`;
-    if (sec < 3600) {
-      const m = Math.floor(sec / 60);
-      const s = sec % 60;
-      return s ? `약 ${m}분 ${s}초 ${tail}` : `약 ${m}분 ${tail}`;
-    }
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    return m ? `약 ${h}시간 ${m}분 ${tail}` : `약 ${h}시간 ${tail}`;
+  // 작업별 진행률(%)과 단계 문구.
+  // 백엔드가 디코딩·선별·추론·렌더링 전 단계에서 '실제' 진행도와 지금 단계를 보고하므로
+  // 가짜 시간기반 추정을 만들지 않는다. 남은 시간은 단계가 바뀔 때 숫자가 뛰어 혼란스러워서
+  // 보여 주지 않고, 대신 지금 무엇을 하는지(단계)와 부드럽게 움직이는 진행률을 보여 준다.
+
+  // 분석 단계 문구 — 서버(model/inference.py _report, backend prediction_job)의 stage 값.
+  // main 은 '~하는 중'(뒤에 움직이는 점이 붙음), extra 는 그 뒤에 붙는 보조 정보.
+  const PHASE_TEXT = {
+    loading: () => ({ main: "분석 엔진 준비 중" }),
+    decode: () => ({ main: "분석 엔진 준비 중" }),   // 영상 읽기도 준비 과정으로 묶어 따로 알리지 않는다
+    motion: () => ({ main: "차량 움직임 계산 중" }),
+    coarse: () => ({ main: "영상 전체 훑어보는 중" }),
+    refine: (n, i) => ({ main: n > 1 && i ? `의심 구간 ${i}/${n} 자세히 보는 중` : "의심 구간 자세히 보는 중" }),
+    scan: () => ({ main: "영상 분석 중" }),
+    events: () => ({ main: "사고 구간 정리 중" }),
+    render: (n, i) => ({ main: n > 1 && i ? `사고 클립 ${i}/${n} 만드는 중` : "사고 클립 만드는 중" }),
   };
+
+  // '~하는 중' 뒤의 점: . → .. → ... → .... 를 0.5초마다 반복한다.
+  // 점 자리는 고정 폭(.phase-dots)이라 점 개수가 바뀌어도 뒤 글자가 흔들리지 않는다.
+  const phaseText = (pct, main, extra) => (
+    <>
+      {pct != null && `${Math.round(pct)}% · `}
+      {main}
+      <span className="phase-dots">{".".repeat(1 + (Math.floor(now / 500) % 4))}</span>
+      {extra && ` · ${extra}`}
+    </>
+  );
 
   const jobProgress = (job) => {
     const key = job.taskId ?? job.videoId;
-    const hasReal = typeof job.progress === "number" && job.progress > 0;
-    // 단계: 요청(서버 대기열에서 차례를 기다림) → 준비(모델 로드·영상 읽기) → 진행(실제 %)
+    const hasReal = typeof job.progress === "number" && (job.progress > 0 || !!job.phase);
+    // 단계: 요청(서버 대기열에서 차례를 기다림) → 준비 → 진행(서버가 단계·진행도를 보냄)
     // 다른 사용자의 작업 정보는 드러내지 않으므로 대기 순번은 보여 주지 않는다.
     const stage = hasReal ? "running" : job.status === "PENDING" ? "queued" : "starting";
 
-    let pct = hasReal ? Math.min(99, job.progress) : 0;
-    // 남은 시간: 서버가 실제로 잰 처리 속도로 계산한 값(etaSec)을 받은 시각부터 1초씩 줄인다.
-    // 서버가 아직 속도를 재기 전(영상 읽기 중)이면 null → '남은 시간 계산 중'.
-    const remain = hasReal && job.etaSec != null && job.etaAt != null
-      ? Math.max(0, Math.round(job.etaSec - (now - job.etaAt) / 1000))
-      : null;
+    // 진행률(막대·%): 서버 값(2초마다, 소수 첫째 자리) 사이를 최근 진행 속도로 채워 계속 조금씩
+    // 움직이게 한다. 서버 값보다 최대 3%p(약 4초어치)까지만 앞서가고, 뒤로는 가지 않으며,
+    // 서버 값이 크게 뛰어도 0.5초마다 남은 차이의 40%씩 따라가 부드럽게 움직인다.
+    const serverP = hasReal ? Math.min(99, job.progress) : 0;
+    const sm = progressSmoothRef.current[key]
+      || (progressSmoothRef.current[key] = { disp: 0, p: null, at: null, rate: 0, tick: null });
+    if (sm.tick !== now) {                        // 같은 순간 여러 곳에서 불러도 한 번만 계산
+      const at = job.progressAt ?? now;
+      if (sm.p === null || at !== sm.at) {        // 새 서버 값
+        if (sm.p !== null && at > sm.at && serverP >= sm.p) {
+          const r = (serverP - sm.p) / ((at - sm.at) / 1000);
+          sm.rate = sm.rate ? sm.rate * 0.6 + r * 0.4 : r;   // 진행 속도(%/초)도 부드럽게
+        }
+        sm.p = serverP;
+        sm.at = at;
+      }
+      const ahead = Math.min(3, sm.rate * 4);
+      const guess = Math.min(99, sm.p + Math.min(ahead, sm.rate * Math.max(0, (now - sm.at) / 1000)));
+      const target = Math.max(sm.disp, guess);
+      sm.disp += (target - sm.disp) * 0.4;
+      sm.tick = now;
+    }
+    const pct = hasReal ? sm.disp : 0;
 
-    // 진행바는 절대 뒤로 가지 않게 단조 증가로 고정
-    const prevMax = progressMaxRef.current[key] || 0;
-    pct = Math.max(prevMax, pct);
-    progressMaxRef.current[key] = pct;
-
-    const remainText = remain == null ? "남은 시간 계산 중…" : formatRemain(remain, !!job.etaMin);
-    // 상단 대표 칸: 진행 중이면 '% · 남은 시간'
+    const ph = PHASE_TEXT[job.phase]?.(job.phaseCount, job.phaseIndex) ?? { main: "분석 중" };
+    // 상단 대표 칸: 단계 문구(가운데)와 진행률(맨 오른쪽, pctText)을 따로 보여 준다
     const statusText =
-      stage === "queued" ? "서버에 분석을 요청하는 중"
-        : stage === "starting" ? "분석 준비 중…"
-          : `${Math.round(pct)}% · ${remainText}`;
+      stage === "queued" ? phaseText(null, "서버에 분석을 요청하는 중")
+        : stage === "starting" ? phaseText(null, "분석 준비 중")
+          : phaseText(null, ph.main, ph.extra);
+    const pctText = stage === "running" ? `${Math.round(pct)}%` : null;
     // 서버 병목으로 기다린다는 걸 알리는 게 목적이라, 요청 단계 문구는 줄이지 않는다
     const shortText =
       stage === "queued" ? "서버에 분석을 요청하는 중" : stage === "starting" ? "준비 중" : `${Math.round(pct)}%`;
-    // 펼친 목록의 아랫줄 — 윗줄(짧은 칸)과 겹치지 않게
+    // 펼친 목록의 아랫줄 — 윗줄(짧은 칸: %)과 겹치지 않게 단계만
     const detailText =
       stage === "queued" ? "서버의 앞선 분석이 끝나면 자동으로 시작됩니다"
-        : stage === "starting" ? "분석 준비 중…" : remainText;
-    return { pct, remain, preparing: stage !== "running", stage, statusText, shortText, detailText };
+        : stage === "starting" ? phaseText(null, "분석 준비 중") : phaseText(null, ph.main, ph.extra);
+    return { pct, preparing: stage !== "running", stage, statusText, pctText, shortText, detailText };
   };
 
   // 오버레이 div 안에서 실제 영상 콘텐츠가 차지하는 영역(object-fit:contain 레터박스)과
@@ -1739,7 +1771,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             </div>
           ) : (() => {
             const lead = analyzingJobs[0];
-            const { pct, preparing, statusText } = jobProgress(lead);
+            const { pct, preparing, statusText, pctText } = jobProgress(lead);
             return (
               <div className="analysis-status-box">
                 <div className="analysis-status-main">
@@ -1750,6 +1782,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     <span className="analysis-status-eta">
                       {statusText}
                     </span>
+                    {pctText && <span className="analysis-status-pct">{pctText}</span>}
                   </div>
                   <div className="analysis-progress-track">
                     <div

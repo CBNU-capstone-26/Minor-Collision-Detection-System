@@ -68,6 +68,8 @@ def run_prediction_task(self, task_id: int):
 
         task.status = "PROCESSING"
         db.commit()
+        # 화면 단계 표시: 모델 불러오기(처음이면 추론 실행 방식 자가 검사 포함)
+        self.update_state(state="PROGRESS", meta={"percent": 0, "stage": "loading"})
 
         video = db.get(db_models.Video, task.video_id)
         model = _get_model()
@@ -84,14 +86,20 @@ def run_prediction_task(self, task_id: int):
         import time as _time
         _last = {"pct": -1, "t": 0.0}
 
-        def _on_progress(frac, eta=None, eta_min=False):
-            pct = min(99, int(frac * 100))
+        def _on_progress(frac, eta=None, eta_min=False, stage=None, count=None, index=None):
+            # stage·count·index: 지금 단계와 그 단계의 개수/순번(model/inference.py _report 참고).
+            # 진행률은 소수 첫째 자리까지 — 긴 영상에서 1%가 오래 걸려도 막대가 조금씩 움직이게.
+            # 단계가 바뀌면 바로, 진행률만 바뀌면 0.4초에 한 번, 그대로여도 1.5초마다 기록한다.
+            pct = round(min(99.0, frac * 100), 1)
             now = _time.time()
-            if pct != _last["pct"] or now - _last["t"] >= 1.5:
-                _last.update(pct=pct, t=now)
+            key = (stage, count, index)
+            if (key != _last.get("key")
+                    or (pct != _last["pct"] and now - _last["t"] >= 0.4)
+                    or now - _last["t"] >= 1.5):
+                _last.update(pct=pct, t=now, key=key)
                 self.update_state(state="PROGRESS", meta={
                     "percent": pct, "eta": None if eta is None else int(round(eta)),
-                    "eta_min": bool(eta_min)})
+                    "eta_min": bool(eta_min), "stage": stage, "count": count, "index": index})
 
         results = predict_events_and_clips(
             model,

@@ -65,9 +65,12 @@ class ActiveTaskOut(BaseModel):
     recording_date: Optional[date] = None
     camera_location: str = "주차장"
     status: str
-    progress: Optional[int] = None
+    progress: Optional[float] = None
     eta_sec: Optional[int] = None
     eta_is_min: bool = False
+    stage: Optional[str] = None        # 지금 단계(TaskStatusOut 참고)
+    stage_count: Optional[int] = None
+    stage_index: Optional[int] = None
     created_at: Optional[datetime] = None
 
 
@@ -132,8 +135,14 @@ class AnalyzeResponse(BaseModel):
 class TaskStatusOut(BaseModel):
     task_id: int
     status: str
-    progress: Optional[int] = None   # 진행도 %(PROCESSING 중 추론 진행률, 없으면 None)
-    eta_sec: Optional[int] = None    # 남은 시간(초) — 실제로 잰 처리 속도 기준, 모르면 None
-    eta_is_min: bool = False         # True 면 '최소 이만큼'(거친 탐색 중이라 더 늘 수 있음)
+    progress: Optional[float] = None  # 진행도 %(소수 첫째 자리, PROCESSING 중일 때만)
+    eta_sec: Optional[int] = None    # '지금 단계'의 남은 시간(초) — 실제로 잰 처리 속도 기준, 모르면 None
+    eta_is_min: bool = False         # True 면 '최소 이만큼'(지금은 쓰지 않음, 옛 워커 호환)
+    # 지금 단계: loading(분석 엔진 준비) · decode(영상 불러오기) · motion(차량 움직임 계산)
+    #   · coarse(영상 전체 훑어보기) · refine(의심 구간 자세히 보기) · scan(전부 보기)
+    #   · events(사고 구간 정리) · render(사고 클립 만들기)
+    stage: Optional[str] = None
+    stage_count: Optional[int] = None  # coarse: 찾은 의심 지점 수 · refine: 의심 구간 수 · render: 클립 수
+    stage_index: Optional[int] = None  # refine·render: 지금 몇 번째인지(1부터)
     error_message: Optional[str] = None
     events: list[EventOut] = []
