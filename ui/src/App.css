@@ -1242,9 +1242,9 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 .watch-side > .watch-header-actions .detect-run-btn {
   min-width: 0;
   width: 100%;
-  height: 38px;
+  height: 46px;
   padding: 0 8px;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 .watch-side > .watch-header-actions .detect-btn-wrapper {
@@ -3909,7 +3909,7 @@ body.dark-mode .analytics-chart-card {
   justify-content: center;
   gap: 7px;
   min-width: 145px;
-  height: 42px;
+  height: 46px;
   padding: 0 20px;
   border-radius: 5px;
   border: 1.5px solid transparent;
@@ -3922,31 +3922,31 @@ body.dark-mode .analytics-chart-card {
 }
 
 
-/* 🔍 탐지하기 = 파란색 메인 버튼 */
-/* 차량 탐지 = '직접 차량 지정'과 같은 색(아래 .bbox-designate-btn·다크 모드 규칙과 맞춤) */
+/* 차량 탐지 · 직접 차량 지정 = 연한 파랑 바탕 + 파란 테두리·글자.
+   눈에 띄되, 꽉 찬 파랑인 '사고감지 실행'(다음 단계)보다는 한 단계 낮게 (아래 .bbox-designate-btn 과 같은 색) */
 .auto-detect-btn {
-  border-color: #cbd5e1;
-  background: #f1f5f9;
-  color: #334155;
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .auto-detect-btn:hover {
-  background: #e2e8f0;
-  border-color: #94a3b8;
+  background: #dbeafe;
+  border-color: #3b82f6;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.2);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 body.dark-mode .auto-detect-btn {
-  background: #0e1724;
-  border-color: #1a2a3c;
-  color: #cbd5e1;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(96, 165, 250, 0.6);
+  color: #93c5fd;
 }
 
 body.dark-mode .auto-detect-btn:hover {
-  background: #121e2d;
-  border-color: #00e699;
-  color: #00e699;
+  background: rgba(59, 130, 246, 0.24);
+  border-color: #60a5fa;
+  color: #bfdbfe;
 }
 
 .auto-detect-btn.detecting {
@@ -3967,19 +3967,18 @@ body.dark-mode .auto-detect-btn:hover {
   }
 }
 
-/* 사고 차량 지정하기 = 회색 */
+/* 직접 차량 지정 = 차량 탐지와 같은 파란 테두리 */
 .bbox-designate-btn {
-
-  border-color: #cbd5e1;
-  background: #f1f5f9;
-  color: #334155;
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .bbox-designate-btn:hover {
-  background: #e2e8f0;
-  border-color: #94a3b8;
+  background: #dbeafe;
+  border-color: #3b82f6;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.2);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 /* 지정 모드 ON: 진한 회색으로 채움 */
@@ -4219,15 +4218,15 @@ body.dark-mode .auto-detect-btn.active:not(.detecting):hover {
 
 /* 다크 모드 (차량 지정 버튼) */
 body.dark-mode .bbox-designate-btn:not(.active) {
-  background: #0e1724;
-  border-color: #1a2a3c;
-  color: #cbd5e1;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(96, 165, 250, 0.6);
+  color: #93c5fd;
 }
 
 body.dark-mode .bbox-designate-btn:not(.active):hover {
-  background: #121e2d;
-  border-color: #00e699;
-  color: #00e699;
+  background: rgba(59, 130, 246, 0.24);
+  border-color: #60a5fa;
+  color: #bfdbfe;
 }
 
 /* ============================================================
@@ -4859,7 +4858,9 @@ body.dark-mode .upload-cancel-btn:disabled {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 50;
+  /* 바깥 클릭으로 닫는 투명 덮개(.dropdown-overlay, 999)보다 위 — 아래면 덮개가 클릭을 가로채
+     목록 안 '취소'를 눌러도 드롭다운만 닫혔다. 프로필 메뉴와 같은 높이 */
+  z-index: 1000;
   width: 400px; /* 오른쪽 상태 칸에 '서버에 분석을 요청하는 중'이 들어가도록 */
   max-height: 320px;
   overflow-y: auto;

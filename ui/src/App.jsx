@@ -1409,6 +1409,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 수동 차량 지정 모드 시작
   const handleStartManualDesignate = () => {
+    // 차량 탐지처럼 영상을 멈춰, 지금 보이는 화면에서 차량을 그리게 한다
+    if (videoElRef.current) {
+      videoElRef.current.pause();
+      setIsPlaying(false);
+    }
     setSelectionMode("manual");
     setIsBBoxMode(true);
     setHoveredDetectedBox(null);
@@ -1991,7 +1996,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         disabled={isAnalyzing}
         onClick={() => {
           if (selectionMode === "manual") {
+            // '직접 지정 종료'는 지정을 그만두는 것 — 그려 둔 박스도 지운다
+            // (박스로 분석하려면 종료하지 않고 바로 '사고감지 실행')
             handleEndDesignateMode();
+            setBboxList([]);
           } else {
             handleStartManualDesignate();
           }
