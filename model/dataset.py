@@ -26,7 +26,7 @@ class HitAndRunDataset(Dataset):
         self.resize = resize
         # augment=True → 학습용(랜덤 증강 적용), False → 검증용(증강 없음, 결정적)
         self.augment = augment
-        # 정규화 통계는 사전학습(S3D Kinetics-400)과 동일하게 config에서 일괄 관리
+        # 정규화 통계는 사전학습(Kinetics-400)과 동일하게 config에서 일괄 관리
         self.mean = torch.tensor(
             config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
         self.std = torch.tensor(
@@ -53,10 +53,13 @@ class HitAndRunDataset(Dataset):
                 class_str = action[0]
                 target_id = int(float(action[1]))
                 start_f = int(float(action[2]))
+                # 충돌 종료 프레임 — A 슬라이싱이 구간을 벗어나지 않도록 쓴다
+                end_f = int(float(action[3])) if len(action) > 3 else start_f
             else:
                 class_str = 'S'
                 target_id = 0
                 start_f = 0
+                end_f = 0
 
             if target_id not in bboxes:
                 target_id = next(iter(bboxes), 0)
@@ -64,14 +67,64 @@ class HitAndRunDataset(Dataset):
                 target_id, [0, 0, self.resize[0], self.resize[1]])
             label = 1 if class_str == 'A' else 0
 
-            samples.append({
-                'file_name': file_name,
-                'mp4_path': mp4_path,
-                'label': label,
-                'start_f': start_f,
-                'bbox': target_bbox,
-            })
+            # 영상 메타는 한 번만 읽는다(S 슬라이싱의 총프레임 + 지터 환산용 fps).
+            total, fps = self._video_meta(mp4_path)
+
+            def _add(sf):
+                samples.append({
+                    'file_name': file_name,
+                    'video_key': mp4_path,   # 분할을 '영상 단위'로 묶기 위한 키
+                    'mp4_path': mp4_path,
+                    'label': label,
+                    'start_f': sf,
+                    'bbox': target_bbox,
+                    'fps': fps,              # 시간 지터를 '초' 기준으로 맞추기 위함
+                })
+
+            if label == 1:
+                # 충돌(A): 창을 start_f 보다 TRAIN_A_PRE_FRAMES 앞에서 시작해
+                # '접근 → 충돌 → 흔들림'이 한 창에 담기게 한다(config 주석 참고).
+                pre = int(getattr(config, 'TRAIN_A_PRE_FRAMES', 0))
+                a_start = max(0, start_f - pre)
+                a_stride = max(1, int(getattr(config, 'TRAIN_A_SLICE_STRIDE', 15)))
+                last = end_f - self.clip_length + 1      # 창 끝 == end_f 인 시작점
+                if (getattr(config, 'TRAIN_A_SLICE_ENABLED', False)
+                        and last > a_start):
+                    # (기본 off) 구간 안에서 창을 밀어 A 클립을 늘리는 경로.
+                    # 첫 창만 접근을 담고 나머지는 '충돌 중'이 된다.
+                    starts = list(range(a_start, last + 1, a_stride))
+                    if starts[-1] != last:
+                        starts.append(last)   # 마지막 창은 충돌 종료에 정렬
+                    for sf in starts:
+                        _add(sf)
+                else:
+                    _add(a_start)
+            elif not getattr(config, 'TRAIN_S_SLICE_ENABLED', False):
+                _add(start_f)
+            else:
+                # 비충돌(S)은 영상 전체를 클립 길이 단위로 잘라 전부 학습에 넣는다.
+                # (기존엔 맨 앞 30프레임 1개뿐이라 '차가 지나가지만 충돌 아님'을
+                #  학습하지 못했고, 이것이 오탐의 직접 원인이었다 — config 주석 참고)
+                stride = max(1, int(getattr(config, 'TRAIN_S_SLICE_STRIDE',
+                                            self.clip_length)))
+                cap_n = int(getattr(config, 'TRAIN_S_MAX_CLIPS_PER_VIDEO', 0))
+                starts = list(range(0, max(1, total - self.clip_length + 1), stride))
+                if not starts:
+                    starts = [0]
+                if cap_n > 0:
+                    starts = starts[:cap_n]
+                for sf in starts:
+                    _add(sf)
         return samples
+
+    @staticmethod
+    def _video_meta(mp4_path):
+        """(총 프레임 수, fps). 메타데이터만 읽어 빠르다. 읽기 실패 시 fps는 30 가정."""
+        cap = cv2.VideoCapture(mp4_path)
+        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        cap.release()
+        return n, (fps if fps > 1.0 else 30.0)
 
     def _parse_annotation(self, txt_path):
         bboxes = {}
@@ -178,8 +231,16 @@ class HitAndRunDataset(Dataset):
         if self.augment:
             # ① 시간 오프셋 지터: 학습 클립이 항상 '충돌 시작 = 윈도 첫 프레임'이면
             #    추론(슬라이딩 윈도)에서 충돌이 윈도 중간에 걸릴 때 분포가 어긋난다.
-            #    시작점을 0~10프레임 앞으로 당겨 충돌 위치를 윈도 내에서 다양화.
-            start_f = max(0, start_f - random.randint(0, 10))
+            #    시작점을 조금 앞으로 당겨 충돌 위치를 윈도 내에서 다양화.
+            #    ※ 폭을 '초' 기준으로 환산한다. 프레임 수로 고정하면 같은 증강이
+            #      fps에 따라 다른 의미가 된다(10프레임 = 30fps 0.33초, 10fps 1.0초).
+            #      기본 0.33초는 30fps에서 기존 동작(0~10프레임)과 동일하다.
+            #    ※ 양방향(±)으로 흔든다. 한쪽(앞으로만)이면 A 클립의 접근 구간이
+            #      TRAIN_A_PRE_FRAMES 보다 계속 길어져 충돌이 창 밖으로 밀린다.
+            jitter = int(round(sample.get('fps', 30.0)
+                               * getattr(config, 'TRAIN_TIME_JITTER_SEC', 0.33)))
+            if jitter > 0:
+                start_f = max(0, start_f + random.randint(-jitter, jitter))
             # ② bbox 지터: 서비스에서는 사용자가 마우스로 대충 박스를 그린다.
             #    GT 좌표 그대로만 학습하면 손그림 박스와 분포가 어긋나므로
             #    중심 이동(±5%)·크기 배율(0.9~1.15)로 부정확한 박스를 시뮬레이션.
@@ -191,6 +252,14 @@ class HitAndRunDataset(Dataset):
             hw, hh = int(bw * s / 2), int(bh * s / 2)
             bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
 
+        # r 증강(학습 전용): 클립마다 r을 하나 뽑아 '모든 프레임에 동일 적용'한다.
+        # 검증/추론은 항상 self.r_value(=1.0) → 서비스 추론 조건과 일치.
+        r = self.r_value
+        if (self.augment
+                and getattr(config, 'TRAIN_R_AUGMENT_VALUES', ())
+                and random.random() < getattr(config, 'TRAIN_R_AUGMENT_PROB', 0.0)):
+            r = random.choice(config.TRAIN_R_AUGMENT_VALUES)
+
         cap = cv2.VideoCapture(sample['mp4_path'])
         frames = []
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_f)
@@ -200,8 +269,7 @@ class HitAndRunDataset(Dataset):
             if not ret:
                 break
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append(self._crop_and_pad(
-                frame, bbox, self.r_value))
+            frames.append(self._crop_and_pad(frame, bbox, r))
         cap.release()
 
         while len(frames) < self.clip_length:

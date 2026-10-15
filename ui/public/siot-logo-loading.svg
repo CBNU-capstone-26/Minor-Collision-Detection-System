@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 576" role="img" aria-labelledby="title desc">
+  <title id="title">SIOT</title>
+  <desc id="desc">SIOT loading wordmark with a blue target symbol in the O</desc>
+  <text x="76" y="504" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="520" font-weight="800" letter-spacing="-34">SI</text>
+  <text x="1020" y="504" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="520" font-weight="800" letter-spacing="-34">T</text>
+  <circle cx="804" cy="288" r="170" fill="none" stroke="#3268f4" stroke-width="68"/>
+  <circle cx="804" cy="288" r="60" fill="#4da1f1"/>
+</svg>
