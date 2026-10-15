@@ -1417,7 +1417,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setSelectionMode("manual");
     setIsBBoxMode(true);
     setHoveredDetectedBox(null);
-    showToast("🖱️ 직접 차량 지정 모드: 마우스로 드래그하여 사고 차량을 지정해 주세요.", "info");
+    // 안내 문구는 잠깐 뜨는 알림 대신 버튼 위 말풍선으로 모드가 끝날 때까지 띄운다 (.designate-hint)
   };
 
   // 탐지/지정 모드 해제
@@ -1991,23 +1991,33 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         {isDetectingVehicles ? "🛑 탐지 취소" : selectionMode === "auto" ? "차량 선택 종료" : "차량 탐지"}
       </button>
 
-      <button
-        className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
-        disabled={isAnalyzing}
-        onClick={() => {
-          if (selectionMode === "manual") {
-            // '직접 지정 종료'는 지정을 그만두는 것 — 그려 둔 박스도 지운다
-            // (박스로 분석하려면 종료하지 않고 바로 '사고감지 실행')
-            handleEndDesignateMode();
-            setBboxList([]);
-          } else {
-            handleStartManualDesignate();
-          }
-        }}
-        title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "직접 지정 모드 종료" : "직접 드래그하여 차량 지정")}
-      >
-        {selectionMode === "manual" ? "직접 지정 종료" : "직접 차량 지정"}
-      </button>
+      {/* 직접 차량 지정 + 지정 모드 안내 말풍선(버튼 위로 떠서 상단 바의 빈 곳에 겹쳐 뜬다 — 아무것도 밀어내지 않음) */}
+      <div className="designate-btn-wrapper">
+        <button
+          className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
+          disabled={isAnalyzing || isDetectingVehicles} /* 분석 중 · 차량 자동 탐지 중엔 누를 수 없다 */
+          onClick={() => {
+            if (selectionMode === "manual") {
+              // '직접 지정 종료'는 지정을 그만두는 것 — 그려 둔 박스도 지운다
+              // (박스로 분석하려면 종료하지 않고 바로 '사고감지 실행')
+              handleEndDesignateMode();
+              setBboxList([]);
+            } else {
+              handleStartManualDesignate();
+            }
+          }}
+          title={isAnalyzing ? "분석 중에는 지정할 수 없습니다"
+            : isDetectingVehicles ? "차량 탐지 중에는 지정할 수 없습니다"
+              : (selectionMode === "manual" ? "직접 지정 모드 종료" : "직접 드래그하여 차량 지정")}
+        >
+          {selectionMode === "manual" ? "직접 지정 종료" : "직접 차량 지정"}
+        </button>
+        {selectionMode === "manual" && (
+          <div className="designate-hint" role="status">
+            🖱️ 마우스로 드래그하여 사고 차량을 지정해 주세요.
+          </div>
+        )}
+      </div>
 
 
       {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
@@ -2649,15 +2659,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                 </div>
               )}
 
-              {/* 수동 지정 모드 안내문 (영상 상단을 가리지 않도록 비디오 플레이어 바깥 위에 배치).
-                  자동 탐지 모드에는 안내 바를 띄우지 않는다. */}
-              {selectionMode === "manual" && (
-                <div className="bbox-mode-guide-bar">
-                  <span className="bbox-guide-icon">🖱️</span>
-                  <span>직접 차량 지정 모드: 마우스로 드래그하여 사고 차량을 지정해 주세요.</span>
-                </div>
-              )}
-
               <div className="player-container" ref={playerContainerRef}>
                 <div
                   className={`mock-video-player ${isBBoxMode ? "bbox-mode-active" : ""}`}
@@ -3013,7 +3014,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   </div>
                 </div>
               </div>
-
             </section>
 
             {/* 오른쪽: 이 영상의 분석 이력 — 숨기면 오른쪽 끝에 '분석 이력' 탭만 남는다 */}
