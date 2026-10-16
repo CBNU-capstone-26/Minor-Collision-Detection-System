@@ -73,7 +73,9 @@ def auth_secret_key() -> str:
         return key
     path = Path(__file__).resolve().parents[1] / ".auth_secret"
     if path.exists():
-        return path.read_text(encoding="utf-8").strip()
+        saved_key = path.read_text(encoding="utf-8").strip()
+        if saved_key:
+            return saved_key
     import secrets
     key = secrets.token_hex(32)
     path.write_text(key, encoding="utf-8")
