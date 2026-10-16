@@ -57,6 +57,7 @@ def _ensure_column(table, column_ddl):
 
 
 _ensure_column("videos", "detected_vehicles TEXT NULL")
+_ensure_column("videos", "title VARCHAR(100) NULL")             # 업로드할 때 넣은 제목
 _ensure_column("analysis_tasks", "finished_at DATETIME NULL")   # 분석 이력: 끝난 시각
 _ensure_column("analysis_tasks", "event_count INT NULL")        # 분석 이력: 찾은 클립 수
 

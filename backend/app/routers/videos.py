@@ -91,6 +91,7 @@ def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.
     return api_schemas.VideoOut(
         id=v.id,
         video_name=v.video_name,
+        title=v.title,
         recording_date=v.recording_date,
         camera_location=v.camera_location or "주차장",
         recording_start_time=v.recording_start_time or "20:30",
@@ -100,7 +101,7 @@ def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.
         total_frames=v.total_frames,
         duration_sec=duration,
         detected_vehicles=v.detected_vehicles,
-        created_at=v.created_at,
+        created_at=_utc(v.created_at),   # 업로드 시각 — UTC 라고 붙여 보내 브라우저 시간대로 표시
         events=[to_event_out(e) for e in v.crash_events],
         last_task=_last_task_out(v),
         analysis_done=any(t.status == "SUCCESS" for t in v.analysis_tasks),
@@ -134,9 +135,14 @@ def _extract_metadata(path: Path):
 def upload_video(
     file: UploadFile = File(...),
     recording_date: str | None = Form(None),
+    title: str | None = Form(None),   # 선택 — 비우면 화면이 '녹화일 녹화본 #N' 으로 보여 준다
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
+    title = (title or "").strip()   # 파일을 저장하기 전에 먼저 확인
+    if len(title) > 100:
+        raise HTTPException(status_code=400, detail="제목은 100자까지 입력할 수 있습니다.")
+
     ext = Path(file.filename).suffix or ".mp4"
     stored_name = f"{uuid4().hex}{ext}"
     dest = settings.UPLOAD_DIR / stored_name
@@ -158,6 +164,7 @@ def upload_video(
     video = db_models.Video(
         user_id=user.id,
         video_name=file.filename,
+        title=title or None,
         video_path=settings.rel_path(dest),
         recording_date=rec_date,
         width=width,
