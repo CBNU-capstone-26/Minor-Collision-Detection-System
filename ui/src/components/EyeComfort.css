@@ -1,0 +1,65 @@
+.eye-comfort-tint {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  background: rgb(255, 214, 128);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.eye-comfort {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 2147483647;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #302820;
+  max-width: calc(100vw - 32px);
+}
+.eye-comfort button { font: inherit; }
+.eye-comfort-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-height: 44px;
+  padding: 9px 15px;
+  background: #fff8ec;
+  color: #493521;
+  border: 1px solid #dbc8ad;
+  border-radius: 24px;
+  box-shadow: 0 3px 14px #00000014;
+}
+.eye-comfort-status { font-size: 12px; }
+.eye-comfort-panel {
+  width: 300px;
+  max-width: 100%;
+  max-height: calc(100dvh - 100px);
+  overflow-y: auto;
+  margin-bottom: 10px;
+  padding: 16px;
+  background: #fffcf6;
+  border: 1px solid #dbc8ad;
+  border-radius: 16px;
+  box-shadow: 0 6px 28px #00000026;
+}
+.eye-comfort-heading, .eye-comfort-toggle, .eye-comfort-strength {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.eye-comfort-heading button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 24px;
+}
+.eye-comfort-panel p { margin: 8px 0 14px; }
+.eye-comfort-toggle { min-height: 44px; cursor: pointer; }
+.eye-comfort-toggle input { width: 22px; height: 22px; accent-color: #926022; }
+.eye-comfort-strength { margin-top: 12px; }
+.eye-comfort-panel input[type='range'] { width: 100%; height: 36px; margin: 0; accent-color: #926022; }
+.eye-comfort-panel .eye-comfort-note { margin: 8px 0 0; color: #695b4b; font-size: 12px; }
+.eye-comfort button:focus-visible, .eye-comfort input:focus-visible { outline: 3px solid #98662e; outline-offset: 3px; }
