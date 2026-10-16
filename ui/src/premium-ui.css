@@ -325,3 +325,68 @@ body.dark-mode .siot-team-footer :is(strong,p,a) { color: #abbfcb; }
 .public-login-page .public-brand { display: inline-flex; align-items: center; padding: 3px 0; background: transparent; border: 0; color: var(--public-ink); border-radius: 8px; }
 .public-login-page .public-brand .workspace-wordmark { font-size: 27px; }
 .public-login-page .public-brand:hover { opacity: .8; }
+.dashboard-layout .video-info { position: relative; padding-right: 62px; }
+.video-card-actions { position: absolute; right: 16px; bottom: 19px; text-align: left; }
+.video-more-trigger { width: 34px; height: 34px; border: 1px solid var(--incident-line); border-radius: 50%; color: var(--incident-muted); background: var(--incident-surface); font-size: 23px; font-weight: 800; line-height: 1; display: grid; place-items: center; padding: 0 0 8px; }
+.video-more-trigger:hover, .video-more-trigger[aria-expanded="true"] { background: #108c8810; color: var(--incident-accent); border-color: #108c8850; }
+.video-card-menu { position: absolute; bottom: 43px; right: 0; width: 175px; padding: 6px; border-radius: 13px; border: 1px solid var(--incident-line); box-shadow: 0 10px 32px #142e3d25; background: var(--incident-surface); z-index: 15; animation: incident-arrive .15s ease-out; }
+.video-card-menu button { display: flex; align-items: center; gap: 10px; background: transparent; border: 0; padding: 12px 10px; width: 100%; text-align: left; border-radius: 8px; color: var(--incident-ink); font-size: 12px; }
+.video-card-menu button:hover { background: #108c880b; }
+.video-card-menu .video-menu-delete { color: #b45445; }
+.video-card-menu .video-menu-delete:hover { background: #bc4b3410; }
+.dashboard-layout .video-card:has(.video-card-menu), .dashboard-layout .video-card:has(.video-card-dialog) { z-index: 20; transform: none; }
+/* Keep fixed dialogs outside transformed card containing blocks. */
+.dashboard-layout .video-card:has(.video-card-dialog) { transition: none; }
+.video-card-dialog { text-align: left; width: min(440px,calc(100vw - 32px)); background: var(--incident-surface); color: var(--incident-ink); border: 1px solid var(--incident-line); border-radius: 20px; }
+.video-card-dialog h2 { font-size: 22px; font-weight: 750; color: var(--incident-ink); margin: 14px 0 8px; }
+.video-dialog-title { font-size: 12px; color: var(--incident-muted); margin-bottom: 20px; overflow-wrap: anywhere; }
+.video-details-list { margin: 0; }
+.video-details-list > div { display: grid; grid-template-columns: 95px 1fr; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--incident-line); font-size: 12px; }
+.video-details-list dt { color: var(--incident-muted); }
+.video-details-list dd { margin: 0; overflow-wrap: anywhere; }
+.video-dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; }
+.video-dialog-actions button { padding: 11px 19px; background: transparent; color: var(--incident-ink); border: 1px solid var(--incident-line); border-radius: 25px; font-size: 12px; }
+.video-dialog-actions .video-delete-confirm { background: #b45445; border-color: #b45445; color: #fff; }
+.video-dialog-actions button:disabled { opacity: .5; cursor: wait; }
+.video-delete-error { font-size: 12px; color: #b45445; margin-top: 15px; }
+/* Larger library previews and the shared teal analysis palette. */
+.dashboard-layout .home-view { max-width: 1760px; padding-inline: 24px; }
+.dashboard-layout .video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.dashboard-layout .video-thumbnail { margin-bottom: 0; border-radius: 17px 17px 0 0; }
+.dashboard-layout .video-info { padding-top: 24px; padding-bottom: 24px; }
+.dashboard-layout .video-info h3 { font-size: 17px; }
+.dashboard-layout .analysis-status-box:not(.analysis-status-idle) { background: #f0f8f7; border-color: #cde5e1; border-radius: 13px; box-shadow: none; }
+.dashboard-layout .analysis-status-label, .dashboard-layout .analysis-status-pct { color: #087f83; }
+.dashboard-layout .analysis-progress-track { background: #d7eae6; }
+.dashboard-layout .analysis-progress-fill { background: linear-gradient(90deg, #087f83, #32b8a4); }
+.dashboard-layout .analysis-jobs-toggle { border-color: #cde5e1; color: #087f83; border-radius: 8px; }
+.dashboard-layout .analysis-jobs-toggle:hover { background: #dcefeb; }
+.dashboard-layout .analysis-jobs-dropdown { border-color: var(--incident-line); background: var(--incident-surface); border-radius: 14px; }
+body.dark-mode .dashboard-layout .analysis-status-box:not(.analysis-status-idle) { background: #122e32; border-color: #245152; }
+body.dark-mode .dashboard-layout .analysis-status-label, body.dark-mode .dashboard-layout .analysis-status-pct { color: #6cdbca; }
+body.dark-mode .dashboard-layout .analysis-progress-track { background: #22484a; }
+body.dark-mode .dashboard-layout .analysis-progress-fill { background: linear-gradient(90deg,#138d8f,#5bd4be); }
+body.dark-mode .dashboard-layout .analysis-jobs-toggle { background: #193b3e; border-color: #245152; color: #6cdbca; }
+@media (max-width: 900px) { .dashboard-layout .video-grid { grid-template-columns: 1fr; gap: 24px; } }
+@media (max-width: 720px) { .dashboard-layout .home-view { padding-inline: 12px; } }
+/* Review video stays within the initial viewport, including its controls. */
+.dashboard-layout .watch-view:not(.theater-view) { padding: 14px 24px; --watch-avail-h: calc(100dvh - 268px); }
+.dashboard-layout .incident-workspace-header { margin-bottom: 14px; }
+.dashboard-layout .incident-workspace-top { margin-bottom: 12px; }
+.dashboard-layout .incident-back { margin-bottom: 8px; }
+.dashboard-layout .incident-workspace-top h1 { font-size: 21px; margin-top: 4px; }
+.dashboard-layout .incident-workflow li { padding-block: 11px; }
+.dashboard-layout .watch-view:not(.theater-view) .player-section { max-width: 100%; max-height: var(--watch-avail-h); }
+.dashboard-layout .watch-view:not(.theater-view) .player-container { max-height: var(--watch-avail-h); }
+.dashboard-layout .watch-view:not(.theater-view) .mock-video-player { max-height: calc(var(--watch-avail-h) - var(--player-controls-h)); }
+.dashboard-layout .player-container:fullscreen { max-height: none !important; }
+.dashboard-layout .player-container:fullscreen .mock-video-player { max-height: none !important; }
+@media (min-width: 769px) and (max-height: 800px) {
+  .dashboard-layout .incident-workflow small { display: none; }
+  .dashboard-layout .watch-view:not(.theater-view) { --watch-avail-h: calc(100dvh - 248px); }
+}
+@media (max-width: 1024px) { .dashboard-layout .watch-view:not(.theater-view) { --watch-avail-h: calc(100dvh - 300px); } }
+@media (max-width: 768px) {
+  .dashboard-layout .watch-view:not(.theater-view) { padding: 12px; --watch-avail-h: max(180px, calc(100dvh - 290px)); }
+  .dashboard-layout .incident-workspace-top h1 { font-size: 17px; }
+}

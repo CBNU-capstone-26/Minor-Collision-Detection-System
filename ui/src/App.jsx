@@ -23,6 +23,60 @@ function InterfaceIcon({ name }) {
   return <svg className="interface-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
+function VideoCardActions({ video, title, onDeleted, onError }) {
+  const [open, setOpen] = useState(false);
+  const [dialog, setDialog] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  useEffect(() => {
+    if (!open && !dialog) return;
+    const outside = (event) => {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    };
+    const escape = (event) => {
+      if (event.key === "Escape" && !busy) {
+        setOpen(false); setDialog(null); triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+  }, [open, dialog, busy]);
+  const close = () => { if (!busy) { setDialog(null); triggerRef.current?.focus(); } };
+  return <div className="video-card-actions" ref={containerRef} onClick={(e) => e.stopPropagation()}>
+    <button className="video-more-trigger" ref={triggerRef} aria-label={`${title} 메뉴`} aria-expanded={open} onClick={() => setOpen(!open)}>···</button>
+    {open && <div className="video-card-menu">
+      <button onClick={() => { setOpen(false); setError(""); setDialog("info"); }}><InterfaceIcon name="chart" /> 영상 정보 확인</button>
+      <button className="video-menu-delete" onClick={() => { setOpen(false); setError(""); setDialog("delete"); }}><TrashIcon size={17} /> 영상 삭제</button>
+    </div>}
+    {dialog && <div className="settings-modal-overlay" onClick={close}>
+      <div className="confirm-modal video-card-dialog" role={dialog === "delete" ? "alertdialog" : "dialog"} aria-modal="true" aria-label={dialog === "delete" ? "영상 삭제 확인" : "영상 정보"} onClick={(e) => e.stopPropagation()}>
+        <span className="incident-eyebrow">{dialog === "delete" ? "DELETE VIDEO" : "VIDEO DETAILS"}</span>
+        <h2>{dialog === "delete" ? "영상을 삭제하시겠습니까?" : "영상 정보"}</h2>
+        <p className="video-dialog-title">{title}</p>
+        {dialog === "delete" ? <p className="confirm-modal-desc">원본 영상, 분석 이력과 사고 클립이 함께 삭제됩니다. 삭제 후에는 복구할 수 없습니다.</p> : <dl className="video-details-list">
+          <div><dt>파일명</dt><dd>{video.name || "정보 없음"}</dd></div>
+          <div><dt>녹화 날짜</dt><dd>{video.date || "정보 없음"}</dd></div>
+          <div><dt>영상 길이</dt><dd>{formatTime(video.duration)}</dd></div>
+          <div><dt>해상도</dt><dd>{video.width && video.height ? `${video.width} × ${video.height}` : "정보 없음"}</dd></div>
+          <div><dt>프레임 속도</dt><dd>{video.fps ? `${Number(video.fps.toFixed(2))} fps` : "정보 없음"}</dd></div>
+          <div><dt>사고 의심 구간</dt><dd>{video.events.length}건</dd></div>
+        </dl>}
+        {error && <p className="video-delete-error" role="alert">{error}</p>}
+        <div className="video-dialog-actions"><button autoFocus disabled={busy} onClick={close}>{dialog === "delete" ? "취소" : "닫기"}</button>
+          {dialog === "delete" && <button className="video-delete-confirm" disabled={busy} onClick={async () => {
+            setBusy(true); setError("");
+            try { await api.deleteVideo(video.id); onDeleted(video.id); }
+            catch (e) { setError(e.message); onError?.(e.message); setBusy(false); }
+          }}>{busy ? "삭제 중…" : "영상 삭제"}</button>}
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function TeamFooter({ animated = false }) {
   return <footer className={`siot-team-footer ${animated ? "scroll-reveal" : ""}`}>
     <div className="team-footer-brand"><strong>SIOT<span>.</span></strong><p>충북대학교 소프트웨어학부</p><small>Parking incident intelligence</small></div>
@@ -2391,6 +2445,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     <div className="video-info">
                       <h3>{getVideoDisplayTitle(video, videos)}</h3>
                       <p>영상 길이: {formatTime(video.duration)}</p>
+                      {!deleteMode && <VideoCardActions video={video} title={getVideoDisplayTitle(video, videos)} onDeleted={(id) => {
+                        setVideos((previous) => previous.filter((video) => video.id !== id));
+                        setSelectedForDelete((previous) => previous.filter((videoId) => videoId !== id));
+                        showToast("영상을 삭제했습니다.", "success");
+                      }} />}
                     </div>
                   </div>
                 );
@@ -2777,6 +2836,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     ref={videoElRef}
                     className="real-video"
                     src={api.streamUrl(selectedVideo.id)}
+                    poster={api.thumbnailUrl(selectedVideo.id)}
+                    preload="auto"
+                    playsInline
                     controls={false}
 
                     onPlay={() => setIsPlaying(true)}

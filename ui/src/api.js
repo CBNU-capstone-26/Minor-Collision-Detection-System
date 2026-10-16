@@ -78,6 +78,7 @@ export function normalizeVideo(v) {
   const created = v.created_at || "";
   return {
     id: v.id,
+    name: v.video_name,
     date: v.recording_date || (created ? created.slice(0, 10) : ""),
     startTime: v.recording_start_time || "20:30",
     duration: Math.round(v.duration_sec || 0),
