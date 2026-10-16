@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect, useSyncExternalStore } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -10,29 +10,145 @@ import {
 import { api, saveAuth, clearAuth, getToken, getStoredUser } from "./api";
 import "./App.css";
 
-function AppLoadingScreen() {
+// 선으로 그린 휴지통 아이콘 — 글자색(currentColor)을 따라가서 평소 회색 → 마우스 올리면 빨강.
+// (🗑 이모지는 자체 색이라 hover 색이 안 먹고, 운영체제마다 모양이 달랐다)
+function TrashIcon({ size = 14 }) {
   return (
-    <div className="app-splash-screen">
-      <div className="app-splash-bg">
-        <div className="cosmic-stars" />
-        <div className="cosmic-glow-limb" />
-      </div>
-      <div className="app-splash-content">
-        <img className="app-splash-logo" src="/siot-logo-loading.svg" alt="SIOT" />
-        <p className="app-splash-subtitle">주차 사고 이벤트 감지 시스템</p>
-        <div className="app-splash-spinner-ring" />
-      </div>
-    </div>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
   );
 }
+
+// 재생 컨트롤 아이콘 — 이모지(▶ ⏸ ⛶)는 OS·글꼴마다 모양과 크기가 달라 SVG 로 그린다
+const PLAYER_ICON_PATHS = {
+  play: <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />,
+  pause: (
+    <>
+      <rect x="6.5" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none" />
+      <rect x="14" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  volumeHigh: (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" />
+      <path d="M15.5 9a4 4 0 0 1 0 6" />
+      <path d="M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </>
+  ),
+  volumeLow: (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" />
+      <path d="M15.5 9a4 4 0 0 1 0 6" />
+    </>
+  ),
+  volumeMute: (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" />
+      <path d="M16 9.5l5 5M21 9.5l-5 5" />
+    </>
+  ),
+  theater: <rect x="2.5" y="6.5" width="19" height="11" rx="1.5" />,
+  fullscreen: <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />,
+  exitFullscreen: <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />,
+};
+
+function PlayerIcon({ name, size = 18 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {PLAYER_ICON_PATHS[name]}
+    </svg>
+  );
+}
+
+// 화면 너비 조건(CSS 미디어쿼리)이 지금 맞는지 — 창 크기가 바뀌면 다시 그린다
+function useMediaQuery(query) {
+  const subscribe = useCallback(
+    (onChange) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    },
+    [query]
+  );
+  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches);
+}
+
+// 검색 아이콘 — 색 없이 선만 있는 돋보기 (이모지 🔍 는 OS 마다 색·모양이 달라서)
+function SearchIcon({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-4-4" />
+    </svg>
+  );
+}
+
+// 로그인이 만료돼 돌아왔으면(/login?expired=1) 로그인 창을 열고 안내한다
+const AUTH_EXPIRED_MSG = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+const cameFromExpiredLogin = () => new URLSearchParams(window.location.search).has("expired");
 
 function LoginPage({ onLogin }) {
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
-  const [error, setError] = useState("");
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [error, setError] = useState(() => (cameFromExpiredLogin() ? AUTH_EXPIRED_MSG : ""));
+  const [isLoginOpen, setIsLoginOpen] = useState(cameFromExpiredLogin);
   const [isSignupOpen, setIsSignupOpen] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            // Optional: unobserve if you only want it to animate once
+            // observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
+    );
+
+    const elements = document.querySelectorAll(".scroll-reveal");
+    elements.forEach((el) => observer.observe(el));
+
+    return () => elements.forEach((el) => observer.unobserve(el));
+  }, []);
 
   const handleLogin = async () => {
     setError("");
@@ -62,7 +178,7 @@ function LoginPage({ onLogin }) {
 
       <main className="public-main">
         <section className="public-hero">
-          <div className="public-hero-copy">
+          <div className="public-hero-copy scroll-reveal">
             <p className="public-kicker">CCTV EVENT REVIEW / 01</p>
             <h1>관리자가 모든 영상을<br /><em>보지 않아도, AI가 먼저 찾습니다.</em></h1>
             <p className="public-hero-description">
@@ -77,7 +193,7 @@ function LoginPage({ onLogin }) {
             </div>
           </div>
 
-          <div className="public-hero-panel" aria-label="SIOT 분석 흐름">
+          <div className="public-hero-panel scroll-reveal" aria-label="SIOT 분석 흐름">
             <div className="public-panel-topline">
               <span>LIVE REVIEW SYSTEM</span>
               <span className="public-live-dot">● ONLINE</span>
@@ -88,11 +204,14 @@ function LoginPage({ onLogin }) {
                 <span className="public-car car-one" />
                 <span className="public-car car-two" />
                 <span className="public-car car-three" />
+                <div className="public-detection-box box-blue-car">
+                  <span className="public-detected-label">DETECTED</span>
+                </div>
               </div>
-              <div className="public-detection-box box-one"><span>VEHICLE 01</span></div>
-              <div className="public-detection-box box-two"><span>EVENT CHECK</span></div>
               <div className="public-scan-caption">FRAME 004281 / CAMERA C1</div>
             </div>
+
+
             <div className="public-panel-footer">
               <span>의심 구간 감지</span>
               <strong>→ 날짜별 이벤트로 정리</strong>
@@ -100,7 +219,7 @@ function LoginPage({ onLogin }) {
           </div>
         </section>
 
-        <section className="public-proof-strip" aria-label="SIOT 핵심 기능">
+        <section className="public-proof-strip scroll-reveal" aria-label="SIOT 핵심 기능">
           <div><strong>01</strong><span>영상 업로드</span></div>
           <div><strong>02</strong><span>의심 장면 분석</span></div>
           <div><strong>03</strong><span>사건별 확인</span></div>
@@ -108,7 +227,7 @@ function LoginPage({ onLogin }) {
         </section>
 
         <section className="public-insight-section" id="why-siot">
-          <div className="public-section-heading">
+          <div className="public-section-heading scroll-reveal">
             <p className="public-kicker">RECENT HIT-AND-RUN TREND</p>
             <h2>반복되는 물피도주,<br /><em>AI 선별이 필요한 이유</em></h2>
             <p>
@@ -116,7 +235,7 @@ function LoginPage({ onLogin }) {
               SIOT는 수많은 CCTV 영상 중 확인이 필요한 순간을 먼저 좁혀 관리자의 시간을 줄입니다.
             </p>
           </div>
-          <div className="public-trend-table-wrap">
+          <div className="public-trend-table-wrap scroll-reveal">
             <div className="public-trend-table-heading">
               <span>INDICATOR</span><span>OBSERVED DATA</span><span>WHAT IT MEANS</span>
             </div>
@@ -139,6 +258,22 @@ function LoginPage({ onLogin }) {
           </div>
         </section>
       </main>
+
+      <footer className="public-footer scroll-reveal">
+        <div className="footer-left">
+          <div className="footer-title">SIOT</div>
+          <div className="footer-desc">
+            충북대학교 소프트웨어학부<br/>
+            CBNU Department of Software
+          </div>
+        </div>
+        <div className="footer-links">
+          <div className="footer-links-title">Links</div>
+          <a href="https://github.com/CBNU-capstone-26/Minor-Collision-Detection-System" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="#" onClick={(e) => e.preventDefault()}>이용약관</a>
+          <a href="#" onClick={(e) => e.preventDefault()}>개인정보 처리방침</a>
+        </div>
+      </footer>
 
       {isLoginOpen && (
         <div className="login-modal-overlay" onClick={() => setIsLoginOpen(false)}>
@@ -405,17 +540,106 @@ function formatTime(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function formatActualTime(dateText, startTime, seconds) {
-  const [hours, minutes] = startTime.split(":").map(Number);
-  const date = new Date(`${dateText}T00:00:00`);
-  date.setHours(hours, minutes, seconds, 0);
+// 분석이 끝나 사고 의심 클립이 만들어진 일시 — ['YYYY-MM-DD', '04시 09분'] (보는 사람 컴퓨터의 시간대)
+function formatAnalyzedAt(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const p = (n) => String(n).padStart(2, "0");
+  return [`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, `${p(d.getHours())}시 ${p(d.getMinutes())}분`];
+}
 
-  return date.toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
+// 걸린 시간 — '45초', '3분 12초', '1시간 5분'
+function formatDuration(sec) {
+  if (sec == null || !Number.isFinite(sec) || sec < 0) return "";
+  const s = Math.round(sec);
+  if (s < 60) return `${s}초`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 ? `${m}분 ${s % 60}초` : `${m}분`;
+  return `${Math.floor(m / 60)}시간 ${m % 60}분`;
+}
+
+const HISTORY_STATUS = {
+  SUCCESS: { label: "완료", cls: "success" },
+  FAILURE: { label: "실패", cls: "failure" },
+  CANCELLED: { label: "취소", cls: "cancelled" },
+  PENDING: { label: "대기", cls: "active" },
+  PROCESSING: { label: "분석 중", cls: "active" },
+};
+
+// 영상 재생 화면 오른쪽: 이 영상의 분석 이력 (최근 분석이 위)
+// history: 서버가 준 분석 이력, events: 지금 남아 있는 클립(분석 번호별로 셈),
+// progressText(taskId): 진행 중인 분석의 진행 문구(없으면 null)
+function AnalysisHistoryPanel({ history, events, progressText, onClose }) {
+  const remain = {};
+  events.forEach((e) => {
+    if (e.analysisNo != null) remain[e.analysisNo] = (remain[e.analysisNo] || 0) + 1;
   });
+
+  const resultOf = (h) => {
+    const left = remain[h.no] || 0;
+    if (h.status === "SUCCESS") {
+      if (h.eventCount == null) {
+        // 이력 기능 전 분석 — 찾은 수를 몰라 남은 수만 보여 준다
+        return left > 0 ? { text: `사고 의심 클립 ${left}개` } : { text: "남은 클립 없음", cls: "muted" };
+      }
+      if (h.eventCount === 0) return { text: "사고 의심 구간 없음", cls: "muted" };
+      const deleted = h.eventCount - left;
+      return { text: `사고 의심 클립 ${h.eventCount}개${deleted > 0 ? ` · ${deleted}개 삭제됨` : ""}` };
+    }
+    if (h.status === "FAILURE") return { text: h.errorMessage || "분석 중 오류가 났습니다", cls: "error" };
+    if (h.status === "CANCELLED") return { text: "사용자 요청으로 취소", cls: "muted" };
+    return { text: progressText(h.taskId) || "분석 진행 중", cls: "active" };
+  };
+
+  return (
+    <aside className="analysis-history">
+      <div className="analysis-history-header">
+        <h3>분석 이력</h3>
+        <span className="analysis-history-count">총 {history.length}회</span>
+        <button
+          className="sidebar-icon-btn analysis-history-close"
+          onClick={onClose}
+          aria-label="분석 이력 숨기기"
+          title="분석 이력 숨기기"
+        >
+          ›
+        </button>
+      </div>
+      {history.length === 0 ? (
+        <div className="event-empty-hint">아직 분석한 적이 없습니다.</div>
+      ) : (
+        <ol className="analysis-history-list">
+          {[...history].reverse().map((h) => {
+            const st = HISTORY_STATUS[h.status] || { label: h.status, cls: "cancelled" };
+            const at = formatAnalyzedAt(h.requestedAt);
+            const took =
+              h.requestedAt && h.finishedAt
+                ? formatDuration((new Date(h.finishedAt) - new Date(h.requestedAt)) / 1000)
+                : "";
+            const result = resultOf(h);
+            return (
+              <li className="analysis-history-item" key={h.taskId}>
+                <div className="ahi-top">
+                  <span className="ahi-no">분석 #{h.no}</span>
+                  <span className={`ahi-status ${st.cls}`}>{st.label}</span>
+                  {at && <span className="ahi-date">{at[0]}</span>}
+                </div>
+                {at && (
+                  <div className="ahi-time">
+                    {at[1]} 요청{took && ` · ${took} 소요`}
+                  </div>
+                )}
+                <div className={`ahi-result ${result.cls || ""}`} title={result.text}>
+                  {result.text}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </aside>
+  );
 }
 
 function getVideoDisplayTitle(video, allVideos) {
@@ -425,9 +649,9 @@ function getVideoDisplayTitle(video, allVideos) {
     const sorted = [...sameDateVideos].sort((a, b) => a.id - b.id);
     const index = sorted.findIndex((v) => v.id === video.id);
     const num = index >= 0 ? index + 1 : 1;
-    return `${video.date} ${video.camera} 녹화본 #${num}`;
+    return `${video.date} 녹화본 #${num}`;
   }
-  return `${video.date} ${video.camera} 녹화본`;
+  return `${video.date} 녹화본`;
 }
 
 function formatMonthLabel(date) {
@@ -467,7 +691,6 @@ function AnalyticsView({ filteredVideos, filterDays, setFilterDays }) {
     let resolvedCount = 0;
 
     const dateCounts = {};
-    const cameraCounts = {};
     const eventTypeCounts = {};
     const hourCounts = Array(24).fill(0);
 
@@ -486,9 +709,6 @@ function AnalyticsView({ filteredVideos, filterDays, setFilterDays }) {
 
         // Date grouping
         dateCounts[video.date] = (dateCounts[video.date] || 0) + 1;
-
-        // Camera grouping
-        cameraCounts[video.camera] = (cameraCounts[video.camera] || 0) + 1;
 
         // Type grouping
         let type = "기타";
@@ -511,12 +731,6 @@ function AnalyticsView({ filteredVideos, filterDays, setFilterDays }) {
       date: date.substring(5), // MM-DD
       count: dateCounts[date]
     }));
-
-    // Convert cameras to array
-    const cameraList = Object.keys(cameraCounts).map(cam => ({
-      name: cam,
-      count: cameraCounts[cam]
-    })).sort((a, b) => b.count - a.count);
 
     // Convert event types to array
     const eventTypeList = Object.keys(eventTypeCounts).map(type => ({
@@ -545,7 +759,6 @@ function AnalyticsView({ filteredVideos, filterDays, setFilterDays }) {
       pendingCount,
       resolvedCount,
       sortedDates,
-      cameraList,
       eventTypeList,
       hourlyGroups
     };
@@ -741,26 +954,6 @@ function AnalyticsView({ filteredVideos, filterDays, setFilterDays }) {
     );
   }, [stats.hourlyGroups]);
 
-  const cameraStats = useMemo(() => {
-    const maxCount = Math.max(...stats.cameraList.map(c => c.count), 1);
-
-    return (
-      <div className="camera-stats-list">
-        {stats.cameraList.map((cam, idx) => {
-          const pct = (cam.count / maxCount) * 100;
-          return (
-            <div key={idx} className="camera-stat-row">
-              <div className="camera-name">{cam.name}</div>
-              <div className="camera-bar-wrapper">
-                <div className="camera-bar-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="camera-count">{cam.count}건</div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }, [stats.cameraList]);
 
   return (
     <div className="analytics-view">
@@ -821,11 +1014,6 @@ function AnalyticsView({ filteredVideos, filterDays, setFilterDays }) {
               <h3> 시간대별 발생 빈도</h3>
               <div className="chart-wrapper">{hourlyChartSvg}</div>
             </div>
-
-            <div className="analytics-chart-card">
-              <h3> 카메라별 감지 현황</h3>
-              <div className="chart-wrapper">{cameraStats}</div>
-            </div>
           </div>
         </>
       )}
@@ -852,11 +1040,17 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [datePickerVideos, setDatePickerVideos] = useState(null); // 동일 날짜 영상 복수 존재 시 선택 모달 데이터
   const [playbackSpeed, setPlaybackSpeed] = useState("1");
   const [volume, setVolume] = useState(70);
-  const [quality, setQuality] = useState("auto");
+  const [isMuted, setIsMuted] = useState(false);
+  const [mediaDuration, setMediaDuration] = useState(0); // <video> 가 알려준 실제 길이(초, 소수) — 재생바 위치 계산용
+  const [isSeeking, setIsSeeking] = useState(false); // 재생바를 누른 채 끌어서 탐색 중
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false); // 오른쪽 분석 이력 — 기본은 숨김(영상을 열 때마다)
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
   const playerContainerRef = useRef(null);
+  const seekHoverRef = useRef(null); // 재생바 위 마우스 위치의 시각 말풍선 (마우스 움직임마다 다시 그리지 않게 직접 갱신)
+  const isSeekingRef = useRef(false); // 끄는 중인지 — 이벤트 처리 중엔 다시 그리기 전이라 상태 대신 이걸 본다
   const detectAbortControllerRef = useRef(null);
   const analyzeAbortControllerRef = useRef(null);
 
@@ -869,112 +1063,27 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [isDrawing, setIsDrawing] = useState(false);
   const bboxOverlayRef = useRef(null);
   const videoElRef = useRef(null); // 실제 <video> 엘리먼트 (원본 해상도 환산용)
-  const [showBBoxPanel, setShowBBoxPanel] = useState(false);
 
-  // RT-DETR 차량 자동 탐지 및 마우스 Hover 관련 상태
+  // YOLO 차량 자동 탐지 및 마우스 Hover 관련 상태
   const [isDetectingVehicles, setIsDetectingVehicles] = useState(false);
-  const [detectedBoxes, setDetectedBoxes] = useState([]); // [{ id, class_name, confidence, bbox: [x1,y1,x2,y2], source }]
-  const [detectorMode, setDetectorMode] = useState(null);
+  const [detectedBoxes, setDetectedBoxes] = useState([]); // [{ id, class_name, confidence, bbox: [x1,y1,x2,y2] }]
   const [hoveredDetectedBox, setHoveredDetectedBox] = useState(null);
-
-  const getRenderedVideoLayout = () => {
-    const overlayEl = bboxOverlayRef.current;
-    const videoEl = videoElRef.current;
-    if (!overlayEl) return null;
-
-    const rect = overlayEl.getBoundingClientRect();
-    const videoWidth = selectedVideo?.width || videoEl?.videoWidth || rect.width;
-    const videoHeight = selectedVideo?.height || videoEl?.videoHeight || rect.height;
-    if (!videoWidth || !videoHeight || !rect.width || !rect.height) return null;
-
-    const containerAspect = rect.width / rect.height;
-    const videoAspect = videoWidth / videoHeight;
-    let renderWidth = rect.width;
-    let renderHeight = rect.height;
-    let offsetX = 0;
-    let offsetY = 0;
-
-    if (videoAspect > containerAspect) {
-      renderHeight = renderWidth / videoAspect;
-      offsetY = (rect.height - renderHeight) / 2;
-    } else {
-      renderWidth = renderHeight * videoAspect;
-      offsetX = (rect.width - renderWidth) / 2;
-    }
-
-    return { rect, videoWidth, videoHeight, renderWidth, renderHeight, offsetX, offsetY };
-  };
-
-  const videoBoxToDisplayBox = (bbox) => {
-    const layout = getRenderedVideoLayout();
-    if (!layout) return null;
-    const [x1, y1, x2, y2] = bbox;
-    const scaleX = layout.renderWidth / layout.videoWidth;
-    const scaleY = layout.renderHeight / layout.videoHeight;
-    return {
-      xmin: Math.round(layout.offsetX + x1 * scaleX),
-      ymin: Math.round(layout.offsetY + y1 * scaleY),
-      xmax: Math.round(layout.offsetX + x2 * scaleX),
-      ymax: Math.round(layout.offsetY + y2 * scaleY),
-    };
-  };
-
-  const displayPointToVideoPoint = (clientX, clientY) => {
-    const layout = getRenderedVideoLayout();
-    if (!layout) return null;
-    const displayX = clientX - layout.rect.left;
-    const displayY = clientY - layout.rect.top;
-    if (
-      displayX < layout.offsetX ||
-      displayX > layout.offsetX + layout.renderWidth ||
-      displayY < layout.offsetY ||
-      displayY > layout.offsetY + layout.renderHeight
-    ) {
-      return null;
-    }
-    return {
-      x: ((displayX - layout.offsetX) * layout.videoWidth) / layout.renderWidth,
-      y: ((displayY - layout.offsetY) * layout.videoHeight) / layout.renderHeight,
-    };
-  };
-
-  const clampDisplayPointToVideoArea = (clientX, clientY) => {
-    const layout = getRenderedVideoLayout();
-    if (!layout) return null;
-    const displayX = clientX - layout.rect.left;
-    const displayY = clientY - layout.rect.top;
-    return {
-      x: Math.round(Math.max(layout.offsetX, Math.min(displayX, layout.offsetX + layout.renderWidth))),
-      y: Math.round(Math.max(layout.offsetY, Math.min(displayY, layout.offsetY + layout.renderHeight))),
-    };
-  };
-
-  const displayBoxToVideoBox = (box) => {
-    const layout = getRenderedVideoLayout();
-    if (!layout) return null;
-    const xmin = Math.max(layout.offsetX, Math.min(box.xmin, layout.offsetX + layout.renderWidth));
-    const ymin = Math.max(layout.offsetY, Math.min(box.ymin, layout.offsetY + layout.renderHeight));
-    const xmax = Math.max(layout.offsetX, Math.min(box.xmax, layout.offsetX + layout.renderWidth));
-    const ymax = Math.max(layout.offsetY, Math.min(box.ymax, layout.offsetY + layout.renderHeight));
-    return {
-      bbox_xmin: Math.round(((xmin - layout.offsetX) * layout.videoWidth) / layout.renderWidth),
-      bbox_ymin: Math.round(((ymin - layout.offsetY) * layout.videoHeight) / layout.renderHeight),
-      bbox_xmax: Math.round(((xmax - layout.offsetX) * layout.videoWidth) / layout.renderWidth),
-      bbox_ymax: Math.round(((ymax - layout.offsetY) * layout.videoHeight) / layout.renderHeight),
-    };
-  };
 
 
   // 사고감지 실행 / 분석 관련 상태
   const [showDetectConfirm, setShowDetectConfirm] = useState(false); // 확인 팝오버
   const [toast, setToast] = useState(null); // { type, message }
-  // 동시 분석 작업 목록: [{ taskId, videoId, dateLabel, cameraLabel, estimatedSec, startedAt }]
+  // 동시 분석 작업 목록: [{ taskId, videoId, dateLabel, estimatedSec, startedAt }]
   const [analyzingJobs, setAnalyzingJobs] = useState([]);
   const [showJobsDropdown, setShowJobsDropdown] = useState(false);
   const [now, setNow] = useState(() => Date.now()); // 진행률 계산용 현재시각(0.5s마다 갱신)
   const selectedVideoIdRef = useRef(null); // 폴링 중 최신 선택 영상 추적(stale closure 방지)
-  const progressMaxRef = useRef({}); // 작업별 최대 진행률(진행바가 뒤로 가지 않게)
-  const [clipEvent, setClipEvent] = useState(null); // CAM 클립 팝업 대상 이벤트
+  const progressSmoothRef = useRef({}); // 작업별 화면 진행률(부드럽게 움직이고 뒤로 가지 않게)
+  const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 간다
+  const pollingRef = useRef(new Set()); // 이미 상태를 확인 중인 작업(중복 폴링 방지)
+  const [clipEvent, setClipEvent] = useState(null); // 사고 클립 팝업 대상 이벤트
+  const [pendingDeleteEvent, setPendingDeleteEvent] = useState(null); // 삭제 확인 창 대상 이벤트
+  const [pendingClearAll, setPendingClearAll] = useState(false); // 전체 삭제 확인 창
 
   // 업로드 모달
   const [showUpload, setShowUpload] = useState(false);
@@ -1095,12 +1204,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         setIsPlaying(false);
         setIsTheaterMode(false);
         setIsSidebarOpen(true);
+        setIsHistoryOpen(false);
         setBboxList([]);
         setIsBBoxMode(false);
         setSelectionMode("none");
         setShowDetectConfirm(false);
 
         setCurrentTime(0);
+        setMediaDuration(0);
         if (v.detected_vehicles) {
           try {
             setDetectedBoxes(JSON.parse(v.detected_vehicles));
@@ -1127,21 +1238,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, videoId]);
 
-  // 날짜 및 검색어 필터링 계산
+  // 기간 필터만 적용한 목록 — 통계 화면용 (검색창은 영상 목록 페이지에만 있어 통계엔 검색어를 걸지 않는다)
+  const periodVideos = useMemo(() => {
+    if (filterDays >= 9999) return videos;
+    const startDate = formatDate(addDays(new Date(), -filterDays));
+    return videos.filter((video) => video.date >= startDate);
+  }, [filterDays, videos]);
+
+  // 기간 + 검색어 필터링 — 영상 목록 페이지용
   const filteredVideos = useMemo(() => {
-    const today = new Date();
-    const startDate = formatDate(addDays(today, -filterDays));
-    let list =
-      filterDays >= 9999
-        ? videos
-        : videos.filter((video) => video.date >= startDate);
+    let list = periodVideos;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
+      // 제목은 카드에 보이는 그대로('2026-10-12 녹화본 #5')로 찾는다
       list = list.filter(
         (v) =>
           (v.date || "").toLowerCase().includes(q) ||
-          (v.camera || "").toLowerCase().includes(q) ||
+          getVideoDisplayTitle(v, videos).toLowerCase().includes(q) ||
           (v.events && v.events.some((e) => (e.title || "").toLowerCase().includes(q)))
       );
     }
@@ -1153,7 +1267,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         return (b.startTime || "").localeCompare(a.startTime || "");
       return b.id - a.id;
     });
-  }, [filterDays, videos, searchQuery]);
+  }, [periodVideos, searchQuery, videos]);
 
   // 메인화면 영상 목록 페이지네이션 (6개 초과 시 페이지 분할)
   const VIDEOS_PER_PAGE = 6;
@@ -1237,17 +1351,22 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   // 특정 사고 이벤트 1건 삭제
-  const handleDeleteEvent = async (eventId, e) => {
+  // 휴지통 → 바로 지우지 않고 화면 가운데 확인 창을 띄운다(서버가 클립 파일도 지움)
+  const requestDeleteEvent = (event, e) => {
     if (e) e.stopPropagation();
+    setPendingDeleteEvent(event);
+  };
+
+  const handleDeleteEvent = async (eventId) => {
     if (!selectedVideo) return;
     try {
       await api.deleteEvent(selectedVideo.id, eventId);
       setSelectedVideo((prev) =>
         prev
           ? {
-              ...prev,
-              events: prev.events.filter((ev) => ev.id !== eventId),
-            }
+            ...prev,
+            events: prev.events.filter((ev) => ev.id !== eventId),
+          }
           : null
       );
       setVideos((prev) =>
@@ -1266,10 +1385,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
-  // 영상의 모든 사고 이벤트 전체 삭제
+  // 영상의 모든 사고 이벤트 전체 삭제 — 개별 삭제와 같은 확인 창을 거친다
+  const requestClearAllEvents = () => {
+    if (!selectedVideo || selectedVideo.events.length === 0) return;
+    setPendingClearAll(true);
+  };
+
   const handleClearAllEvents = async () => {
     if (!selectedVideo || selectedVideo.events.length === 0) return;
-    if (!window.confirm("이 영상에서 감지된 모든 사고 이벤트를 삭제하시겠습니까?")) return;
     try {
       await api.clearEvents(selectedVideo.id);
       setSelectedVideo((prev) => (prev ? { ...prev, events: [] } : null));
@@ -1286,11 +1409,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 수동 차량 지정 모드 시작
   const handleStartManualDesignate = () => {
+    // 차량 탐지처럼 영상을 멈춰, 지금 보이는 화면에서 차량을 그리게 한다
+    if (videoElRef.current) {
+      videoElRef.current.pause();
+      setIsPlaying(false);
+    }
     setSelectionMode("manual");
     setIsBBoxMode(true);
     setHoveredDetectedBox(null);
-    setShowBBoxPanel(true);
-    showToast("🖱️ 수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요.", "info");
+    // 안내 문구는 잠깐 뜨는 알림 대신 버튼 위 말풍선으로 모드가 끝날 때까지 띄운다 (.designate-hint)
   };
 
   // 탐지/지정 모드 해제
@@ -1302,27 +1429,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setHoveredDetectedBox(null);
   };
 
-  const detectorModeLabel = {
-    yolo: "YOLO11",
-    dino: "DINO",
-    rtdetr: "RT-DETR",
-    yolo_fallback: "YOLO 보강",
-    hybrid: "RT-DETR + YOLO",
-    rtdetr_seg: "RT-DETR + Seg",
-    yolo_fallback_seg: "YOLO + Seg",
-    hybrid_seg: "RT-DETR + YOLO + Seg",
-  };
-
-  const detectorSourceLabel = (source) => {
-    if (!source) return "YOLO11";
-    if (source === "yolo_seg") return "YOLO + Seg";
-    if (source === "rtdetr_seg") return "RT-DETR + Seg";
-    if (source === "yolo") return "YOLO";
-    if (source === "rtdetr") return "RT-DETR";
-    return "DINO";
-  };
-
-  // RT-DETR 우선 + YOLO fallback 차량 탐지 실행
   // YOLO 차량 탐지 취소
   const handleCancelDetectVehicles = () => {
     if (detectAbortControllerRef.current) {
@@ -1342,25 +1448,19 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       setIsPlaying(false);
     }
     setSelectionMode("auto");
-    setIsDetectingVehicles(true);
-    setDetectorMode(null);
-    showToast("YOLO11로 차량을 탐지 중입니다...", "info");
+    setIsDetectingVehicles(true);   // 진행 표시는 영상 위 로딩으로 한다(알림 없음)
+
     const controller = new AbortController();
     detectAbortControllerRef.current = controller;
 
     try {
       const res = await api.detectVehicles(selectedVideo.id, currentTime, controller.signal);
       const list = res.detected_vehicles || [];
-      const mode = res.detector_mode || "yolo";
       setDetectedBoxes(list);
-      setDetectorMode(mode);
       setIsBBoxMode(true);
-      setShowBBoxPanel(true);
+      // 탐지 성공은 알리지 않는다(영상 위에 차량이 바로 표시됨). 한 대도 없을 때만 다음 행동을 안내한다.
       if (list.length === 0) {
-        showToast("탐지된 차량이 없습니다. 수동 차량 지정을 이용해 주세요.", "warning");
-      } else {
-        const modeText = detectorModeLabel[mode] || "자동";
-        showToast(`${modeText} 방식으로 ${list.length}대의 차량이 탐지되었습니다. 마우스를 올리면 표시되며 클릭 시 선택됩니다.`, "success");
+        showToast("탐지된 차량이 없습니다. 직접 차량 지정을 이용해 주세요.", "warning");
       }
     } catch (err) {
       if (err.name === "AbortError") {
@@ -1385,6 +1485,17 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   // 사고감지 분석 작업 취소
+  // 보고 있는 영상의 상세(분석 이력 포함)를 다시 받아 온다 — 그사이 다른 영상으로 옮겼으면 덮어쓰지 않는다
+  const refreshSelectedVideo = async (videoId) => {
+    if (videoId == null || selectedVideoIdRef.current !== videoId) return;
+    try {
+      const v = await api.getVideo(videoId);
+      if (selectedVideoIdRef.current === videoId) setSelectedVideo(v);
+    } catch {
+      /* 이력 갱신에 실패해도 다음 갱신 때 맞춰진다 */
+    }
+  };
+
   const handleCancelAnalysis = async (taskId) => {
     if (analyzeAbortControllerRef.current) {
       analyzeAbortControllerRef.current.abort();
@@ -1392,9 +1503,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
     if (taskId) {
       try {
+        const cancelledVideoId = analyzingJobs.find((j) => j.taskId === taskId)?.videoId;
         await api.cancelTask(taskId);
         removeJob(taskId);
         showToast("사고 감지 분석 작업을 취소했습니다.", "info");
+        refreshSelectedVideo(cancelledVideoId); // 분석 이력에 '취소' 반영
         loadVideos();
       } catch (e) {
         showToast(`분석 취소 실패: ${e.message}`, "error");
@@ -1408,13 +1521,33 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const removeJob = (taskId) =>
     setAnalyzingJobs((prev) => prev.filter((j) => j.taskId !== taskId));
 
+  // 분석이 끝났을 때: 화면 안 토스트 + 다른 탭·창을 보고 있으면 브라우저 알림
+  const notifyDone = (title, body, type) => {
+    showToast(`${title}: ${body}`, type);
+    try {
+      if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body, icon: "/siot-logo.svg" });
+      }
+    } catch {
+      /* 브라우저 알림을 못 띄워도 토스트는 이미 표시됨 */
+    }
+  };
+
   const pollTask = (taskId, analyzedId) => {
+    if (pollingRef.current.has(taskId)) return; // 같은 작업을 두 번 폴링하지 않는다
+    pollingRef.current.add(taskId);
+    const finish = () => {
+      pollingRef.current.delete(taskId);
+      removeJob(taskId);
+    };
     const poll = async () => {
+      if (!aliveRef.current) return; // 화면이 닫히면 멈춤 — 다시 열리면 복원하면서 새로 시작
       try {
         const status = await api.taskStatus(taskId);
+        if (!aliveRef.current) return;
         if (status.status === "SUCCESS") {
-          removeJob(taskId);
-          showToast(`분석 완료: 사고 의심 구간 ${status.events.length}건`, "success");
+          finish();
+          notifyDone("분석 완료", `사고 의심 구간 ${status.events.length}건`, "success");
           // 분석한 영상을 아직 보고 있을 때만 화면 갱신 (다른 영상으로 이동했으면 덮어쓰지 않음)
           if (selectedVideoIdRef.current === analyzedId) {
             const v = await api.getVideo(analyzedId);
@@ -1424,29 +1557,109 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           return;
         }
         if (status.status === "FAILURE") {
-          removeJob(taskId);
-          showToast(`분석 실패: ${status.error_message || "오류"}`, "error");
+          finish();
+          notifyDone("분석 실패", status.error_message || "오류", "error");
+          if (selectedVideoIdRef.current === analyzedId) {
+            const v = await api.getVideo(analyzedId); // '다시 실행' 안내를 띄우기 위해 갱신
+            setSelectedVideo(v);
+          }
           return;
         }
         if (status.status === "CANCELLED") {
-          removeJob(taskId);
+          finish();
           showToast("사고 감지 분석이 취소되었습니다.", "info");
+          refreshSelectedVideo(analyzedId);
           return;
         }
-        // 백엔드가 실제 추론 진행도(%)를 주면 해당 job에 반영
-        if (typeof status.progress === "number") {
-          setAnalyzingJobs((prev) =>
-            prev.map((j) =>
-              j.taskId === taskId ? { ...j, progress: status.progress } : j));
-        }
+        // 진행도(%)와 서버가 실제로 잰 속도 기준의 남은 시간(초)을 반영한다.
+        // 받은 시각(etaAt)을 같이 저장해 다음 확인 전까지 화면에서 1초씩 줄여 보여 준다.
+        const receivedAt = Date.now();
+        setAnalyzingJobs((prev) =>
+          prev.map((j) => {
+            if (j.taskId !== taskId) return j;
+            const next = { ...j, status: status.status };
+            if (typeof status.progress === "number") {
+              next.progress = status.progress;
+              next.progressAt = receivedAt;             // 받은 시각 — 진행 속도 계산용
+            }
+            next.etaSec = status.eta_sec ?? null;
+            next.etaMin = !!status.eta_is_min;
+            next.etaAt = receivedAt;
+            next.phase = status.stage ?? null;          // 지금 단계(훑어보기 등)
+            next.phaseCount = status.stage_count ?? null;
+            next.phaseIndex = status.stage_index ?? null;
+            return next;
+          }));
         setTimeout(poll, 2000); // PENDING/PROCESSING → 재시도
       } catch (e) {
-        removeJob(taskId);
+        finish();
         showToast(`상태 조회 실패: ${e.message}`, "error");
       }
     };
     poll();
   };
+
+  // 실패·중단된 마지막 분석을 같은 차량 박스로 다시 실행
+  const handleRetryAnalysis = async () => {
+    const last = selectedVideo?.lastTask;
+    if (!last) return;
+    const videoIdForJob = selectedVideo.id;
+    try {
+      const res = await api.retryTask(last.id);
+      const job = {
+        taskId: res.task_id,
+        videoId: videoIdForJob,
+        dateLabel: selectedVideo.date,
+        status: res.status,
+      };
+      showToast(res.already_running ? "이 영상은 이미 분석 중입니다." : "분석을 다시 시작했습니다.", "info");
+      setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === res.task_id) ? prev : [...prev, job]));
+      pollTask(res.task_id, videoIdForJob);
+      setSelectedVideo((v) =>
+        v ? { ...v, lastTask: { id: res.task_id, status: res.status, errorMessage: null } } : v);
+      refreshSelectedVideo(videoIdForJob); // 분석 이력에 새 분석 추가
+    } catch (e) {
+      showToast(`다시 실행 실패: ${e.message}`, "error");
+    }
+  };
+
+  // 화면이 열릴 때(새로고침·재접속 포함) 서버에 남아 있는 내 분석을 복원해 이어서 추적한다.
+  // 분석 목록은 브라우저 메모리에만 있어서, 이게 없으면 창을 닫았다 열었을 때 진행 중인
+  // 분석이 사라진 것처럼 보이고 같은 영상을 다시 요청하게 된다.
+  useEffect(() => {
+    aliveRef.current = true;
+    (async () => {
+      try {
+        const tasks = await api.activeTasks();
+        if (!aliveRef.current) return;
+        tasks.forEach((t) => {
+          const job = {
+            taskId: t.task_id,
+            videoId: t.video_id,
+            dateLabel: t.recording_date || (t.created_at || "").slice(0, 10),
+            startedAt: Date.now(),
+            status: t.status,
+            progress: t.progress ?? undefined,
+            etaSec: t.eta_sec ?? null,
+            etaMin: !!t.eta_is_min,
+            etaAt: Date.now(),
+            phase: t.stage ?? null,
+            phaseCount: t.stage_count ?? null,
+            phaseIndex: t.stage_index ?? null,
+            progressAt: Date.now(),
+          };
+          setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === t.task_id) ? prev : [...prev, job]));
+          pollTask(t.task_id, t.video_id);
+        });
+      } catch {
+        /* 복원 실패는 치명적이지 않다 — 새 분석 요청은 그대로 동작 */
+      }
+    })();
+    return () => {
+      aliveRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 확인 팝오버에서 '실행' → bbox 원본해상도 환산 후 분석 요청
   const runDetection = async () => {
@@ -1454,17 +1667,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const box = bboxList[0];
     if (!box) return;
 
-    const bbox = displayBoxToVideoBox(box);
-    if (!bbox) {
-      showToast("영상 영역 좌표를 계산할 수 없습니다. 다시 시도해 주세요.", "error");
-      return;
-    }
+    // 화면(오버레이) 좌표 → 원본 영상 해상도 픽셀 좌표 환산
+    // bboxList의 좌표는 오버레이 div 기준(레터박스 여백 포함)이므로,
+    // 그리기/선택과 동일한 레터박스 지오메트리로 되돌린다.
+    const geom = getVideoGeom();
+    const scale = geom ? geom.scale : 1;
+    const offX = geom ? geom.offsetX : 0;
+    const offY = geom ? geom.offsetY : 0;
+    const bbox = {
+      bbox_xmin: Math.round((box.xmin - offX) / scale),
+      bbox_ymin: Math.round((box.ymin - offY) / scale),
+      bbox_xmax: Math.round((box.xmax - offX) / scale),
+      bbox_ymax: Math.round((box.ymax - offY) / scale),
+    };
 
     // 분석 시작: 지정 모드를 끄고 해당 영상을 '분석 중'으로 표시
+    // (박스 그리기 판만 끄면 모드 값이 남아 분석 중에도 탐지 버튼이 켜진 상태로 보였다)
     const analyzedId = selectedVideo.id;
-    setIsBBoxMode(false);
-    setCurrentDraw(null);
-    setIsDrawing(false);
+    handleEndDesignateMode();
 
     // 예상 소요시간(초) 추정: 슬라이딩 윈도우 수(총프레임/stride) 기반 (CPU ~1s/윈도우)
     // ※ 분모는 백엔드 config.PREDICT_WINDOW_STRIDE(현재 5)와 반드시 일치시킬 것
@@ -1475,10 +1695,19 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       taskId: null,
       videoId: analyzedId,
       dateLabel: selectedVideo.date,
-      cameraLabel: selectedVideo.camera,
       estimatedSec,
       startedAt: Date.now(),
     };
+
+    // 분석이 끝나면 다른 탭에 있어도 알려 주도록 처음 한 번 알림 권한을 묻는다
+    try {
+      if ("Notification" in window && Notification.permission === "default") {
+        const r = Notification.requestPermission();
+        if (r && r.catch) r.catch(() => {});
+      }
+    } catch {
+      /* 알림을 지원하지 않는 브라우저 — 토스트만 쓴다 */
+    }
 
     const controller = new AbortController();
     analyzeAbortControllerRef.current = controller;
@@ -1486,8 +1715,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     try {
       const res = await api.analyze(analyzedId, bbox, controller.signal);
       job.taskId = res.task_id;
-      setAnalyzingJobs((prev) => [...prev, job]);
+      job.status = res.status;
+      if (res.already_running) {
+        // 같은 영상에 이미 대기·진행 중인 분석이 있으면 서버가 새로 만들지 않고 그 작업을 준다
+        showToast("이 영상은 이미 분석 중입니다. 진행 상황을 이어서 보여드릴게요.", "info");
+      }
+      setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === res.task_id) ? prev : [...prev, job]));
       pollTask(res.task_id, analyzedId);
+      refreshSelectedVideo(analyzedId); // 분석 이력에 새 분석 추가
     } catch (e) {
       if (e.name === "AbortError") {
         return;
@@ -1518,45 +1753,74 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     else v.pause();
   };
 
-  // 재생바 클릭으로 탐색(seek)
-  const handleSeek = (e) => {
-    const v = videoElRef.current;
-    if (!v || !v.duration) return;
+  // 재생바 길이 기준 — 실제 영상 길이(소수)를 쓰고, 영상 정보를 받기 전엔 서버가 준 길이(정수 초)
+  const playerDuration = mediaDuration || selectedVideo?.duration || 0;
+
+  // 재생바: 누르거나 누른 채 끌어서 탐색하고, 마우스를 올리면 그 위치의 시각을 말풍선으로 보여준다
+  const seekRatioAt = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    v.currentTime = ratio * v.duration;
+    return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
   };
 
-  // 이벤트 마커 클릭 → 해당 시점으로 이동 후 재생
+  const seekToRatio = (ratio) => {
+    const v = videoElRef.current;
+    if (!v || !v.duration) return;
+    v.currentTime = ratio * v.duration;
+    setCurrentTime(v.currentTime);
+  };
+
+  const updateSeekBubble = (e, ratio) => {
+    const bubble = seekHoverRef.current;
+    if (!bubble) return;
+    bubble.textContent = formatTime(Math.floor(ratio * playerDuration));
+    // 양 끝에서 말풍선이 재생바 밖으로 잘리지 않게 안쪽으로 붙인다
+    const width = e.currentTarget.getBoundingClientRect().width;
+    const half = bubble.offsetWidth / 2;
+    bubble.style.left = `${Math.min(width - half, Math.max(half, ratio * width))}px`;
+  };
+
+  const handleSeekStart = (e) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    isSeekingRef.current = true;
+    setIsSeeking(true);
+    const ratio = seekRatioAt(e);
+    updateSeekBubble(e, ratio);
+    seekToRatio(ratio);
+  };
+
+  const handleSeekMove = (e) => {
+    const ratio = seekRatioAt(e);
+    updateSeekBubble(e, ratio);
+    if (isSeekingRef.current) seekToRatio(ratio);
+  };
+
+  const handleSeekEnd = (e) => {
+    if (!isSeekingRef.current) return;
+    isSeekingRef.current = false;
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsSeeking(false);
+  };
+
+  // 이벤트 구간 클릭 → 해당 시점으로 이동 후 재생
   const seekToEvent = (event) => {
     setCurrentEventId(event.id);
     const v = videoElRef.current;
     if (v) {
-      v.currentTime = event.timestamp;
-      v.play()
-        .then(() => setIsPlaying(true))
-        .catch(() => {
-          setIsPlaying(false);
-          showToast("브라우저가 자동 재생을 막았습니다. 영상의 재생 버튼을 눌러 주세요.", "warning");
-        });
+      v.currentTime = event.startSec ?? event.timestamp;
+      v.play();
     }
   };
 
-  const openEventVideo = (event) => {
-    seekToEvent(event);
-    if (!isSidebarOpen) {
-      setIsSidebarOpen(true);
+  const toggleMute = () => {
+    if (isMuted || volume === 0) {
+      if (volume === 0) setVolume(50);
+      setIsMuted(false);
+    } else {
+      setIsMuted(true);
     }
-  };
-
-  const openEventClip = (event) => {
-    setCurrentEventId(event.id);
-    if (event.hasClip) {
-      setClipEvent(event);
-      return;
-    }
-    seekToEvent(event);
-    showToast("CAM 클립이 없어 원본 영상을 해당 시점으로 이동했습니다.", "info");
   };
 
   // 배속/볼륨을 실제 video에 반영
@@ -1569,6 +1833,30 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const v = videoElRef.current;
     if (v) v.volume = volume / 100;
   }, [volume, selectedVideo]);
+
+  useEffect(() => {
+    const v = videoElRef.current;
+    if (v) v.muted = isMuted;
+  }, [isMuted, selectedVideo]);
+
+  // 영상 칸 크기가 바뀌면(창 크기 · 안내 바 · 실패 안내 · 전체화면) 차량 박스 위치를 다시 계산하도록 다시 그린다.
+  // 영상 칸은 화면 높이에 맞춰 줄어들 수 있어, 렌더 시점의 크기로 그린 박스가 어긋나지 않게 한다.
+  const [, setOverlaySizeTick] = useState(0);
+  useEffect(() => {
+    const el = bboxOverlayRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setOverlaySizeTick((n) => n + 1));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [selectedVideo?.id, view]);
+
+  // 전체화면 버튼 아이콘을 실제 상태에 맞춘다 (Esc 로 나가도 따라가게)
+  useEffect(() => {
+    const onChange = () =>
+      setIsFullscreen(!!document.fullscreenElement && document.fullscreenElement === playerContainerRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
 
   // 폴링 콜백에서 현재 보고 있는 영상 id를 최신으로 참조 (stale closure 방지)
   useEffect(() => {
@@ -1586,28 +1874,81 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     return () => clearInterval(id);
   }, [analyzingJobs.length]);
 
-  // 작업별 진행률(%) / 남은 시간(초).
-  // 백엔드가 디코딩·선별·추론·렌더링 전 단계에서 '실제' 진행도를 보고하므로
-  // 가짜 시간기반 추정을 만들지 않는다. (예전엔 정적 공식으로 큰 예상시간을
-  // 띄우다가 실제 진행도가 도착하면 진행바가 뒤로 점프하는 문제가 있었다.)
+  // 작업별 진행률(%)과 단계 문구.
+  // 백엔드가 디코딩·선별·추론·렌더링 전 단계에서 '실제' 진행도와 지금 단계를 보고하므로
+  // 가짜 시간기반 추정을 만들지 않는다. 남은 시간은 단계가 바뀔 때 숫자가 뛰어 혼란스러워서
+  // 보여 주지 않고, 대신 지금 무엇을 하는지(단계)와 부드럽게 움직이는 진행률을 보여 준다.
+
+  // 분석 단계 문구 — 서버(model/inference.py _report, backend prediction_job)의 stage 값.
+  // main 은 '~하는 중'(뒤에 움직이는 점이 붙음), extra 는 그 뒤에 붙는 보조 정보.
+  const PHASE_TEXT = {
+    loading: () => ({ main: "분석 엔진 준비 중" }),
+    decode: () => ({ main: "분석 엔진 준비 중" }),   // 영상 읽기도 준비 과정으로 묶어 따로 알리지 않는다
+    motion: () => ({ main: "차량 움직임 계산 중" }),
+    coarse: () => ({ main: "영상 전체 훑어보는 중" }),
+    refine: (n, i) => ({ main: n > 1 && i ? `의심 구간 ${i}/${n} 자세히 보는 중` : "의심 구간 자세히 보는 중" }),
+    scan: () => ({ main: "영상 분석 중" }),
+    events: () => ({ main: "사고 구간 정리 중" }),
+    render: (n, i) => ({ main: n > 1 && i ? `사고 클립 ${i}/${n} 만드는 중` : "사고 클립 만드는 중" }),
+  };
+
+  // '~하는 중' 뒤의 점: . → .. → ... → .... 를 0.5초마다 반복한다.
+  // 점 자리는 고정 폭(.phase-dots)이라 점 개수가 바뀌어도 뒤 글자가 흔들리지 않는다.
+  const phaseText = (pct, main, extra) => (
+    <>
+      {pct != null && `${Math.round(pct)}% · `}
+      {main}
+      <span className="phase-dots">{".".repeat(1 + (Math.floor(now / 500) % 4))}</span>
+      {extra && ` · ${extra}`}
+    </>
+  );
+
   const jobProgress = (job) => {
     const key = job.taskId ?? job.videoId;
-    const elapsed = (now - job.startedAt) / 1000;
-    const hasReal = typeof job.progress === "number" && job.progress > 0;
+    const hasReal = typeof job.progress === "number" && (job.progress > 0 || !!job.phase);
+    // 단계: 요청(서버 대기열에서 차례를 기다림) → 준비 → 진행(서버가 단계·진행도를 보냄)
+    // 다른 사용자의 작업 정보는 드러내지 않으므로 대기 순번은 보여 주지 않는다.
+    const stage = hasReal ? "running" : job.status === "PENDING" ? "queued" : "starting";
 
-    // 실제 진행도가 오기 전 = 준비 중(불확정). 숫자 ETA를 지어내지 않는다.
-    let pct = hasReal ? Math.min(99, job.progress) : 0;
-    // 남은 시간은 '측정된 속도'로만 역산 → 2단계로 빨라져도 자동으로 맞춰짐
-    const remain = hasReal
-      ? Math.max(0, Math.ceil((elapsed * (100 - job.progress)) / job.progress))
-      : null;
+    // 진행률(막대·%): 서버 값(2초마다, 소수 첫째 자리) 사이를 최근 진행 속도로 채워 계속 조금씩
+    // 움직이게 한다. 서버 값보다 최대 3%p(약 4초어치)까지만 앞서가고, 뒤로는 가지 않으며,
+    // 서버 값이 크게 뛰어도 0.5초마다 남은 차이의 40%씩 따라가 부드럽게 움직인다.
+    const serverP = hasReal ? Math.min(99, job.progress) : 0;
+    const sm = progressSmoothRef.current[key]
+      || (progressSmoothRef.current[key] = { disp: 0, p: null, at: null, rate: 0, tick: null });
+    if (sm.tick !== now) {                        // 같은 순간 여러 곳에서 불러도 한 번만 계산
+      const at = job.progressAt ?? now;
+      if (sm.p === null || at !== sm.at) {        // 새 서버 값
+        if (sm.p !== null && at > sm.at && serverP >= sm.p) {
+          const r = (serverP - sm.p) / ((at - sm.at) / 1000);
+          sm.rate = sm.rate ? sm.rate * 0.6 + r * 0.4 : r;   // 진행 속도(%/초)도 부드럽게
+        }
+        sm.p = serverP;
+        sm.at = at;
+      }
+      const ahead = Math.min(3, sm.rate * 4);
+      const guess = Math.min(99, sm.p + Math.min(ahead, sm.rate * Math.max(0, (now - sm.at) / 1000)));
+      const target = Math.max(sm.disp, guess);
+      sm.disp += (target - sm.disp) * 0.4;
+      sm.tick = now;
+    }
+    const pct = hasReal ? sm.disp : 0;
 
-    // 진행바는 절대 뒤로 가지 않게 단조 증가로 고정
-    const prevMax = progressMaxRef.current[key] || 0;
-    pct = Math.max(prevMax, pct);
-    progressMaxRef.current[key] = pct;
-
-    return { pct, remain, preparing: !hasReal };
+    const ph = PHASE_TEXT[job.phase]?.(job.phaseCount, job.phaseIndex) ?? { main: "분석 중" };
+    // 상단 대표 칸: 단계 문구(가운데)와 진행률(맨 오른쪽, pctText)을 따로 보여 준다
+    const statusText =
+      stage === "queued" ? phaseText(null, "서버에 분석을 요청하는 중")
+        : stage === "starting" ? phaseText(null, "분석 준비 중")
+          : phaseText(null, ph.main, ph.extra);
+    const pctText = stage === "running" ? `${Math.round(pct)}%` : null;
+    // 서버 병목으로 기다린다는 걸 알리는 게 목적이라, 요청 단계 문구는 줄이지 않는다
+    const shortText =
+      stage === "queued" ? "서버에 분석을 요청하는 중" : stage === "starting" ? "준비 중" : `${Math.round(pct)}%`;
+    // 펼친 목록의 아랫줄 — 윗줄(짧은 칸: %)과 겹치지 않게 단계만
+    const detailText =
+      stage === "queued" ? "서버의 앞선 분석이 끝나면 자동으로 시작됩니다"
+        : stage === "starting" ? phaseText(null, "분석 준비 중") : phaseText(null, ph.main, ph.extra);
+    return { pct, preparing: stage !== "running", stage, statusText, pctText, shortText, detailText };
   };
 
   // 오버레이 div 안에서 실제 영상 콘텐츠가 차지하는 영역(object-fit:contain 레터박스)과
@@ -1628,6 +1969,110 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     };
   };
 
+  // 넓은 화면의 영상 재생 화면에선 버튼 묶음을 왼쪽 칸 맨 위(사고 클립 사이드바 위)에 둔다.
+  // 좁은 화면(1024px 이하)은 한 줄로 쌓여 사이드바가 영상 아래로 가므로 영상 위 헤더에 둔다.
+  const isWideScreen = useMediaQuery("(min-width: 1025px)");
+  const actionsInSide = isWideScreen && currentView !== "analytics" && !!selectedVideo;
+
+  // 영상 재생 화면의 차량 탐지 · 직접 차량 지정 · 사고감지 실행 버튼 묶음.
+  // 차량 탐지 버튼은 상태에 따라 세 가지로 바뀐다:
+  // 탐지 전 '차량 탐지' → 탐지 중 '탐지 취소' → 탐지 후 차량을 고르는 동안 '차량 선택 종료'
+  const watchActionButtons = selectedVideo ? (
+    <div className="watch-header-actions">
+      <button
+        className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
+        disabled={isAnalyzing}
+        onClick={isDetectingVehicles ? handleCancelDetectVehicles
+          : selectionMode === "auto" ? handleEndDesignateMode : handleAutoDetectVehicles}
+        title={isDetectingVehicles ? "진행 중인 차량 탐지를 취소합니다"
+          : selectionMode === "auto" ? "차량 고르기를 끝냅니다"
+            : "현재 화면의 차량을 자동으로 찾아 표시합니다"}
+      >
+        {isDetectingVehicles ? "🛑 탐지 취소" : selectionMode === "auto" ? "차량 선택 종료" : "차량 탐지"}
+      </button>
+
+      {/* 직접 차량 지정 + 지정 모드 안내 말풍선(버튼 위로 떠서 상단 바의 빈 곳에 겹쳐 뜬다 — 아무것도 밀어내지 않음) */}
+      <div className="designate-btn-wrapper">
+        <button
+          className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
+          disabled={isAnalyzing || isDetectingVehicles} /* 분석 중 · 차량 자동 탐지 중엔 누를 수 없다 */
+          onClick={() => {
+            if (selectionMode === "manual") {
+              // '직접 지정 종료'는 지정을 그만두는 것 — 그려 둔 박스도 지운다
+              // (박스로 분석하려면 종료하지 않고 바로 '사고감지 실행')
+              handleEndDesignateMode();
+              setBboxList([]);
+            } else {
+              handleStartManualDesignate();
+            }
+          }}
+          title={isAnalyzing ? "분석 중에는 지정할 수 없습니다"
+            : isDetectingVehicles ? "차량 탐지 중에는 지정할 수 없습니다"
+              : (selectionMode === "manual" ? "직접 지정 모드 종료" : "직접 드래그하여 차량 지정")}
+        >
+          {selectionMode === "manual" ? "직접 지정 종료" : "직접 차량 지정"}
+        </button>
+        {selectionMode === "manual" && (
+          <div className="designate-hint" role="status">
+            🖱️ 마우스로 드래그하여 사고 차량을 지정해 주세요.
+          </div>
+        )}
+      </div>
+
+
+      {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
+      <div className="detect-btn-wrapper">
+        {isAnalyzing ? (
+          <button
+            className="detect-run-btn analyzing-cancel-btn"
+            onClick={() => {
+              const currentJob = analyzingJobs.find((j) => j.videoId === selectedVideo?.id);
+              handleCancelAnalysis(currentJob?.taskId);
+            }}
+            title="진행 중인 사고 감지 분석을 취소합니다"
+          >
+            🛑 사고감지 취소
+          </button>
+        ) : (
+          <button
+            className="detect-run-btn"
+            onClick={handleDetectClick}
+            title="선택한 차량의 사고예상 구간 탐지"
+          >
+            사고감지 실행
+          </button>
+        )}
+
+        {showDetectConfirm && (
+          <>
+            <div
+              className="detect-popover-overlay"
+              onClick={() => setShowDetectConfirm(false)}
+            />
+            <div className="detect-popover">
+              <p className="detect-popover-text">
+                {selectedVideo?.analyzedBefore
+                  ? "이미 분석을 완료한 영상입니다. 다시 분석을 실행하시겠습니까?"
+                  : "현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?"}
+              </p>
+              <div className="detect-popover-actions">
+                <button className="detect-popover-run" onClick={runDetection}>
+                  실행
+                </button>
+                <button
+                  className="detect-popover-cancel"
+                  onClick={() => setShowDetectConfirm(false)}
+                >
+                  뒤로가기
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="dashboard-layout">
       {/* 상단 네비게이션 바 */}
@@ -1636,20 +2081,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           <button className="nav-logo nav-home-btn" onClick={handleBackToHome} aria-label="SIOT 홈으로 이동">
             <img src="/siot-logo.svg" alt="SIOT" />
           </button>
-          <div className="nav-search-bar">
-            <span className="search-icon">🔍</span>
-            <input
-              type="text"
-              placeholder="날짜, 카메라, 이벤트 검색..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button className="search-clear-btn" onClick={() => setSearchQuery("")}>
-                ✕
-              </button>
-            )}
-          </div>
         </div>
 
         <div className="nav-section nav-center">
@@ -1659,7 +2090,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             </div>
           ) : (() => {
             const lead = analyzingJobs[0];
-            const { pct, remain, preparing } = jobProgress(lead);
+            const { pct, preparing, statusText, pctText } = jobProgress(lead);
             return (
               <div className="analysis-status-box">
                 <div className="analysis-status-main">
@@ -1668,8 +2099,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       🔍 {lead.dateLabel} 분석 중
                     </span>
                     <span className="analysis-status-eta">
-                      {preparing ? "분석 준비 중…" : `약 ${remain}초 남음`}
+                      {statusText}
                     </span>
+                    {pctText && <span className="analysis-status-pct">{pctText}</span>}
                   </div>
                   <div className="analysis-progress-track">
                     <div
@@ -1703,10 +2135,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                           <div className="analysis-job-row" key={job.taskId ?? job.startedAt}>
                             <div className="analysis-job-top">
                               <span className="analysis-job-name">
-                                {job.dateLabel} · {job.cameraLabel}
+                                {(() => {
+                                  // 같은 날짜 영상이 여럿이면 '녹화본 #N' 으로 구분해 보여준다
+                                  const v = videos.find((x) => x.id === job.videoId);
+                                  return v ? getVideoDisplayTitle(v, videos) : job.dateLabel;
+                                })()}
                               </span>
                               <div className="analysis-job-top-right">
-                                <span className="analysis-job-pct">{p.preparing ? "준비 중" : `${Math.round(p.pct)}%`}</span>
+                                <span className="analysis-job-pct">
+                                  {p.shortText}
+                                </span>
                                 <button
                                   className="analysis-job-cancel-btn"
                                   onClick={() => handleCancelAnalysis(job.taskId)}
@@ -1722,7 +2160,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                                 style={p.preparing ? undefined : { width: `${p.pct}%` }}
                               />
                             </div>
-                            <span className="analysis-job-eta">약 {p.remain}초 남음</span>
+                            <span className="analysis-job-eta">
+                              {p.detailText}
+                            </span>
                           </div>
                         );
                       })}
@@ -1835,7 +2275,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       {/* 컨텐츠 영역: 통계 뷰 또는 모니터링 뷰 */}
       {currentView === "analytics" ? (
         <AnalyticsView
-          filteredVideos={filteredVideos}
+          filteredVideos={periodVideos}
           filterDays={filterDays}
           setFilterDays={setFilterDays}
         />
@@ -1843,12 +2283,30 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         <main className="home-view">
           {/* 기간 필터 및 영상 관리 툴바 */}
           <div className="home-toolbar">
-            <div className="filter-pills">
-              <button className={filterDays === 9999 ? "active" : ""} onClick={() => setFilterDays(9999)}>전체</button>
-              <button className={filterDays === 7 ? "active" : ""} onClick={() => setFilterDays(7)}>1주일</button>
-              <button className={filterDays === 14 ? "active" : ""} onClick={() => setFilterDays(14)}>2주일</button>
-              <button className={filterDays === 30 ? "active" : ""} onClick={() => setFilterDays(30)}>1개월</button>
-              <button className={filterDays === 90 ? "active" : ""} onClick={() => setFilterDays(90)}>3개월</button>
+            <div className="home-toolbar-filters">
+              <div className="filter-pills">
+                <button className={filterDays === 9999 ? "active" : ""} onClick={() => setFilterDays(9999)}>전체</button>
+                <button className={filterDays === 7 ? "active" : ""} onClick={() => setFilterDays(7)}>1주일</button>
+                <button className={filterDays === 14 ? "active" : ""} onClick={() => setFilterDays(14)}>2주일</button>
+                <button className={filterDays === 30 ? "active" : ""} onClick={() => setFilterDays(30)}>1개월</button>
+                <button className={filterDays === 90 ? "active" : ""} onClick={() => setFilterDays(90)}>3개월</button>
+              </div>
+
+              <div className="list-search-bar">
+                <span className="search-icon"><SearchIcon /></span>
+                <input
+                  type="text"
+                  placeholder="영상 날짜, 제목 검색"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  aria-label="영상 검색"
+                />
+                {searchQuery && (
+                  <button className="search-clear-btn" onClick={() => setSearchQuery("")} aria-label="검색어 지우기">
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="home-toolbar-actions">
@@ -1897,34 +2355,34 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               paginatedVideos.map((video) => {
                 const isSelected = selectedForDelete.includes(video.id);
                 return (
-                <div
-                  key={video.id}
-                  className={`video-card ${deleteMode ? "delete-mode" : ""} ${isSelected ? "delete-selected" : ""}`}
-                  onClick={() =>
-                    deleteMode ? toggleDeleteSelect(video.id) : handleWatchVideo(video)
-                  }
-                >
-                  <div className="video-thumbnail">
-                    {/* 영상 첫 프레임 썸네일 */}
-                    <img
-                      className="video-thumbnail-img"
-                      src={api.thumbnailUrl(video.id)}
-                      alt={`${video.date} ${video.camera} 썸네일`}
-                      loading="lazy"
-                      onError={(e) => { e.currentTarget.style.display = "none"; }}
-                    />
-                    <span className="event-count-badge">이벤트 {video.events.length}건</span>
-                    {deleteMode && (
-                      <span className={`delete-check ${isSelected ? "checked" : ""}`}>
-                        {isSelected ? "✓" : ""}
-                      </span>
-                    )}
+                  <div
+                    key={video.id}
+                    className={`video-card ${deleteMode ? "delete-mode" : ""} ${isSelected ? "delete-selected" : ""}`}
+                    onClick={() =>
+                      deleteMode ? toggleDeleteSelect(video.id) : handleWatchVideo(video)
+                    }
+                  >
+                    <div className="video-thumbnail">
+                      {/* 영상 첫 프레임 썸네일 */}
+                      <img
+                        className="video-thumbnail-img"
+                        src={api.thumbnailUrl(video.id)}
+                        alt={`${video.date} 썸네일`}
+                        loading="lazy"
+                        onError={(e) => { e.currentTarget.style.display = "none"; }}
+                      />
+                      <span className="event-count-badge">이벤트 {video.events.length}건</span>
+                      {deleteMode && (
+                        <span className={`delete-check ${isSelected ? "checked" : ""}`}>
+                          {isSelected ? "✓" : ""}
+                        </span>
+                      )}
+                    </div>
+                    <div className="video-info">
+                      <h3>{getVideoDisplayTitle(video, videos)}</h3>
+                      <p>영상 길이: {formatTime(video.duration)}</p>
+                    </div>
                   </div>
-                  <div className="video-info">
-                    <h3>{getVideoDisplayTitle(video, videos)}</h3>
-                    <p>영상 길이: {formatTime(video.duration)}</p>
-                  </div>
-                </div>
                 );
               })
             )}
@@ -1933,51 +2391,54 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           {/* 페이지네이션 (영상 개수가 6개를 초과할 때 노출) */}
           {filteredVideos.length > VIDEOS_PER_PAGE && (
             <div className="pagination-bar">
-              <button
-                className="pagination-btn pagination-nav"
-                onClick={() => handlePageChange(1)}
-                disabled={currentPage === 1}
-                title="첫 페이지"
-              >
-                «
-              </button>
-              <button
-                className="pagination-btn pagination-nav"
-                onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                title="이전 페이지"
-              >
-                ‹
-              </button>
+              {/* 버튼 묶음은 화면 가운데, 페이지 정보는 그 오른쪽 — 정보 글자 때문에 버튼이 왼쪽으로 밀리지 않게 */}
+              <div className="pagination-controls">
+                <button
+                  className="pagination-btn pagination-nav"
+                  onClick={() => handlePageChange(1)}
+                  disabled={currentPage === 1}
+                  title="첫 페이지"
+                >
+                  «
+                </button>
+                <button
+                  className="pagination-btn pagination-nav"
+                  onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  title="이전 페이지"
+                >
+                  ‹
+                </button>
 
-              <div className="pagination-pages">
-                {getPageNumbers().map((pageNum) => (
-                  <button
-                    key={pageNum}
-                    className={`pagination-btn pagination-num ${currentPage === pageNum ? "active" : ""}`}
-                    onClick={() => handlePageChange(pageNum)}
-                  >
-                    {pageNum}
-                  </button>
-                ))}
+                <div className="pagination-pages">
+                  {getPageNumbers().map((pageNum) => (
+                    <button
+                      key={pageNum}
+                      className={`pagination-btn pagination-num ${currentPage === pageNum ? "active" : ""}`}
+                      onClick={() => handlePageChange(pageNum)}
+                    >
+                      {pageNum}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  className="pagination-btn pagination-nav"
+                  onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                  title="다음 페이지"
+                >
+                  ›
+                </button>
+                <button
+                  className="pagination-btn pagination-nav"
+                  onClick={() => handlePageChange(totalPages)}
+                  disabled={currentPage === totalPages}
+                  title="마지막 페이지"
+                >
+                  »
+                </button>
               </div>
-
-              <button
-                className="pagination-btn pagination-nav"
-                onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                title="다음 페이지"
-              >
-                ›
-              </button>
-              <button
-                className="pagination-btn pagination-nav"
-                onClick={() => handlePageChange(totalPages)}
-                disabled={currentPage === totalPages}
-                title="마지막 페이지"
-              >
-                »
-              </button>
 
               <span className="pagination-info">
                 {currentPage} / {totalPages} 페이지 (총 {filteredVideos.length}개)
@@ -1987,286 +2448,214 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         </main>
       ) : (
         <main className={`watch-view ${isTheaterMode ? "theater-view" : ""}`}>
-          <div className="watch-header">
-            <button className="back-btn" onClick={handleBackToHome}>
-              ← 목록으로 돌아가기
-            </button>
-
-            {/* 영상(player) 컬럼에 맞춰 정렬되는 오른쪽 영역 */}
-            <div className="watch-header-right">
-            {/* 탐지하기 + 수동 차량 지정 + 사고감지 실행 버튼 그룹 (나란히) */}
-            <div className="watch-header-actions">
-              <button
-                className={`auto-detect-btn ${selectionMode === "auto" ? "active" : ""} ${isDetectingVehicles ? "detecting" : ""}`}
-                disabled={isAnalyzing}
-                onClick={isDetectingVehicles ? handleCancelDetectVehicles : handleAutoDetectVehicles}
-                title="YOLO11로 현재 화면의 차량을 탐지합니다"
-              >
-                {isDetectingVehicles ? "🛑 탐지 취소" : "🔍 탐지하기"}
-              </button>
-              {detectorMode && detectedBoxes.length > 0 && (
-                <span className={`detector-mode-badge mode-${detectorMode}`}>
-                  {detectorModeLabel[detectorMode] || "자동"}
-                </span>
-              )}
-
-            <button
-              className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
-              disabled={isAnalyzing}
-              onClick={() => {
-                if (selectionMode === "manual") {
-                  handleEndDesignateMode();
-                } else {
-                  handleStartManualDesignate();
-                }
-              }}
-              title={isAnalyzing ? "분석 중에는 지정할 수 없습니다" : (selectionMode === "manual" ? "수동 지정 모드 종료" : "직접 드래그하여 차량 지정")}
-            >
-              {selectionMode === "manual" ? "수동 지정 종료" : "수동 차량 지정"}
-            </button>
-
-            {selectionMode !== "none" && (
-              <button
-                className="mode-exit-btn"
-                onClick={handleEndDesignateMode}
-                title="모든 지정 모드 해제"
-              >
-                ✕ 모드 해제
-              </button>
-            )}
-
-
-
-            {/* 사고감지 실행 버튼 + 확인 팝오버 / 취소 버튼 */}
-            <div className="detect-btn-wrapper">
-              {isAnalyzing ? (
-                <button
-                  className="detect-run-btn analyzing-cancel-btn"
-                  onClick={() => {
-                    const currentJob = analyzingJobs.find((j) => j.videoId === selectedVideo?.id);
-                    handleCancelAnalysis(currentJob?.taskId);
-                  }}
-                  title="진행 중인 사고 감지 분석을 취소합니다"
-                >
-                  🛑 사고감지 취소
-                </button>
-              ) : (
-                <button
-                  className="detect-run-btn"
-                  onClick={handleDetectClick}
-                  title="선택한 차량의 사고예상 구간 탐지"
-                >
-                  사고감지 실행
-                </button>
-              )}
-
-              {showDetectConfirm && (
-                <>
-                  <div
-                    className="detect-popover-overlay"
-                    onClick={() => setShowDetectConfirm(false)}
-                  />
-                  <div className="detect-popover">
-                    <p className="detect-popover-text">
-                      현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?
-                    </p>
-                    <div className="detect-popover-actions">
-                      <button className="detect-popover-run" onClick={runDetection}>
-                        실행
-                      </button>
-                      <button
-                        className="detect-popover-cancel"
-                        onClick={() => setShowDetectConfirm(false)}
-                      >
-                        뒤로가기
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
+          {/* 좁은 화면(1024px 이하): 영상 위 헤더에 버튼 묶음.
+              넓은 화면은 헤더 줄 없이 영상을 맨 위로 — 버튼은 왼쪽 칸 맨 위에 둔다 */}
+          {!actionsInSide && (
+            <div className="watch-header">
+              <div className="watch-header-right">
+                {watchActionButtons}
+              </div>
             </div>
-            </div>
+          )}
 
-            <div className="watch-header-metadata">
-              <span className="metadata-item"><strong>카메라:</strong> {selectedVideo.camera}</span>
-              <span className="metadata-item"><strong>녹화 영상:</strong> {getVideoDisplayTitle(selectedVideo, videos)} ({selectedVideo.startTime})</span>
-              <span className="metadata-item"><strong>총 이벤트:</strong> {selectedVideo.events.length}건 감지됨</span>
-            </div>
-            </div>
-          </div>
-
-          <div className={`watch-layout ${isTheaterMode ? "theater-mode" : ""} ${!isSidebarOpen ? "sidebar-collapsed" : ""}`}>
-            <aside className={`event-sidebar ${!isSidebarOpen ? "collapsed" : ""}`}>
-              {isSidebarOpen ? (
-                <>
-                  <div className="event-sidebar-header">
-                    <div>
-                      <h3>감지된 이벤트 목록</h3>
-                      <p className="event-summary">총 {selectedVideo.events.length}건의 이벤트가 있습니다.</p>
-                    </div>
-                    <div className="event-header-actions">
-                      {selectedVideo.events.length > 0 && (
+          <div className={`watch-layout ${isTheaterMode ? "theater-mode" : ""} ${!isSidebarOpen ? "sidebar-collapsed" : ""} ${!isHistoryOpen ? "history-collapsed" : ""}`}>
+            {/* 왼쪽 칸: (넓은 화면) 버튼 묶음 + 사고 클립 사이드바 */}
+            <div className="watch-side">
+              {actionsInSide && watchActionButtons}
+              <aside className={`event-sidebar ${!isSidebarOpen ? "collapsed" : ""}`}>
+                {isSidebarOpen ? (
+                  <>
+                    <div className="event-sidebar-header">
+                      <div>
+                        <h3>감지된 사고 의심 클립</h3>
+                        <p className="event-summary">총 {selectedVideo.events.length}건이 있습니다.</p>
+                      </div>
+                      {/* 닫기(×) 아래에 전체 삭제 — 제목이 한 줄에 들어가도록 세로로 쌓는다 */}
+                      <div className="event-header-actions">
                         <button
-                          className="event-clear-all-btn"
-                          onClick={handleClearAllEvents}
-                          title="이 영상의 모든 감지 이벤트 삭제"
+                          className="sidebar-icon-btn"
+                          onClick={() => setIsSidebarOpen(false)}
+                          aria-label="이벤트 목록 닫기"
                         >
-                          🗑 전체 삭제
+                          ×
                         </button>
-                      )}
-                      <button
-                        className="sidebar-icon-btn"
-                        onClick={() => setIsSidebarOpen(false)}
-                        aria-label="이벤트 목록 닫기"
-                      >
-                        ×
-                      </button>
+                        {selectedVideo.events.length > 0 && (
+                          <button
+                            className="event-clear-all-btn"
+                            onClick={requestClearAllEvents}
+                            title="이 영상의 모든 감지 이벤트 삭제"
+                          >
+                            🗑 전체 삭제
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="event-list">
-                    {selectedVideo.events.length === 0 ? (
-                      <div className="event-empty-hint">감지된 이벤트가 없습니다.</div>
-                    ) : (
-                      selectedVideo.events.map((event) => (
-                        <div
-                          key={event.id}
-                          className={`event-item ${currentEventId === event.id ? "active" : ""}`}
-                          onClick={() => openEventVideo(event)}
-                        >
-                          <div className="event-item-top">
-                            <span className="event-time-pill">{formatTime(event.timestamp)}</span>
-                            <span className="event-actual-time-text">
-                              {formatActualTime(selectedVideo.date, selectedVideo.startTime, event.timestamp)}
-                            </span>
-                            <div className="event-item-actions">
-                              <button
-                                className="event-play-icon-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEventClip(event);
-                                }}
-                                aria-label={`${formatTime(event.timestamp)} 사고구간 CAM 클립 재생`}
-                                title="사고구간 CAM 클립 보기"
-                              >
-                                ▶
-                              </button>
-                              <button
-                                className="event-delete-item-btn"
-                                onClick={(e) => handleDeleteEvent(event.id, e)}
-                                title="이벤트 삭제"
-                              >
-                                🗑
-                              </button>
+                    <div className="event-list">
+                      {selectedVideo.events.length === 0 ? (
+                        <div className="event-empty-hint">감지된 이벤트가 없습니다.</div>
+                      ) : (
+                        selectedVideo.events.map((event) => (
+                          <div
+                            key={event.id}
+                            className={`event-item ${currentEventId === event.id ? "active" : ""}`}
+                            onClick={() => setCurrentEventId(event.id)}
+                          >
+                            <div className="event-item-top">
+                              <span className="event-time-pill">{formatTime(event.timestamp)}</span>
+                              <span className="event-actual-time-text" title="이 영상의 몇 번째 분석에서 나온 클립인지">
+                                {event.analysisNo != null && `분석 #${event.analysisNo}`}
+                              </span>
+                              <div className="event-item-actions">
+                                <button
+                                  className="event-play-icon-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentEventId(event.id);
+                                    if (event.hasClip) {
+                                      setClipEvent(event);
+                                    } else {
+                                      showToast("이 이벤트의 사고 클립이 아직 없습니다.", "warning");
+                                    }
+                                  }}
+                                  aria-label={`${formatTime(event.timestamp)} 사고구간 클립 재생`}
+                                  title="사고구간 클립 보기"
+                                >
+                                  ▶
+                                </button>
+                                <button
+                                  className="event-delete-item-btn"
+                                  onClick={(e) => requestDeleteEvent(event, e)}
+                                  title="클립 삭제"
+                                  aria-label={`${formatTime(event.timestamp)} 사고구간 클립 삭제`}
+                                >
+                                  <TrashIcon size={14} />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="event-item-bottom">
+                              <h4 className="event-title-text" title="분석 일시">
+                                {(() => {
+                                  const at = formatAnalyzedAt(event.analyzedAt);
+                                  return at && (
+                                    <>
+                                      {at[0]}
+                                      <span className="event-analyzed-time">{at[1]}</span>
+                                    </>
+                                  );
+                                })()}
+                              </h4>
                             </div>
                           </div>
-                          <div className="event-item-bottom">
-                            <h4 className="event-title-text">{event.title}</h4>
-                          </div>
+                        ))
+                      )}
+                    </div>
+
+
+                    {/* 달력을 사이드바 이벤트 목록 하단으로 삽입 */}
+                    <div className="sidebar-calendar-container">
+                      <section className="event-calendar-panel" style={{ background: "transparent", padding: 0 }}>
+                        <div className="calendar-header">
+                          <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
+                            ‹
+                          </button>
+                          <h2>{formatMonthLabel(calendarMonth)}</h2>
+                          <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
+                            ›
+                          </button>
                         </div>
-                      ))
-                    )}
-                  </div>
 
+                        <div className="calendar-weekdays">
+                          {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+                            <span key={day}>{day}</span>
+                          ))}
+                        </div>
 
-                  {/* 달력을 사이드바 이벤트 목록 하단으로 삽입 */}
-                  <div className="sidebar-calendar-container">
-                    <section className="event-calendar-panel" style={{ background: "transparent", padding: 0 }}>
-                      <div className="calendar-header">
-                        <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
-                          ‹
+                        <div className="calendar-grid">
+                          {calendarDays.map((date, index) => {
+                            if (!date) {
+                              return <div key={`empty-${index}`} className="calendar-day empty" />;
+                            }
+
+                            const dateText = formatDate(date);
+                            const videos = videosByDate[dateText] ?? [];
+                            const hasVideo = videos.length > 0;
+                            const isSelectedDate = (selectedCalendarDate ?? selectedVideo.date) === dateText;
+
+                            // 영상의 총 이벤트 건수를 합산하여 강도를 계산
+                            const totalEvents = videos.reduce((acc, v) => acc + v.events.length, 0);
+
+                            let intensityClass = "";
+                            if (totalEvents === 1) intensityClass = "intensity-1";
+                            else if (totalEvents === 2) intensityClass = "intensity-2";
+                            else if (totalEvents >= 3) intensityClass = "intensity-3";
+
+                            return (
+                              <button
+                                key={dateText}
+                                className={`calendar-day ${hasVideo ? `has-video ${intensityClass}` : ""} ${isSelectedDate ? "selected" : ""}`}
+                                onClick={() => handleCalendarDateClick(date)}
+                                title={hasVideo ? `총 ${videos.length}개 영상 / ${totalEvents}건의 이벤트` : "영상 없음"}
+                              >
+                                <span className="calendar-date-number">{date.getDate()}</span>
+                                {videos.length > 1 && (
+                                  <span className="calendar-multi-count-badge" title={`영상 ${videos.length}개`}>
+                                    {videos.length}개
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    className="sidebar-open-btn"
+                    onClick={() => setIsSidebarOpen(true)}
+                  >
+                    이벤트 목록 열기
+                  </button>
+                )}
+
+                {!isSidebarOpen && nextVideos.length > 0 && (
+                  <section className="next-video-section">
+                    <h3>다음 영상</h3>
+                    <div className="next-video-list">
+                      {nextVideos.map((video) => (
+                        <button
+                          key={video.id}
+                          className="next-video-card"
+                          onClick={() => handleWatchVideo(video)}
+                        >
+                          <strong>{video.date}</strong>
+                          <small>{video.startTime} · 이벤트 {video.events.length}건 · {formatTime(video.duration)}</small>
                         </button>
-                        <h2>{formatMonthLabel(calendarMonth)}</h2>
-                        <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
-                          ›
-                        </button>
-                      </div>
-
-                      <div className="calendar-weekdays">
-                        {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-                          <span key={day}>{day}</span>
-                        ))}
-                      </div>
-
-                      <div className="calendar-grid">
-                        {calendarDays.map((date, index) => {
-                          if (!date) {
-                            return <div key={`empty-${index}`} className="calendar-day empty" />;
-                          }
-
-                          const dateText = formatDate(date);
-                          const videos = videosByDate[dateText] ?? [];
-                          const hasVideo = videos.length > 0;
-                          const isSelectedDate = (selectedCalendarDate ?? selectedVideo.date) === dateText;
-                          
-                          // 영상의 총 이벤트 건수를 합산하여 강도를 계산
-                          const totalEvents = videos.reduce((acc, v) => acc + v.events.length, 0);
-
-                          let intensityClass = "";
-                          if (totalEvents === 1) intensityClass = "intensity-1";
-                          else if (totalEvents === 2) intensityClass = "intensity-2";
-                          else if (totalEvents >= 3) intensityClass = "intensity-3";
-
-                          return (
-                            <button
-                              key={dateText}
-                              className={`calendar-day ${hasVideo ? `has-video ${intensityClass}` : ""} ${isSelectedDate ? "selected" : ""}`}
-                              onClick={() => handleCalendarDateClick(date)}
-                              title={hasVideo ? `총 ${videos.length}개 영상 / ${totalEvents}건의 이벤트` : "영상 없음"}
-                            >
-                              <span className="calendar-date-number">{date.getDate()}</span>
-                              {videos.length > 1 && (
-                                <span className="calendar-multi-count-badge" title={`영상 ${videos.length}개`}>
-                                  {videos.length}개
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  </div>
-                </>
-              ) : (
-                <button
-                  className="sidebar-open-btn"
-                  onClick={() => setIsSidebarOpen(true)}
-                >
-                  이벤트 목록 열기
-                </button>
-              )}
-
-              {!isSidebarOpen && nextVideos.length > 0 && (
-                <section className="next-video-section">
-                  <h3>다음 영상</h3>
-                  <div className="next-video-list">
-                    {nextVideos.map((video) => (
-                      <button
-                        key={video.id}
-                        className="next-video-card"
-                        onClick={() => handleWatchVideo(video)}
-                      >
-                        <strong>{video.date}</strong>
-                        <span>{video.camera}</span>
-                        <small>{video.startTime} · 이벤트 {video.events.length}건 · {formatTime(video.duration)}</small>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </aside>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </aside>
+            </div>
 
             {/* 우측/중앙: 메인 비디오 플레이어 */}
             <section className="player-section">
-              {/* 지정 모드 안내문 (영상 상단을 가리지 않도록 비디오 플레이어 바깥 위에 배치) */}
-              {selectionMode !== "none" && (
-                <div className="bbox-mode-guide-bar">
-                  <span className="bbox-guide-icon">{selectionMode === "auto" ? "🔍" : "🖱️"}</span>
+              {/* 마지막 분석이 실패·중단됐으면 같은 차량 박스로 다시 실행하도록 안내 */}
+              {!isAnalyzing && selectedVideo?.lastTask?.status === "FAILURE" && (
+                <div
+                  className="analysis-failed-banner"
+                  role="status"
+                  title={selectedVideo.lastTask.errorMessage || ""}
+                >
                   <span>
-                    {selectionMode === "auto"
-                      ? `${detectorModeLabel[detectorMode] || "RT-DETR + YOLO"} 자동 탐지 모드: 마우스를 올리면 탐지된 차량이 표시되며 클릭 시 선택됩니다.`
-                      : "수동 차량 지정 모드: 마우스로 드래그하여 사고 차량을 직접 지정해 주세요."}
+                    {(selectedVideo.lastTask.errorMessage || "").startsWith("분석 서버가 재시작")
+                      ? "⚠️ 서버 재시작으로 분석이 중단됐습니다"
+                      : "⚠️ 마지막 분석이 실패했습니다"}
                   </span>
+                  <button className="analysis-retry-btn" onClick={handleRetryAnalysis}>
+                    다시 실행
+                  </button>
                 </div>
               )}
 
@@ -2283,50 +2672,47 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   }}
                   onMouseDown={(e) => {
                     if (!isBBoxMode) return;
-                    if (selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && videoElRef.current) {
-                      const displayBox = videoBoxToDisplayBox(hoveredDetectedBox.bbox);
-                      if (!displayBox) return;
-                      setBboxList([{ id: Date.now(), ...displayBox }]);
-                      const sourceText = detectorSourceLabel(hoveredDetectedBox.source);
-                      showToast(`${sourceText} ${hoveredDetectedBox.class_name} (#${hoveredDetectedBox.id + 1}) 차량이 선택되었습니다.`, "success");
+                    if (selectionMode === "auto" && hoveredDetectedBox && getVideoGeom()) {
+                      const { scale, offsetX, offsetY } = getVideoGeom();
+                      const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
+                      const dispX1 = Math.round(offsetX + x1 * scale);
+                      const dispY1 = Math.round(offsetY + y1 * scale);
+                      const dispX2 = Math.round(offsetX + x2 * scale);
+                      const dispY2 = Math.round(offsetY + y2 * scale);
+
+                      setBboxList([{ id: Date.now(), xmin: dispX1, ymin: dispY1, xmax: dispX2, ymax: dispY2 }]);
+                      showToast("차량이 선택되었습니다.", "success");
                       return;
                     }
                     if (selectionMode === "manual") {
-                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
-                      if (!point) return;
+                      const rect = bboxOverlayRef.current.getBoundingClientRect();
+                      const x = Math.round(e.clientX - rect.left);
+                      const y = Math.round(e.clientY - rect.top);
                       setIsDrawing(true);
-                      setCurrentDraw({ startX: point.x, startY: point.y, endX: point.x, endY: point.y });
+                      setCurrentDraw({ startX: x, startY: y, endX: x, endY: y });
                     }
                   }}
                   onMouseMove={(e) => {
                     if (!isBBoxMode) return;
+                    const rect = bboxOverlayRef.current.getBoundingClientRect();
 
                     if (selectionMode === "manual" && isDrawing) {
-                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
-                      if (!point) return;
-                      setCurrentDraw((prev) => (prev ? { ...prev, endX: point.x, endY: point.y } : null));
+                      const x = Math.round(e.clientX - rect.left);
+                      const y = Math.round(e.clientY - rect.top);
+                      setCurrentDraw((prev) => (prev ? { ...prev, endX: x, endY: y } : null));
                       return;
                     }
 
-                    if (selectionMode === "auto" && detectedBoxes.length > 0 && videoElRef.current) {
-                      const videoPoint = displayPointToVideoPoint(e.clientX, e.clientY);
-                      if (!videoPoint) {
-                        setHoveredDetectedBox(null);
-                        return;
-                      }
+                    if (selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom()) {
+                      const { scale, offsetX, offsetY } = getVideoGeom();
+                      // 화면(오버레이) 좌표 → 레터박스 여백 제거 → 원본 해상도 좌표
+                      const realX = (e.clientX - rect.left - offsetX) / scale;
+                      const realY = (e.clientY - rect.top - offsetY) / scale;
 
-                      const hit = detectedBoxes
-                        .filter((box) => {
-                          const [x1, y1, x2, y2] = box.bbox;
-                          return videoPoint.x >= x1 && videoPoint.x <= x2 && videoPoint.y >= y1 && videoPoint.y <= y2;
-                        })
-                        .sort((a, b) => {
-                          const [ax1, ay1, ax2, ay2] = a.bbox;
-                          const [bx1, by1, bx2, by2] = b.bbox;
-                          const areaA = Math.max(0, ax2 - ax1) * Math.max(0, ay2 - ay1);
-                          const areaB = Math.max(0, bx2 - bx1) * Math.max(0, by2 - by1);
-                          return areaA - areaB || b.confidence - a.confidence;
-                        })[0];
+                      const hit = detectedBoxes.find((box) => {
+                        const [x1, y1, x2, y2] = box.bbox;
+                        return realX >= x1 && realX <= x2 && realY >= y1 && realY <= y2;
+                      });
 
                       setHoveredDetectedBox(hit || null);
                     } else if (selectionMode !== "auto") {
@@ -2335,15 +2721,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   }}
                   onMouseUp={(e) => {
                     if (selectionMode === "manual" && isDrawing && currentDraw) {
-                      const point = clampDisplayPointToVideoArea(e.clientX, e.clientY);
-                      if (point) {
-                        const xmin = Math.min(currentDraw.startX, point.x);
-                        const ymin = Math.min(currentDraw.startY, point.y);
-                        const xmax = Math.max(currentDraw.startX, point.x);
-                        const ymax = Math.max(currentDraw.startY, point.y);
-                        if (xmax - xmin > 5 && ymax - ymin > 5) {
-                          setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
-                        }
+                      const rect = bboxOverlayRef.current.getBoundingClientRect();
+                      const x = Math.round(e.clientX - rect.left);
+                      const y = Math.round(e.clientY - rect.top);
+                      const xmin = Math.min(currentDraw.startX, x);
+                      const ymin = Math.min(currentDraw.startY, y);
+                      const xmax = Math.max(currentDraw.startX, x);
+                      const ymax = Math.max(currentDraw.startY, y);
+                      if (xmax - xmin > 5 && ymax - ymin > 5) {
+                        setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
                       }
                       setCurrentDraw(null);
                       setIsDrawing(false);
@@ -2375,6 +2761,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                    onLoadedMetadata={(e) => {
+                      const d = e.currentTarget.duration;
+                      setMediaDuration(Number.isFinite(d) ? d : 0);
+                    }}
+                    onDurationChange={(e) => {
+                      const d = e.currentTarget.duration;
+                      setMediaDuration(Number.isFinite(d) ? d : 0);
+                    }}
                     style={{
                       display: "block",
                       width: "100%",
@@ -2384,6 +2778,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       pointerEvents: isBBoxMode ? "none" : "auto",
                     }}
                   />
+
+                  {/* 차량 자동 탐지 중: 영상 화면 위에 로딩 표시 */}
+                  {isDetectingVehicles && (
+                    <div className="vehicle-detect-loading" role="status" aria-live="polite">
+                      <div className="vehicle-detect-spinner" />
+                      <span>차량을 찾는 중…</span>
+                    </div>
+                  )}
 
                   {/* 저장된 바운딩 박스 렌더링 (단일 박스) */}
                   {bboxList.map((box) => (
@@ -2430,188 +2832,211 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     );
                   })()}
 
-                  {/* RT-DETR + YOLO fallback 자동 탐지 모드: 마우스 Hover 미리보기 */}
-                  {selectionMode === "auto" && hoveredDetectedBox && bboxOverlayRef.current && (() => {
-                    const displayBox = videoBoxToDisplayBox(hoveredDetectedBox.bbox);
-                    if (!displayBox) return null;
+                  {/* YOLO 자동 탐지 모드: 탐지된 모든 bbox를 항상 표시 (진단용 #번호·클래스·신뢰도) */}
+                  {selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom() && (() => {
+                    const { scale, offsetX, offsetY } = getVideoGeom();
+                    return detectedBoxes.map((box) => {
+                      const [x1, y1, x2, y2] = box.bbox;
+                      const dispX1 = Math.round(offsetX + x1 * scale);
+                      const dispY1 = Math.round(offsetY + y1 * scale);
+                      const dispX2 = Math.round(offsetX + x2 * scale);
+                      const dispY2 = Math.round(offsetY + y2 * scale);
+                      const isHovered = hoveredDetectedBox && hoveredDetectedBox.id === box.id;
+                      return (
+                        <div
+                          key={box.id}
+                          style={{
+                            position: "absolute",
+                            left: dispX1,
+                            top: dispY1,
+                            width: Math.max(4, dispX2 - dispX1),
+                            height: Math.max(4, dispY2 - dispY1),
+                            border: `2px solid ${isHovered ? "#16a34a" : "rgba(34,197,94,0.7)"}`,
+                            boxSizing: "border-box",
+                            borderRadius: 2,
+                            pointerEvents: "none",
+                          }}
+                        >
+                        </div>
+                      );
+                    });
+                  })()}
+
+                  {/* YOLO 자동 탐지 모드: 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
+                  {selectionMode === "auto" && hoveredDetectedBox && getVideoGeom() && (() => {
+                    const { scale, offsetX, offsetY } = getVideoGeom();
+                    const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
+                    const dispX1 = Math.round(offsetX + x1 * scale);
+                    const dispY1 = Math.round(offsetY + y1 * scale);
+                    const dispX2 = Math.round(offsetX + x2 * scale);
+                    const dispY2 = Math.round(offsetY + y2 * scale);
 
                     return (
                       <div
                         className="bbox-hover-preview"
                         style={{
-                          left: displayBox.xmin,
-                          top: displayBox.ymin,
-                          width: Math.max(10, displayBox.xmax - displayBox.xmin),
-                          height: Math.max(10, displayBox.ymax - displayBox.ymin),
+                          left: dispX1,
+                          top: dispY1,
+                          width: Math.max(10, dispX2 - dispX1),
+                          height: Math.max(10, dispY2 - dispY1),
                         }}
                       >
                         <span className="bbox-hover-label">
-                          🚗 {hoveredDetectedBox.class_name} · {detectorSourceLabel(hoveredDetectedBox.source)} (#{hoveredDetectedBox.id + 1}) — 클릭하여 선택
+                          🚗 클릭하여 이 차량 선택
                         </span>
                       </div>
                     );
                   })()}
                 </div>
 
-                {/* 커스텀 재생바 및 이벤트 마커 표시 (비디오 화면 바깥 하단으로 이동하여 화면 침범 방지) */}
+                {/* 재생바 + 재생 컨트롤 (영상 화면을 가리지 않게 화면 바깥 하단) */}
                 <div className="custom-progress-bar">
-                  <div className="progress-track" onClick={handleSeek}>
-                    {/* 실제 재생 진행률 */}
+                  <div
+                    className={`progress-track ${isSeeking ? "seeking" : ""}`}
+                    onPointerDown={handleSeekStart}
+                    onPointerMove={handleSeekMove}
+                    onPointerUp={handleSeekEnd}
+                    onPointerCancel={handleSeekEnd}
+                  >
+                    <div className="progress-rail">
+                      {/* 실제 재생 진행률 */}
+                      <div
+                        className="progress-fill"
+                        style={{ width: `${playerDuration ? Math.min(100, (currentTime / playerDuration) * 100) : 0}%` }}
+                      />
+
+                      {/* 사고 의심 구간 (빨간 구간) — 누르면 그 시점부터 재생 */}
+                      {playerDuration > 0 &&
+                        selectedVideo.events.map((event) => {
+                          const start = event.startSec ?? event.timestamp;
+                          const end = Math.max(start, event.endSec ?? event.endTimestamp ?? start);
+                          const left = Math.min(100, (start / playerDuration) * 100);
+                          const width = Math.min(100 - left, ((end - start) / playerDuration) * 100);
+                          return (
+                            <div
+                              key={event.id}
+                              className={`event-range ${currentEventId === event.id ? "active" : ""}`}
+                              style={{ left: `${left}%`, width: `${width}%` }}
+                              title={`${event.title} ${formatTime(Math.floor(start))} ~ ${formatTime(Math.ceil(end))}`}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                seekToEvent(event);
+                              }}
+                            />
+                          );
+                        })}
+                    </div>
                     <div
-                      className="progress-fill"
-                      style={{
-                        width: `${selectedVideo.duration ? (currentTime / selectedVideo.duration) * 100 : 0}%`,
-                      }}
-                    ></div>
-
-                    {/* 이벤트 마커 (타임라인의 빨간 점) */}
-                    {selectedVideo.events.map((event) => {
-                      const leftPosition = (event.timestamp / selectedVideo.duration) * 100;
-                      return (
-                        <div
-                          key={event.id}
-                          className={`event-marker ${currentEventId === event.id ? 'active' : ''}`}
-                          style={{ left: `${leftPosition}%` }}
-                          title={event.title}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            seekToEvent(event);
-                          }}
-                        />
-                      );
-                    })}
+                      className="progress-thumb"
+                      style={{ left: `${playerDuration ? Math.min(100, (currentTime / playerDuration) * 100) : 0}%` }}
+                    />
+                    <div className="progress-hover-time" ref={seekHoverRef} />
                   </div>
-                  <div className="time-labels">
 
-                    <span>0:00</span>
-                    <span>{formatTime(selectedVideo.duration)}</span>
-                  </div>
                   <div className="player-controls">
                     <button
                       className="control-btn"
                       onClick={togglePlay}
+                      aria-label={isPlaying ? "일시정지" : "재생"}
+                      title={isPlaying ? "일시정지" : "재생"}
                     >
-                      {isPlaying ? "⏸" : "▶"}
+                      <PlayerIcon name={isPlaying ? "pause" : "play"} size={20} />
                     </button>
 
-                    <label className="control-field icon-control" aria-label="Playback speed">
-                      <select value={playbackSpeed} onChange={(e) => setPlaybackSpeed(e.target.value)}>
+                    <div className="volume-control">
+                      <button
+                        className="control-btn"
+                        onClick={toggleMute}
+                        aria-label={isMuted || volume === 0 ? "음소거 해제" : "음소거"}
+                        title={isMuted || volume === 0 ? "음소거 해제" : "음소거"}
+                      >
+                        <PlayerIcon
+                          name={isMuted || volume === 0 ? "volumeMute" : volume < 50 ? "volumeLow" : "volumeHigh"}
+                        />
+                      </button>
+                      <input
+                        className="volume-slider"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={isMuted ? 0 : volume}
+                        style={{ "--fill": `${isMuted ? 0 : volume}%` }}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          setVolume(next);
+                          setIsMuted(next === 0);
+                        }}
+                        aria-label="음량"
+                      />
+                    </div>
+
+                    <span className="time-display">
+                      {formatTime(Math.floor(currentTime))}
+                      <span className="time-sep">/</span>
+                      {formatTime(Math.floor(playerDuration))}
+                    </span>
+
+                    <div className="right-controls">
+                      <select
+                        className="speed-select"
+                        value={playbackSpeed}
+                        onChange={(e) => setPlaybackSpeed(e.target.value)}
+                        aria-label="재생 속도"
+                        title="재생 속도"
+                      >
+                        <option value="0.25">0.25x</option>
                         <option value="0.5">0.5x</option>
                         <option value="1">1x</option>
                         <option value="1.5">1.5x</option>
                         <option value="2">2x</option>
                       </select>
-                    </label>
-
-                    <label className="control-field volume-field icon-control" aria-label="Volume">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={volume}
-                        onChange={(e) => setVolume(Number(e.target.value))}
-                      />
-                    </label>
-
-                    <div className="right-controls">
-                      <label className="control-field quality-field icon-control" aria-label="Video quality">
-                        <select value={quality} onChange={(e) => setQuality(e.target.value)}>
-                          <option value="auto">Auto</option>
-                          <option value="1080p">1080p</option>
-                          <option value="720p">720p</option>
-                          <option value="480p">480p</option>
-                        </select>
-                      </label>
+                      {/* 전체화면에선 영화관 모드가 의미 없어 숨긴다 */}
+                      {!isFullscreen && (
+                        <button
+                          className={`control-btn ${isTheaterMode ? "active" : ""}`}
+                          onClick={() => setIsTheaterMode((enabled) => !enabled)}
+                          aria-label="영화관 모드"
+                          title={isTheaterMode ? "영화관 모드 끄기" : "영화관 모드"}
+                        >
+                          <PlayerIcon name="theater" />
+                        </button>
+                      )}
                       <button
-                        className={`control-btn theater-btn ${isTheaterMode ? "active" : ""}`}
-                        onClick={() => setIsTheaterMode((enabled) => !enabled)}
-                        aria-label="영화관 모드"
-                      >
-                        ▭
-                      </button>
-                      <button
-                        className="control-btn fullscreen-btn"
+                        className="control-btn"
                         onClick={handleToggleFullscreen}
-                        aria-label="전체화면"
+                        aria-label={isFullscreen ? "전체화면 종료" : "전체화면"}
+                        title={isFullscreen ? "전체화면 종료" : "전체화면"}
                       >
-                        ⛶
+                        <PlayerIcon name={isFullscreen ? "exitFullscreen" : "fullscreen"} />
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
-
-              {/* 바운딩박스 좌표 결과 패널 */}
-              {showBBoxPanel && (
-                <div className="bbox-result-panel">
-                  <div className="bbox-panel-header">
-                    <div className="bbox-panel-title">
-                      <span className="bbox-panel-icon">📦</span>
-                      <span>사고 차량 바운딩박스 좌표</span>
-                    </div>
-                    <div className="bbox-panel-actions">
-                      {bboxList.length > 0 && (
-                        <button
-                          className="bbox-clear-btn"
-                          onClick={() => setBboxList([])}
-                          title="전체 박스 초기화"
-                        >
-                          초기화
-                        </button>
-                      )}
-                      <button
-                        className="bbox-panel-close-btn"
-                        onClick={() => setShowBBoxPanel(false)}
-                        title="패널 닫기"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-
-                  {bboxList.length === 0 ? (
-                    <div className="bbox-empty-hint">
-                      <span>🖱️</span>
-                      <span>영상 화면에서 드래그하여 박스를 그려보세요.</span>
-                    </div>
-                  ) : (
-                    <div className="bbox-coord-list">
-                      {bboxList.map((box, idx) => (
-                        <div key={box.id} className="bbox-coord-row">
-                          <span className="bbox-coord-index">#{idx}</span>
-                          <code className="bbox-coord-value">
-                            (car, {idx}, {box.xmin}, {box.ymin}, {box.xmax}, {box.ymax})
-                          </code>
-                          <button
-                            className="bbox-row-delete-btn"
-                            onClick={() => setBboxList((prev) => prev.filter((b) => b.id !== box.id))}
-                            title="삭제"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {bboxList.length > 0 && (
-                    <button
-                      className="bbox-copy-btn"
-                      onClick={() => {
-                        const text = bboxList
-                          .map((box, idx) => `(car, ${idx}, ${box.xmin}, ${box.ymin}, ${box.xmax}, ${box.ymax})`)
-                          .join("\n");
-                        navigator.clipboard.writeText(text).then(() => {
-                          alert("좌표가 클립보드에 복사되었습니다!");
-                        });
-                      }}
-                    >
-                      📋 좌표 전체 복사
-                    </button>
-                  )}
-                </div>
-              )}
             </section>
+
+            {/* 오른쪽: 이 영상의 분석 이력 — 숨기면 오른쪽 끝에 '분석 이력' 탭만 남는다 */}
+            {isHistoryOpen ? (
+              <AnalysisHistoryPanel
+                history={selectedVideo.analysisHistory || []}
+                events={selectedVideo.events}
+                progressText={(taskId) => {
+                  const job = analyzingJobs.find((j) => j.taskId === taskId);
+                  return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
+                }}
+                onClose={() => setIsHistoryOpen(false)}
+              />
+            ) : (
+              <button
+                className="analysis-history-tab"
+                onClick={() => setIsHistoryOpen(true)}
+                title="분석 이력 보기"
+              >
+                <span className="analysis-history-tab-arrow" aria-hidden="true">‹</span>
+                <span>분석 이력</span>
+              </button>
+            )}
           </div>
         </main>
       )}
@@ -2793,33 +3218,132 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         <div className={`app-toast app-toast-${toast.type}`}>{toast.message}</div>
       )}
 
-      {/* 사고구간 CAM 클립 팝업 */}
+      {/* 사고 클립 삭제 확인 (1건 · 전체) — 화면 가운데. 기본 초점은 '취소'(Enter 실수로 지우지 않게), Esc·바깥 클릭으로 닫힘 */}
+      {(pendingDeleteEvent || pendingClearAll) && (() => {
+        const isAll = pendingClearAll;
+        const closeConfirm = () => {
+          setPendingDeleteEvent(null);
+          setPendingClearAll(false);
+        };
+        return (
+          <div className="settings-modal-overlay" onClick={closeConfirm}>
+            <div
+              className="confirm-modal"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="confirm-modal-title"
+              aria-describedby="confirm-modal-desc"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") closeConfirm();
+              }}
+            >
+              <div className="confirm-modal-icon" aria-hidden="true">
+                <TrashIcon size={24} />
+              </div>
+              <h2 id="confirm-modal-title" className="confirm-modal-title">
+                {isAll
+                  ? `사고 의심 클립 ${selectedVideo?.events.length ?? 0}개를 모두 삭제하시겠습니까?`
+                  : "클립 영상을 삭제하시겠습니까?"}
+              </h2>
+              <p id="confirm-modal-desc" className="confirm-modal-desc">
+                {isAll
+                  ? "이 영상에서 감지된 모든 클립 영상과 감지 기록이 삭제됩니다."
+                  : "해당 사고 구간의 클립 영상과 감지 기록이 삭제됩니다."}
+                <br />
+                삭제한 뒤에는 되돌릴 수 없습니다.
+              </p>
+              <div className="upload-modal-actions">
+                <button
+                  className="confirm-danger-btn"
+                  onClick={() => {
+                    const id = pendingDeleteEvent?.id;
+                    closeConfirm();
+                    if (isAll) handleClearAllEvents();
+                    else handleDeleteEvent(id);
+                  }}
+                >
+                  {isAll ? "전체 삭제" : "삭제"}
+                </button>
+                <button
+                  className="upload-cancel-btn"
+                  autoFocus
+                  onClick={closeConfirm}
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 사고구간 클립 팝업 (+ 원본 클립 다운로드) */}
       {clipEvent && (
-        <div className="clip-modal-overlay" onClick={() => setClipEvent(null)}>
-          <div className="clip-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="settings-modal-overlay clip-viewer-overlay" onClick={() => setClipEvent(null)}>
+          <div
+            className="clip-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clip-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setClipEvent(null);
+            }}
+          >
             <div className="clip-modal-header">
-              <span>
-                사고구간 CAM 클립 · {formatTime(clipEvent.timestamp)}
-                {clipEvent.endTimestamp != null
-                  ? ` ~ ${formatTime(clipEvent.endTimestamp)}`
-                  : ""}
-                {clipEvent.prob != null
-                  ? ` · ${(clipEvent.prob * 100).toFixed(1)}%`
-                  : ""}
-              </span>
+              <div className="clip-modal-heading">
+                <h2 id="clip-modal-title" className="clip-modal-title">사고구간 클립</h2>
+                <div className="clip-modal-chips">
+                  <span className="clip-chip">
+                    ⏱ {formatTime(clipEvent.timestamp)}
+                    {clipEvent.endTimestamp != null ? ` ~ ${formatTime(clipEvent.endTimestamp)}` : ""}
+                  </span>
+                  {clipEvent.prob != null && (
+                    <span className="clip-chip clip-chip-danger">
+                      사고 확률 {(clipEvent.prob * 100).toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+              </div>
               <button
-                className="clip-modal-close"
+                className="clip-close-btn"
                 onClick={() => setClipEvent(null)}
+                aria-label="클립 창 닫기"
+                autoFocus
               >
                 ✕
               </button>
             </div>
-            <video
-              className="clip-modal-video"
-              src={api.clipUrl(clipEvent.id)}
-              controls
-              autoPlay
-            />
+
+            <div className="clip-video-frame">
+              <video className="clip-modal-video" src={api.clipUrl(clipEvent.id)} controls autoPlay />
+            </div>
+
+            <div className="clip-modal-footer">
+              <div className="clip-legend">
+                <span className="clip-legend-item">
+                  <i className="clip-legend-swatch clip-legend-a" /> 빨간 테두리 — 사고가 의심되는 순간이에요
+                </span>
+                <span className="clip-legend-item">
+                  <i className="clip-legend-swatch clip-legend-s" /> 초록 테두리 — 특별한 이상이 없는 장면이에요
+                </span>
+              </div>
+              {clipEvent.hasRawClip ? (
+                <a
+                  className="clip-download-btn"
+                  href={api.rawClipUrl(clipEvent.id)}
+                  download
+                  title="박스·상태 표시가 없는 원본 사고 구간 영상을 내려받습니다"
+                >
+                  ⬇ 원본 클립 다운로드
+                </a>
+              ) : (
+                <span className="clip-download-unavailable" title="이 영상을 다시 분석하면 원본 클립이 만들어집니다">
+                  원본 클립 없음 · 다시 분석하면 생성
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2853,7 +3377,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 }
 
 function UploadModal({ onClose, onUploaded, onError }) {
-  const [useDrive, setUseDrive] = useState(false);
   const [filesList, setFilesList] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, currentName: "" });
@@ -2946,10 +3469,8 @@ function UploadModal({ onClose, onUploaded, onError }) {
     }
   };
 
-  if (useDrive) return <DriveUploadModal onClose={onClose} onUploaded={onUploaded} onError={onError} />;
-
   return (
-    <div className="settings-modal-overlay" onClick={uploading ? undefined : onClose}>
+    <div className="settings-modal-overlay" onClick={onClose}>
       <div className="upload-modal multi-upload-modal" onClick={(e) => e.stopPropagation()}>
         <div className="upload-modal-header">
           <div>
@@ -2959,10 +3480,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
           <button className="clip-modal-close" onClick={onClose} disabled={uploading}>✕</button>
         </div>
 
-        <button type="button" className="add-more-files-btn" disabled={uploading} onClick={() => setUseDrive(true)}>Google Drive 링크로 가져오기</button>
-
         <input
-          disabled={uploading}
           ref={fileInputRef}
           type="file"
           accept="video/*"
@@ -3087,94 +3605,6 @@ function UploadModal({ onClose, onUploaded, onError }) {
             취소
           </button>
         </div>
-
-      </div>
-    </div>
-  );
-}
-
-
-function DriveUploadModal({ onClose, onUploaded, onError }) {
-  const [source, setSource] = useState("drive");
-  const [driveLink, setDriveLink] = useState("");
-  const [file, setFile] = useState(null);
-  const [recordingDate, setRecordingDate] = useState("");
-  const [uploading, setUploading] = useState(false);
-
-  const handleUpload = async () => {
-    if (source === "file" ? !file : !driveLink.trim()) {
-      onError(source === "file" ? "업로드할 영상 파일을 선택해 주세요." : "Drive 공유 링크를 입력해 주세요.");
-      return;
-    }
-    setUploading(true);
-    try {
-      if (source === "drive") {
-        await api.importDriveVideo(driveLink.trim(), recordingDate || null);
-      } else {
-        await api.uploadVideo(file, recordingDate || null);
-      }
-      onUploaded();
-    } catch (e) {
-      onError(`업로드 실패: ${e.message}`);
-      setUploading(false);
-    }
-  };
-
-  return (
-    <div className="settings-modal-overlay" onClick={uploading ? undefined : onClose}>
-      <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>영상 업로드</h2>
-        <p className="tab-description">분석할 CCTV 녹화 영상을 업로드합니다.</p>
-
-        <div className="settings-form-group">
-          <label htmlFor="upload-source">가져오기 방식</label>
-          <select id="upload-source" value={source} disabled={uploading} onChange={(e) => setSource(e.target.value)}>
-            <option value="file">내 컴퓨터 파일</option>
-            <option value="drive">Google Drive 링크</option>
-          </select>
-        </div>
-        {source === "drive" ? (
-          <div className="settings-form-group">
-            <label htmlFor="drive-link">영상 공유 링크</label>
-            <input id="drive-link" type="url" value={driveLink} disabled={uploading}
-              placeholder="https://drive.google.com/file/d/.../view"
-              onChange={(e) => setDriveLink(e.target.value)} />
-            <p className="tab-description">‘링크가 있는 모든 사용자’가 다운로드 가능한 영상만 지원합니다. 최대 10GB.</p>
-            {uploading && <p role="status">Drive에서 영상을 가져오는 중입니다. 영상 크기에 따라 시간이 걸릴 수 있습니다.</p>}
-          </div>
-        ) : <div className="settings-form-group">
-          <label>영상 파일</label>
-          <input
-            type="file"
-            accept="video/*"
-            disabled={uploading}
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-          />
-        </div>}
-
-        <div className="settings-form-group">
-          <label>녹화 일자 (달력에서 선택)</label>
-          <input
-            type="date"
-            disabled={uploading}
-            value={recordingDate}
-            max={formatDate(new Date())}
-            onChange={(e) => setRecordingDate(e.target.value)}
-          />
-        </div>
-
-        <div className="upload-modal-actions">
-          <button
-            className="settings-save-btn"
-            onClick={handleUpload}
-            disabled={uploading}
-          >
-            {uploading ? "가져오는 중..." : source === "drive" ? "Drive에서 가져오기" : "업로드"}
-          </button>
-          <button className="upload-cancel-btn" onClick={onClose} disabled={uploading}>
-            취소
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -3188,9 +3618,9 @@ function DateVideosModal({ dateText, videos, onClose, onSelectVideo }) {
       <div className="date-videos-modal" onClick={(e) => e.stopPropagation()}>
         <div className="date-videos-header">
           <div>
-            <h2>📅 {dateText} 녹화 영상 목록 ({videos.length}개)</h2>
+            <h2>📅 {dateText} 영상 목록 ({videos.length}개)</h2>
             <p className="tab-description">
-              해당 날짜에 총 {videos.length}개의 녹화 영상이 존재합니다. 시청할 영상을 선택해 주세요.
+              해당 날짜에 총 {videos.length}개의 영상이 존재합니다. 시청할 영상을 선택해 주세요.
             </p>
           </div>
           <button className="clip-modal-close" onClick={onClose}>✕</button>
@@ -3212,7 +3642,6 @@ function DateVideosModal({ dateText, videos, onClose, onSelectVideo }) {
                 <h3>{getVideoDisplayTitle(v, videos)}</h3>
                 <div className="date-video-card-meta">
                   <span>⏱ 영상 길이: {formatTime(v.duration)}</span>
-                  <span>📍 위치: {v.camera}</span>
                   <span>⏱ 시작: {v.startTime}</span>
                 </div>
               </div>
@@ -3234,19 +3663,15 @@ function RequireAuth({ children }) {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
   const [user, setUser] = useState(() => !!getToken());
-  const [isInitializing, setIsInitializing] = useState(true);
 
+  // 저장된 사용자 정보로 바로 화면을 그리고, 최신 정보는 뒤에서 받아 갱신한다
   useEffect(() => {
     if (getToken()) {
       api.getMe().then((u) => {
         setCurrentUser(u);
         saveAuth(getToken(), u);
-      }).catch(() => {});
+      }).catch(() => { });
     }
-    const timer = setTimeout(() => {
-      setIsInitializing(false);
-    }, 1000);
-    return () => clearTimeout(timer);
   }, []);
 
   const handleUpdateUser = (updatedUser) => {
@@ -3259,10 +3684,6 @@ export default function App() {
     setCurrentUser(null);
     setUser(false);
   };
-
-  if (isInitializing) {
-    return <AppLoadingScreen />;
-  }
 
   return (
 

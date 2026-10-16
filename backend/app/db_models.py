@@ -65,9 +65,12 @@ class AnalysisTask(Base):
     bbox_xmax = Column(Integer, nullable=False)
     bbox_ymax = Column(Integer, nullable=False)
 
-    status = Column(String(50), default="PENDING")  # PENDING/PROCESSING/SUCCESS/FAILURE
+    status = Column(String(50), default="PENDING")  # PENDING/PROCESSING/SUCCESS/FAILURE/CANCELLED
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)   # 분석 요청 시각(UTC)
+    # 분석 이력용 — 이 컬럼들을 넣기 전 분석은 NULL 이다
+    finished_at = Column(DateTime, nullable=True)   # 끝난 시각(UTC): 성공·실패·취소
+    event_count = Column(Integer, nullable=True)    # 이 분석이 찾은 사고 의심 클립 수 (성공 시)
 
     video = relationship("Video", back_populates="analysis_tasks")
     crash_events = relationship("CrashEvent", back_populates="task")

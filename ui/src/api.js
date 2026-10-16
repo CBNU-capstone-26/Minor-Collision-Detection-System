@@ -30,6 +30,15 @@ async function request(path, { method = "GET", body, isForm = false, signal } = 
     payload = JSON.stringify(body);
   }
   const res = await fetch(`/api${path}`, { method, headers, body: payload, signal });
+  // 로그인이 만료됐거나 토큰이 유효하지 않으면 저장된 로그인 정보를 지우고 로그인 화면으로.
+  // (로그인·회원가입 자체의 401 — 아이디/비밀번호 오류 — 는 화면에 그대로 보여 준다)
+  if (res.status === 401 && !path.startsWith("/auth/login") && !path.startsWith("/auth/signup")) {
+    clearAuth();
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.replace("/login?expired=1");
+    }
+    throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+  }
   if (!res.ok) {
     let detail = `요청 실패 (${res.status})`;
     try {
@@ -51,8 +60,14 @@ function normalizeEvent(e) {
     timestamp: Math.round(e.timestamp_sec || 0),
     endTimestamp:
       e.end_timestamp_sec != null ? Math.round(e.end_timestamp_sec) : null,
+    // 반올림 전 값 — 재생바의 사고 구간 위치·이동처럼 1초보다 정확해야 하는 곳에 쓴다
+    startSec: e.timestamp_sec || 0,
+    endSec: e.end_timestamp_sec ?? null,
+    analyzedAt: e.analyzed_at || null, // 분석이 끝나 클립이 만들어진 시각(ISO, UTC)
+    analysisNo: e.analysis_no ?? null, // 이 영상의 몇 번째 분석에서 나온 클립인지 (한 번의 분석 = 같은 번호)
     prob: e.crash_prob,
     hasClip: !!e.has_clip,
+    hasRawClip: !!e.has_raw_clip, // 합성 없는 원본 사고 클립을 내려받을 수 있는지
     title: "사고 의심 구간",
     status:
       e.crash_prob != null && e.crash_prob >= 0.5 ? "확인 필요" : "분석 완료",
@@ -65,12 +80,27 @@ export function normalizeVideo(v) {
     id: v.id,
     date: v.recording_date || (created ? created.slice(0, 10) : ""),
     startTime: v.recording_start_time || "20:30",
-    camera: v.camera_location || "주차장",
     duration: Math.round(v.duration_sec || 0),
     width: v.width,
     height: v.height,
     fps: v.fps,
     events: (v.events || []).map(normalizeEvent),
+    // 분석을 한 번이라도 완료했는지 — 다시 분석할 때 확인 문구를 바꾼다
+    analyzedBefore: !!v.analysis_done,
+    // 가장 최근 분석 작업 — 실패·중단이면 화면이 '다시 실행'을 안내한다
+    lastTask: v.last_task
+      ? { id: v.last_task.task_id, status: v.last_task.status, errorMessage: v.last_task.error_message }
+      : null,
+    // 분석 이력(요청 순) — 영상 상세에서만 온다. 시각은 ISO(UTC)
+    analysisHistory: (v.analysis_history || []).map((h) => ({
+      no: h.analysis_no,
+      taskId: h.task_id,
+      status: h.status,
+      errorMessage: h.error_message,
+      requestedAt: h.requested_at,
+      finishedAt: h.finished_at,
+      eventCount: h.event_count, // 찾은 클립 수 (이력 기능 전 분석은 null)
+    })),
   };
 }
 
@@ -119,5 +149,11 @@ export const api = {
     request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox, signal }),
   taskStatus: (taskId) => request(`/tasks/${taskId}`),
   cancelTask: (taskId) => request(`/tasks/${taskId}/cancel`, { method: "POST" }),
+  // 로그인한 사용자의 대기·진행 중 분석(창을 다시 열 때 진행 상황 복원용)
+  activeTasks: () => request("/tasks/active"),
+  // 실패·취소된 분석을 같은 영상·같은 차량 박스로 다시 실행
+  retryTask: (taskId) => request(`/tasks/${taskId}/retry`, { method: "POST" }),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,
+  // 박스·상태 띠 없이 사고 구간만 자른 원본 클립(다운로드)
+  rawClipUrl: (eventId) => `/api/events/${eventId}/clip/raw`,
 };

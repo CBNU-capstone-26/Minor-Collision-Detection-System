@@ -1,20 +1,23 @@
 # ================================================================
 # requirements-train.txt
-# 물피도주 감지 "모델 학습 · 추론" 전용 Python 환경 (model/ · x3d model/)
+# 물피도주 감지 "모델 학습 · 추론" 전용 Python 환경 (model/ = x3d-m)
 # 재현 검증 환경: Python 3.11.15 (로컬 CPU) / Python 3.10 (학습 서버 GPU, RTX 3080)
+# 2026-10 학습 서버(RTX A5000 ×8, 컨테이너 nvidia/cuda:11.8.0-cudnn8-*-ubuntu22.04 → Python 3.10)용
+#   조합 Python 3.10 + torch 2.7.1 / torchvision 0.22.1(cu118) + numpy 2.2.6 + opencv 5.0.0
+#   을 로컬(CPU 빌드)에서 학습·평가·클립 생성까지 돌려 확인했다(2026-10-13, 3.11 환경과 입력 텐서 동일).
 #
 # 이 파일은 ML 코드(train / predict / eval)만 실행하기 위한 최소 의존성입니다.
 # 웹 서비스(FastAPI·Celery·MySQL·Redis)는 포함하지 않습니다 → 그건 루트 requirements.txt 사용.
 # ================================================================
 #
 # -- 무엇을 위한 파일인가 -----------------------------------------
-#   백본마다 폴더가 따로 있고, 그 폴더 안에서 실행한다(폴더명에 공백이 있어 -m 불가).
-#   사용 백본: model/(s3d), x3d model/(x3d-m)  ※ slowfast model/ 은 사용 안 함
-#     (cd "x3d model" && PRETRAINED=1 python3 -u main.py --mode train)    # 학습
-#     (cd "x3d model" && EVAL_WEIGHTS=../weights/<파일> python3 -u main.py --mode eval)
-#     (cd "x3d model" && python3 -u main.py --mode predict)                # 단일 영상 CAM
-#     (cd "x3d model" && python3 ../check_probs.py ../weights/<파일>)      # 검증셋 확률 분포
-#     (cd "x3d model" && python3 trainplot.py ../outputs/trainlogs/*.csv)  # 학습 곡선 그래프
+#   서비스·학습 모델은 model/(x3d-m)이고, 그 폴더 안에서 실행한다.
+#   (예전 s3d 백본은 "s3d model/" 로 옮겨 git 에서 제외했다. slowfast model/ 은 사용 안 함)
+#     (cd model && PRETRAINED=1 python3 -u main.py --mode train)    # 학습
+#     (cd model && EVAL_WEIGHTS=../weights/<파일> python3 -u main.py --mode eval)
+#     (cd model && python3 -u main.py --mode predict)                      # 단일 영상 CAM
+#     (cd model && python3 ../check_probs.py ../weights/<파일>)            # 검증셋 확률 분포
+#     (cd model && python3 trainplot.py ../outputs/trainlogs/*.csv)        # 학습 곡선 그래프
 #   ※ 파이프(| tee)로 로그를 받을 땐 -u 를 붙여야 출력이 바로 보인다(버퍼링).
 #
 # -- 학습 서버 준비: tmux (시스템 패키지 — pip 이 아님) --------------
@@ -39,6 +42,8 @@
 #       (nvidia-smi 의 'CUDA Version' 확인 → cu121 / cu124 / cu126 / cu128 …)
 #       pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision
 #     → torch·torchvision 짝은 pip이 자동 해결 (cu121이면 2.5.1 + 0.20.1)
+#     CUDA 11.8 컨테이너(2026-10 학습 서버)는 cu118 — cu118 빌드는 torch 2.7.1 이 마지막이다:
+#       pip install --index-url https://download.pytorch.org/whl/cu118 torch==2.7.1 torchvision==0.22.1
 #     → config.py 의 TRAIN_DEVICE_TYPE="cuda"
 #
 #   • 추론(CPU, 서비스/로컬 검증):
@@ -63,17 +68,18 @@
 #   torch          # >= 2.5.1 이면 동작 (인덱스 제공 최신 권장)
 #   torchvision    # torch와 짝 맞춰 자동 설치 — S3D 백본 + Kinetics-400 사전학습 제공
 
-# ---- 영상 처리 / 수치 연산 (dataset·predict_cam·evaluate) ----
+# ---- 영상 처리 / 수치 연산 (dataset·inference·evaluate) ----
 # Python 버전에 따라 제공되는 최신 버전이 다르므로 하한(>=)만 지정해 이식성 확보.
 # (정확 핀(==)은 특정 Python에서만 휠이 있어 resolution 실패 위험 — 예: numpy 2.4.x는 Python 3.11+ 전용)
 # 로컬 검증(Python 3.11.15) 당시 실제 버전: numpy 2.4.6 / opencv 4.13.0.92 / pillow 12.2.0 / tqdm 4.68.1
 numpy>=1.24                         # 수치 연산 (Python 3.10 → 2.2.x, 3.11+ → 2.4.x 등 자동 선택)
 opencv-python-headless>=4.8         # cv2: 프레임 디코딩·크롭·CAM 오버레이·클립 렌더링
+imageio-ffmpeg>=0.6.0               # 시스템 ffmpeg가 없을 때 쓰는 내장 ffmpeg (predict 모드 클립 H.264 변환)
 pillow>=10.0                        # PIL: 데이터 증강(색상 지터 등) 시 이미지 변환
 tqdm>=4.65                          # 평가 진행률 표시
 
-# ---- X3D 백본 (x3d model/) ----
-# x3d_m 모델 정의와 Kinetics-400 사전학습 가중치를 제공한다. s3d 만 쓸 땐 불필요.
+# ---- X3D 백본 (model/) ----
+# x3d_m 모델 정의와 Kinetics-400 사전학습 가중치를 제공한다.
 # PyPI 최신이 0.1.5(2022)이며 fvcore·iopath·av 가 함께 설치된다.
 # 로컬 검증: pytorchvideo 0.1.5 + torchvision 0.27.0 에서 x3d 학습·추론 정상 동작.
 pytorchvideo>=0.1.5
@@ -81,3 +87,10 @@ pytorchvideo>=0.1.5
 # ---- 학습 곡선 그래프 (trainplot.py — 학습 중 매 에포크 PNG 생성) ----
 # 없으면 그래프만 건너뛰고 학습은 계속된다. 로컬 검증: 3.11.1
 matplotlib>=3.7
+
+# ---- 추론 가속 (선택 — CPU 로 평가할 때만 의미. 없으면 PyTorch 로 평가) ----
+# 평가는 서비스와 같은 추론 실행기(model/infer_runtime.py)를 쓴다. GPU 서버에서는 PyTorch GPU 를
+# 쓰므로 필요 없다. CPU 에서 평가를 빠르게 하려면 설치한다.
+# openvino>=2025.0
+# onnxruntime>=1.20
+# onnx>=1.16

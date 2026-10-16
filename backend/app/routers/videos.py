@@ -1,7 +1,7 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
 import shutil
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from pathlib import Path
 
@@ -21,6 +21,33 @@ router = APIRouter(prefix="/api/videos", tags=["videos"])
 
 
 # ---------- 직렬화 헬퍼 ----------
+def raw_clip_path(ev: db_models.CrashEvent):
+    """합성 없는 원본 사고 클립 경로 — 분석 때 표시 클립 옆에 '<이름>_raw.mp4' 로 만든다.
+    (DB 컬럼을 늘리지 않으려고 이름 규칙으로 찾는다. 예전 분석 결과엔 없을 수 있다)"""
+    if not ev.cam_heatmap_path:
+        return None
+    p = settings.abs_path(ev.cam_heatmap_path)
+    return p.with_name(f"{p.stem}_raw{p.suffix}")
+
+
+def _unlink_event_clips(ev: db_models.CrashEvent):
+    """이벤트의 표시 클립과 원본 클립 파일을 지운다."""
+    if ev.cam_heatmap_path:
+        get_storage().delete(ev.cam_heatmap_path)
+        get_storage().delete(settings.rel_path(raw_clip_path(ev)))
+
+
+def analysis_no(ev: db_models.CrashEvent):
+    """이 클립을 만든 분석이 그 영상의 몇 번째 분석인지(1부터).
+
+    실패·취소된 분석도 한 번으로 센다(6번째로 돌린 분석이면 6). 한 번의 분석에서 나온 클립들은
+    같은 번호다. 분석 작업 기록은 클립을 지워도 남고 영상을 지울 때만 지워져서, 이전 클립을
+    지워도 번호가 바뀌지 않는다. '다시 실행'도 새 분석 작업이라 한 번으로 센다.
+    """
+    ids = sorted(t.id for t in ev.video.analysis_tasks)
+    return ids.index(ev.task_id) + 1 if ev.task_id in ids else None
+
+
 def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
     return api_schemas.EventOut(
         id=ev.id,
@@ -29,11 +56,39 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_timestamp_sec=ev.end_timestamp_sec,
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
-        has_clip=bool(ev.cam_heatmap_path) and get_storage().exists(ev.cam_heatmap_path),
+        has_clip=bool(ev.cam_heatmap_path),
+        has_raw_clip=bool(ev.cam_heatmap_path) and get_storage().exists(settings.rel_path(raw_clip_path(ev))),
+        analyzed_at=_utc(ev.created_at),
+        analysis_no=analysis_no(ev),
     )
 
 
-def to_video_out(v: db_models.Video) -> api_schemas.VideoOut:
+def _utc(dt):
+    """DB 엔 UTC 를 시간대 없이 저장하므로 UTC 라고 붙인다 → 브라우저가 자기 시간대로 바꿔 보여준다."""
+    return dt.replace(tzinfo=timezone.utc) if dt else None
+
+
+def analysis_history(v: db_models.Video) -> list[api_schemas.AnalysisHistoryOut]:
+    """영상의 분석 이력(요청 순). 번호는 analysis_no 와 같은 기준이다."""
+    first_clip_at = {}   # 이력 기능 전 성공 분석의 끝난 시각 대신 — 그 분석 클립이 만들어진 시각
+    for ev in v.crash_events:
+        if ev.created_at and (ev.task_id not in first_clip_at or ev.created_at < first_clip_at[ev.task_id]):
+            first_clip_at[ev.task_id] = ev.created_at
+    out = []
+    for i, t in enumerate(sorted(v.analysis_tasks, key=lambda x: x.id)):
+        out.append(api_schemas.AnalysisHistoryOut(
+            analysis_no=i + 1,
+            task_id=t.id,
+            status=t.status,
+            error_message=t.error_message,
+            requested_at=_utc(t.created_at),
+            finished_at=_utc(t.finished_at or first_clip_at.get(t.id)),
+            event_count=t.event_count,
+        ))
+    return out
+
+
+def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.VideoOut:
     duration = v.total_frames / v.fps if v.fps else 0.0
     return api_schemas.VideoOut(
         id=v.id,
@@ -49,7 +104,19 @@ def to_video_out(v: db_models.Video) -> api_schemas.VideoOut:
         detected_vehicles=v.detected_vehicles,
         created_at=v.created_at,
         events=[to_event_out(e) for e in v.crash_events],
+        last_task=_last_task_out(v),
+        analysis_done=any(t.status == "SUCCESS" for t in v.analysis_tasks),
+        analysis_history=analysis_history(v) if with_history else [],
     )
+
+
+def _last_task_out(v: db_models.Video):
+    """가장 최근 분석 작업(없으면 None)."""
+    if not v.analysis_tasks:
+        return None
+    t = max(v.analysis_tasks, key=lambda x: x.id)
+    return api_schemas.LastTaskOut(task_id=t.id, status=t.status,
+                                   error_message=t.error_message, created_at=t.created_at)
 
 
 
@@ -183,7 +250,7 @@ def get_video(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
-    return to_video_out(_get_owned_video(video_id, db, user))
+    return to_video_out(_get_owned_video(video_id, db, user), with_history=True)
 
 
 @router.delete("/{video_id}")
@@ -199,8 +266,7 @@ def delete_video(
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.video_id == video_id).all()
     for ev in events:
-        if ev.cam_heatmap_path:
-            get_storage().delete(ev.cam_heatmap_path)
+        _unlink_event_clips(ev)
         db.delete(ev)
 
     # 2) analysis_tasks 행 삭제
@@ -235,8 +301,7 @@ def delete_crash_event(
     if event is None:
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
 
-    if event.cam_heatmap_path:
-        get_storage().delete(event.cam_heatmap_path)
+    _unlink_event_clips(event)
 
     db.delete(event)
     db.commit()
@@ -256,8 +321,7 @@ def clear_all_crash_events(
     ).all()
     count = len(events)
     for ev in events:
-        if ev.cam_heatmap_path:
-            get_storage().delete(ev.cam_heatmap_path)
+        _unlink_event_clips(ev)
         db.delete(ev)
     db.commit()
     return {"deleted_count": count}

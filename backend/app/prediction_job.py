@@ -4,6 +4,7 @@ torch/opencv/모델 임포트는 모두 **태스크 내부에서 지연 로딩**
 → FastAPI 웹 프로세스는 ML 의존성 없이도 이 모듈을 임포트(.delay 호출)할 수 있다.
 """
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from app.worker import celery_app
@@ -31,7 +32,8 @@ def _get_model():
     from hitandrun_model import HitAndRun3DCNN
     from device_utils import get_device, is_channels_last_3d_supported
 
-    # 추론 디바이스(config.INFER_DEVICE_TYPE) 사용 — 서비스 워커는 기본 CPU
+    # 추론 디바이스(config.INFER_DEVICE_TYPE="cuda") — GPU 가 없으면 get_device 가
+    # 경고를 찍고 CPU 로 자동 전환한다. 실제 디바이스는 아래 '모델 로드 완료' 로그로 확인.
     device = get_device(model_config.INFER_DEVICE_TYPE)
     # 배포 가중치 경로는 model/config.py 에서 관리 (SERVICE_WEIGHTS_PATH)
     state_dict = torch.load(
@@ -46,9 +48,16 @@ def _get_model():
     if is_channels_last_3d_supported(device) and model_config.USE_CHANNELS_LAST:
         model = model.to(memory_format=torch.channels_last_3d)
     model.eval()
-    _model = model
     print(f"[worker] 모델 로드 완료 — {getattr(model_config, 'MODEL_NAME', '?')} "
           f"(device={device}, weights={model_config.SERVICE_WEIGHTS_PATH.name})")
+    # 추론 실행 방식을 모델 로드 때 정해 둔다(이 컴퓨터에서 처음이면 자가 검사, 이후엔 저장된 결과).
+    # 실패해도 분석은 PyTorch 로 돌아야 하므로 여기서 예외를 막는다.
+    try:
+        from infer_runtime import get_runner
+        get_runner(model)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] 추론 실행 방식 선택 실패 — PyTorch 로 진행: {exc}")
+    _model = model
     return _model
 
 
@@ -60,24 +69,45 @@ def run_prediction_task(self, task_id: int):
         task = db.get(db_models.AnalysisTask, task_id)
         if task is None:
             return {"error": f"task {task_id} not found"}
+        # 취소 표시는 워커 메모리(revoke)에만 있어서 워커가 재시작되면 사라지고,
+        # 대기 중이던 메시지가 다시 배달될 수 있다 → DB 상태로 한 번 더 거른다.
+        if task.status != "PENDING":
+            return {"task_id": task_id, "skipped": task.status}
 
         task.status = "PROCESSING"
         db.commit()
+        # 화면 단계 표시: 모델 불러오기(처음이면 추론 실행 방식 자가 검사 포함)
+        self.update_state(state="PROGRESS", meta={"percent": 0, "stage": "loading"})
 
         video = db.get(db_models.Video, task.video_id)
         model = _get_model()
 
-        from predict_cam import predict_events_and_clips
+        try:
+            from inference import predict_events_and_clips
+        except ImportError:
+            # 이전 백본 폴더("s3d model" 등, MODEL_VARIANT)는 옛 파일명 그대로다
+            from predict_cam import predict_events_and_clips
 
-        # 추론 진행도를 Celery 상태(Redis)에 기록 → /tasks 엔드포인트가 읽어 프론트에 전달.
-        # pass-1(윈도우 추론)을 0~95%로 매핑(마지막 5%는 클립 렌더/마무리 몫).
-        _last_pct = {"v": -1}
+        # 진행률(%)과 남은 시간(초)을 Celery 상태(Redis)에 기록 → /tasks 가 읽어 화면에 전달.
+        # 진행률은 0~99 — 100%는 작업 완료(SUCCESS)로만 표시한다. 남은 시간은 분석 함수가
+        # 실제로 잰 속도로 계산해 주며, 진행률이 그대로여도 1.5초마다 갱신해 준다.
+        import time as _time
+        _last = {"pct": -1, "t": 0.0}
 
-        def _on_progress(frac):
-            pct = int(frac * 95)
-            if pct != _last_pct["v"]:      # 정수 % 바뀔 때만 기록(과도한 갱신 방지)
-                _last_pct["v"] = pct
-                self.update_state(state="PROGRESS", meta={"percent": pct})
+        def _on_progress(frac, eta=None, eta_min=False, stage=None, count=None, index=None):
+            # stage·count·index: 지금 단계와 그 단계의 개수/순번(model/inference.py _report 참고).
+            # 진행률은 소수 첫째 자리까지 — 긴 영상에서 1%가 오래 걸려도 막대가 조금씩 움직이게.
+            # 단계가 바뀌면 바로, 진행률만 바뀌면 0.4초에 한 번, 그대로여도 1.5초마다 기록한다.
+            pct = round(min(99.0, frac * 100), 1)
+            now = _time.time()
+            key = (stage, count, index)
+            if (key != _last.get("key")
+                    or (pct != _last["pct"] and now - _last["t"] >= 0.4)
+                    or now - _last["t"] >= 1.5):
+                _last.update(pct=pct, t=now, key=key)
+                self.update_state(state="PROGRESS", meta={
+                    "percent": pct, "eta": None if eta is None else int(round(eta)),
+                    "eta_min": bool(eta_min), "stage": stage, "count": count, "index": index})
 
         storage = get_storage()
         with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as video_path:
@@ -104,10 +134,22 @@ def run_prediction_task(self, task_id: int):
                     else:
                         clip_key = f"clips/{clip_path.name}"
                         storage.upload_path(clip_path, clip_key, content_type="video/mp4")
+                    if r.get("raw_clip_path") and not isinstance(storage, LocalObjectStorage):
+                        raw_path = Path(r["raw_clip_path"])
+                        storage.upload_path(raw_path, f"clips/{raw_path.name}", content_type="video/mp4")
                     r["storage_key"] = clip_key
             finally:
                 if output_context is not None:
                     output_context.cleanup()
+
+        # 분석 도중 취소됐는데(revoke 실패 등) 끝까지 돌았다면 결과를 버린다
+        db.refresh(task)
+        if task.status == "CANCELLED":
+            for r in results:
+                for key in ("clip_path", "raw_clip_path"):
+                    if r.get(key):
+                        storage.delete(r["storage_key"] if key == "clip_path" else str(Path(r["storage_key"]).with_name(Path(r["storage_key"]).stem + "_raw.mp4")))
+            return {"task_id": task_id, "skipped": "CANCELLED"}
 
         for r in results:
             db.add(db_models.CrashEvent(
@@ -122,6 +164,8 @@ def run_prediction_task(self, task_id: int):
             ))
 
         task.status = "SUCCESS"
+        task.finished_at = datetime.utcnow()
+        task.event_count = len(results)
         db.commit()
         return {"task_id": task_id, "events": len(results)}
 
@@ -131,6 +175,7 @@ def run_prediction_task(self, task_id: int):
         if task is not None:
             task.status = "FAILURE"
             task.error_message = str(exc)[:2000]
+            task.finished_at = datetime.utcnow()
             db.commit()
         raise
     finally:
