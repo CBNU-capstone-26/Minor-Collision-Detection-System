@@ -9,6 +9,27 @@ import {
 } from "react-router-dom";
 import { api, saveAuth, clearAuth, getToken, getStoredUser } from "./api";
 import "./App.css";
+import "./incident-ui.css";
+import "./premium-ui.css";
+
+function InterfaceIcon({ name }) {
+  const paths = {
+    user: <><circle cx="12" cy="8" r="3" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></>,
+    lock: <><rect x="5" y="10" width="14" height="11" rx="3" /><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" /></>,
+    chart: <><path d="M4 4v16h17M8 15v-4M13 15V6M18 15V9" /></>,
+    moon: <path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z" />,
+    exit: <><path d="M10 4H5v16h5M10 12h11M17 8l4 4-4 4" /></>,
+  };
+  return <svg className="interface-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
+function TeamFooter({ animated = false }) {
+  return <footer className={`siot-team-footer ${animated ? "scroll-reveal" : ""}`}>
+    <div className="team-footer-brand"><strong>SIOT<span>.</span></strong><p>충북대학교 소프트웨어학부</p><small>Parking incident intelligence</small></div>
+    <div className="team-footer-people"><span className="team-footer-label">THE TEAM</span><p><span>팀장</span> 이정주</p><p><span>팀원</span> 박마누엘정, 배기원, 서범교</p></div>
+    <a className="team-footer-github" href="https://github.com/CBNU-capstone-26/Minor-Collision-Detection-System" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span><small>프로젝트 저장소</small></a>
+  </footer>;
+}
 
 // 선으로 그린 휴지통 아이콘 — 글자색(currentColor)을 따라가서 평소 회색 → 마우스 올리면 빨강.
 // (🗑 이모지는 자체 색이라 hover 색이 안 먹고, 운영체제마다 모양이 달랐다)
@@ -147,7 +168,7 @@ function LoginPage({ onLogin }) {
     const elements = document.querySelectorAll(".scroll-reveal");
     elements.forEach((el) => observer.observe(el));
 
-    return () => elements.forEach((el) => observer.unobserve(el));
+    return () => observer.disconnect();
   }, []);
 
   const handleLogin = async () => {
@@ -165,11 +186,11 @@ function LoginPage({ onLogin }) {
   return (
     <div className="public-login-page">
       <header className="public-navbar">
-        <button className="public-brand" onClick={() => navigate("/login")}>
-          <img className="public-brand-logo" src="/siot-logo.svg" alt="SIOT" />
+        <button className="public-brand" onClick={() => navigate("/login")} aria-label="SIOT 홈으로 이동">
+          <span className="workspace-wordmark">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span>
         </button>
         <div className="public-nav-meta">
-          <span className="public-nav-label">Parking incident intelligence</span>
+          <nav className="premium-nav-links" aria-label="서비스 소개"><a href="#overview">SIOT</a><a href="#why-siot">주요 기능</a><a href="#review-preview">클립 검토</a></nav>
           <button className="public-login-trigger" onClick={() => setIsLoginOpen(true)}>
             LOGIN <span aria-hidden="true">↗</span>
           </button>
@@ -177,26 +198,26 @@ function LoginPage({ onLogin }) {
       </header>
 
       <main className="public-main">
-        <section className="public-hero">
+        <section className="public-hero" id="overview">
           <div className="public-hero-copy scroll-reveal">
-            <p className="public-kicker">CCTV EVENT REVIEW / 01</p>
-            <h1>관리자가 모든 영상을<br /><em>보지 않아도, AI가 먼저 찾습니다.</em></h1>
+            <p className="public-kicker"><span className="premium-status-dot" /> SIOT · PARKING INTELLIGENCE</p>
+            <h1>스쳐 간 순간.<br /><em>선명해지는 단서.</em></h1>
             <p className="public-hero-description">
-              물피도주 의심 장면을 영상 속에서 찾아내고, 날짜와 이벤트 단위로 정리합니다.
-              흩어진 CCTV 기록을 확인 가능한 사고 데이터로 바꾸는 모니터링 시스템입니다.
+              수많은 CCTV 기록에서, 확인이 필요한 순간으로.
+              SIOT가 주차 중 접촉 의심 장면을 찾아 당신의 검토를 돕습니다.
             </p>
             <div className="public-hero-actions">
               <button className="public-primary-btn" onClick={() => setIsLoginOpen(true)}>
-                대시보드 열기 <span aria-hidden="true">→</span>
+                분석 시작하기 <span aria-hidden="true">→</span>
               </button>
-              <a className="public-text-link" href="#why-siot">왜 필요한가 <span aria-hidden="true">↓</span></a>
+              <a className="public-text-link" href="#why-siot">SIOT 살펴보기 <span aria-hidden="true">↓</span></a>
             </div>
           </div>
 
           <div className="public-hero-panel scroll-reveal" aria-label="SIOT 분석 흐름">
             <div className="public-panel-topline">
-              <span>LIVE REVIEW SYSTEM</span>
-              <span className="public-live-dot">● ONLINE</span>
+              <span>INCIDENT PREVIEW</span>
+              <span className="public-live-dot">● DEMO</span>
             </div>
             <div className="public-scan-frame">
               <div className="public-scan-grid" />
@@ -208,10 +229,11 @@ function LoginPage({ onLogin }) {
                   <span className="public-detected-label">DETECTED</span>
                 </div>
               </div>
-              <div className="public-scan-caption">FRAME 004281 / CAMERA C1</div>
+              <div className="public-scan-caption">SIMULATION / 실제 분석 결과가 아닌 예시입니다</div>
             </div>
 
 
+            <div className="premium-preview-timeline" aria-hidden="true"><span /><span /><span /><i /></div>
             <div className="public-panel-footer">
               <span>의심 구간 감지</span>
               <strong>→ 날짜별 이벤트로 정리</strong>
@@ -226,54 +248,26 @@ function LoginPage({ onLogin }) {
           <p>AI가 영상을 먼저 훑고, 관리자는 필요한 장면에 집중합니다.</p>
         </section>
 
-        <section className="public-insight-section" id="why-siot">
-          <div className="public-section-heading scroll-reveal">
-            <p className="public-kicker">RECENT HIT-AND-RUN TREND</p>
-            <h2>반복되는 물피도주,<br /><em>AI 선별이 필요한 이유</em></h2>
-            <p>
-              공개된 지역 경찰 통계와 최근 보도에서 확인되는 흐름을 한눈에 정리했습니다.
-              SIOT는 수많은 CCTV 영상 중 확인이 필요한 순간을 먼저 좁혀 관리자의 시간을 줄입니다.
-            </p>
-          </div>
-          <div className="public-trend-table-wrap scroll-reveal">
-            <div className="public-trend-table-heading">
-              <span>INDICATOR</span><span>OBSERVED DATA</span><span>WHAT IT MEANS</span>
-            </div>
-            <div className="public-trend-row highlight">
-              <strong>전국 / 2024</strong>
-              <b>약 7만 건</b>
-              <span>경찰청 교통 단속 통계를 인용한 2024년 연간 신고 접수 규모</span>
-            </div>
-            <div className="public-trend-row">
-              <strong>광주 / 2021</strong>
-              <b>약 9,600건</b>
-              <span>지역 경찰 집계 기준 하루 약 25건꼴로 발생한 사고 후 미조치</span>
-            </div>
-            <div className="public-trend-row">
-              <strong>확보 시간</strong>
-              <b>2~4주</b>
-              <span>주차장 CCTV는 덮어쓰기 전에 필요한 구간을 먼저 확보해야 함</span>
-            </div>
-            <small className="public-trend-source">출처: 2026.06.18 로톡뉴스의 경찰청 교통 단속 통계 2024 인용 보도, 2022.10.24 광주방송의 광주경찰 집계 보도. CCTV 보존 기간은 로톡뉴스 안내를 참고했습니다.</small>
+        <section className="premium-showcase scroll-reveal" id="review-preview">
+          <div className="premium-showcase-copy"><p className="public-kicker">SIOT. A CLOSER LOOK.</p><h2>놓치기 쉬운 접촉.<br /><span>다시 볼 수 있는 순간.</span></h2><p>긴 영상에서 의심 구간으로.<br />클립과 원본을 함께 확인하는 명확한 검토 경험.</p><a className="public-text-link" href="#why-siot">검토 흐름 살펴보기 <span aria-hidden="true">↗</span></a></div>
+          <div className="premium-review-window" aria-label="사고 의심 구간 검토 화면 예시">
+            <div className="premium-window-top"><span><i /><i /><i /></span><b>SIOT / CLIP REVIEW</b><small>예시 화면</small></div>
+            <div className="premium-window-scene"><div className="premium-parking-lines" /><div className="premium-scene-car parked" /><div className="premium-scene-car passing" /><div className="premium-scene-target"><span>차량 선택</span></div><span className="premium-scene-note">접촉 의심 구간 · 원본 확인 필요</span></div>
+            <div className="premium-window-bottom"><span aria-hidden="true">▶</span><div><i /></div><span>00:12 / 00:48</span></div>
           </div>
         </section>
+        <section className="premium-story" id="why-siot">
+          <div className="premium-story-heading scroll-reveal"><p className="public-kicker">LESS SEARCHING. MORE CLARITY.</p><h2>긴 기록은 짧게.<br /><span>중요한 순간은 깊게.</span></h2><p>차량을 고르고, 의심 구간을 찾고, 원본으로 확인하는 일.<br />복잡했던 영상 검토를 하나의 흐름으로 연결합니다.</p></div>
+          <div className="premium-feature-grid">
+            <article className="premium-feature scroll-reveal"><span className="premium-feature-index">01 / FOCUS</span><div className="premium-focus-art" aria-hidden="true"><span /><i /><b /></div><h3>한 대에 집중하는 시선.</h3><p>자동 차량 탐지와 직접 지정으로<br />확인할 차량을 명확하게 선택하세요.</p><span className="premium-feature-tag">차량 탐지 · 영역 지정</span></article>
+            <article className="premium-feature scroll-reveal"><span className="premium-feature-index">02 / DISCOVER</span><div className="premium-wave-art" aria-hidden="true">{Array.from({length: 23}, (_, i) => <i key={i} style={{"--bar-height": `${20 + ((i * 37) % 65)}%`, "--bar-delay": `${i * 65}ms`}} />)}</div><h3>기록 속, 의심되는 순간.</h3><p>선택한 차량의 접촉 의심 장면을<br />분석하고 클립 단위로 살펴보세요.</p><span className="premium-feature-tag">의심 구간 분석 · 클립 확인</span></article>
+            <article className="premium-feature scroll-reveal"><span className="premium-feature-index">03 / REVIEW</span><div className="premium-review-art" aria-hidden="true"><span>00:12 <b>의심 구간</b></span><span>00:28 <b>원본 확인</b></span><span>00:41 <b>클립 검토</b></span></div><h3>판단을 위한, 더 나은 맥락.</h3><p>분석 이력과 원본 클립을 함께 확인해<br />장면의 전후 맥락을 검토하세요.</p><span className="premium-feature-tag">분석 이력 · 원본 다운로드</span></article>
+          </div>
+        </section>
+        <section className="premium-closing scroll-reveal"><span className="public-kicker">YOUR NEXT CLEAR MOMENT</span><h2>이제, 필요한 장면에만<br />집중하세요.</h2><button className="public-primary-btn" onClick={() => setIsLoginOpen(true)}>SIOT 시작하기 <span aria-hidden="true">↗</span></button><p>AI 감지는 검토를 돕는 보조 정보입니다. 최종 확인은 원본 영상으로 진행하세요.</p></section>
       </main>
 
-      <footer className="public-footer scroll-reveal">
-        <div className="footer-left">
-          <div className="footer-title">SIOT</div>
-          <div className="footer-desc">
-            충북대학교 소프트웨어학부<br/>
-            CBNU Department of Software
-          </div>
-        </div>
-        <div className="footer-links">
-          <div className="footer-links-title">Links</div>
-          <a href="https://github.com/CBNU-capstone-26/Minor-Collision-Detection-System" target="_blank" rel="noreferrer">GitHub</a>
-          <a href="#" onClick={(e) => e.preventDefault()}>이용약관</a>
-          <a href="#" onClick={(e) => e.preventDefault()}>개인정보 처리방침</a>
-        </div>
-      </footer>
+      <TeamFooter animated />
 
       {isLoginOpen && (
         <div className="login-modal-overlay" onClick={() => setIsLoginOpen(false)}>
@@ -570,7 +564,7 @@ const HISTORY_STATUS = {
 // 영상 재생 화면 오른쪽: 이 영상의 분석 이력 (최근 분석이 위)
 // history: 서버가 준 분석 이력, events: 지금 남아 있는 클립(분석 번호별로 셈),
 // progressText(taskId): 진행 중인 분석의 진행 문구(없으면 null)
-function AnalysisHistoryPanel({ history, events, progressText, onClose }) {
+function AnalysisHistoryPanel({ history, events, progressText, onClose, onSelect }) {
   const remain = {};
   events.forEach((e) => {
     if (e.analysisNo != null) remain[e.analysisNo] = (remain[e.analysisNo] || 0) + 1;
@@ -620,6 +614,8 @@ function AnalysisHistoryPanel({ history, events, progressText, onClose }) {
             const result = resultOf(h);
             return (
               <li className="analysis-history-item" key={h.taskId}>
+                <button className="history-video-link" onClick={() => onSelect(h)} aria-label={`분석 #${h.no} 영상 보기`}>
+
                 <div className="ahi-top">
                   <span className="ahi-no">분석 #{h.no}</span>
                   <span className={`ahi-status ${st.cls}`}>{st.label}</span>
@@ -633,6 +629,8 @@ function AnalysisHistoryPanel({ history, events, progressText, onClose }) {
                 <div className={`ahi-result ${result.cls || ""}`} title={result.text}>
                   {result.text}
                 </div>
+                <span className="history-video-action">{remain[h.no] ? "의심 구간 영상 보기" : "원본 영상 보기"} <span aria-hidden="true">↗</span></span>
+                </button>
               </li>
             );
           })}
@@ -1810,7 +1808,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const v = videoElRef.current;
     if (v) {
       v.currentTime = event.startSec ?? event.timestamp;
-      v.play();
+      v.play().catch(() => {});
     }
   };
 
@@ -2039,7 +2037,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             onClick={handleDetectClick}
             title="선택한 차량의 사고예상 구간 탐지"
           >
-            사고감지 실행
+            의심 구간 분석
           </button>
         )}
 
@@ -2079,14 +2077,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       <header className="top-navbar">
         <div className="nav-section nav-left">
           <button className="nav-logo nav-home-btn" onClick={handleBackToHome} aria-label="SIOT 홈으로 이동">
-            <img src="/siot-logo.svg" alt="SIOT" />
+            <span className="workspace-wordmark">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span><span className="workspace-brand-caption">{currentView === "analytics" ? "INSIGHTS" : selectedVideo ? "REVIEW STUDIO" : "WORKSPACE"}</span>
           </button>
         </div>
 
         <div className="nav-section nav-center">
           {analyzingJobs.length === 0 ? (
             <div className="analysis-status-box analysis-status-idle">
-              <span className="analysis-idle-text">현재 분석 중인 영상이 없습니다</span>
+              <span className="analysis-idle-text">분석 대기 · 영상을 선택해 시작하세요</span>
             </div>
           ) : (() => {
             const lead = analyzingJobs[0];
@@ -2179,16 +2177,19 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               className="profile-trigger-btn simple-avatar-trigger"
               onClick={() => setIsProfileOpen(!isProfileOpen)}
               aria-label="프로필 메뉴 열기"
+              aria-expanded={isProfileOpen}
+              aria-controls="profile-menu"
             >
               <div className="profile-avatar">
                 <span>{avatarInitial}</span>
               </div>
+              <span className="profile-trigger-copy"><strong>{displayName}</strong><small>내 계정</small></span><span className="profile-trigger-chevron" aria-hidden="true">⌄</span>
             </button>
 
             {isProfileOpen && (
               <>
                 <div className="dropdown-overlay" onClick={() => setIsProfileOpen(false)} />
-                <div className="profile-dropdown-menu">
+                <div className="profile-dropdown-menu" id="profile-menu">
                   {/* 관리자/사용자 정보 요약 Header */}
                   <div className="dropdown-header">
                     <div className="header-avatar">{avatarInitial}</div>
@@ -2210,7 +2211,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       setActiveSettingsTab("account");
                     }}
                   >
-                    👤 {currentUser?.role === "ADMIN" ? "관리자 정보 수정" : "내 정보 수정"}
+                    <InterfaceIcon name="user" /> {currentUser?.role === "ADMIN" ? "관리자 정보 수정" : "내 정보 수정"}
                   </button>
                   <button
                     className="dropdown-item"
@@ -2220,7 +2221,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       setActiveSettingsTab("security");
                     }}
                   >
-                    🔑 비밀번호 변경
+                    <InterfaceIcon name="lock" /> 비밀번호 변경
                   </button>
 
                   <div className="dropdown-divider" />
@@ -2234,7 +2235,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       navigate("/analytics");
                     }}
                   >
-                    📊 이벤트 통계 그래프
+                    <InterfaceIcon name="chart" /> 이벤트 통계
                   </button>
 
                   <div className="dropdown-divider" />
@@ -2242,7 +2243,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   {/* 테마 설정 (Appearance) */}
                   <div className="dropdown-section-title">테마 설정</div>
                   <div className="dropdown-item-toggle">
-                    <span>🌙 다크 모드</span>
+                    <span className="theme-label"><InterfaceIcon name="moon" /> 다크 모드</span>
                     <label className="switch-mini">
                       <input
                         type="checkbox"
@@ -2263,7 +2264,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       onLogout();
                     }}
                   >
-                    🚪 로그아웃
+                    <InterfaceIcon name="exit" /> 로그아웃
                   </button>
                 </div>
               </>
@@ -2281,6 +2282,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         />
       ) : !selectedVideo ? (
         <main className="home-view">
+          <section className="incident-overview">
+            <div className="incident-overview-copy"><span className="incident-eyebrow">SIOT / INCIDENT REVIEW</span><h1>주차된 순간부터,<br />놓치지 않는 사고 단서.</h1><p>CCTV 속 접촉 의심 장면을 찾고, 필요한 구간을 빠르게 검토하세요.</p><button className="incident-upload" onClick={() => setShowUpload(true)}>영상 추가하고 분석 시작 <span aria-hidden="true">↗</span></button></div>
+            <div className="incident-metrics" aria-label="내 영상 현황">
+              <div><span>보관 영상</span><strong>{videos.length}<small>개</small></strong></div>
+              <div><span>사고 의심 구간</span><strong>{videos.reduce((sum, video) => sum + video.events.length, 0)}<small>건</small></strong></div>
+              <div><span>분석 진행</span><strong>{analyzingJobs.length}<small>개</small></strong></div>
+            </div>
+          </section>
+          <div className="incident-section-title"><div><span className="incident-eyebrow">VIDEO LIBRARY</span><h2>영상 보관함</h2></div><p>영상을 선택해 차량과 사고 의심 구간을 확인하세요.</p></div>
           {/* 기간 필터 및 영상 관리 툴바 */}
           <div className="home-toolbar">
             <div className="home-toolbar-filters">
@@ -2371,7 +2381,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         loading="lazy"
                         onError={(e) => { e.currentTarget.style.display = "none"; }}
                       />
-                      <span className="event-count-badge">이벤트 {video.events.length}건</span>
+                      <span className="event-count-badge">의심 구간 {video.events.length}건</span>
                       {deleteMode && (
                         <span className={`delete-check ${isSelected ? "checked" : ""}`}>
                           {isSelected ? "✓" : ""}
@@ -2448,6 +2458,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         </main>
       ) : (
         <main className={`watch-view ${isTheaterMode ? "theater-view" : ""}`}>
+          {!isTheaterMode && <section className="incident-workspace-header">
+            <div className="incident-workspace-top"><div><button className="incident-back" onClick={handleBackToHome}>← 영상 보관함</button><span className="incident-eyebrow">INCIDENT WORKSPACE</span><h1>{getVideoDisplayTitle(selectedVideo, videos)}</h1></div><span className={`incident-state ${isAnalyzing ? "is-running" : ""}`}><i aria-hidden="true" />{isAnalyzing ? "의심 구간 분석 중" : bboxList.length > 0 ? "분석할 차량 선택됨" : "검토 준비"}</span></div>
+            <ol className="incident-workflow" aria-label="물피도주 의심 구간 검토 순서">
+              <li className={bboxList.length > 0 ? "is-complete" : "is-current"}><span>01</span><div><strong>차량 선택</strong><small>자동 탐지 또는 직접 지정</small></div></li>
+              <li className={isAnalyzing ? "is-current" : ""}><span>02</span><div><strong>의심 구간 분석</strong><small>선택한 차량의 접촉 장면 탐색</small></div></li>
+              <li className={selectedVideo.events.length > 0 && !isAnalyzing ? "has-results" : ""}><span>03</span><div><strong>클립 검토</strong><small>원본과 의심 장면을 함께 확인</small></div><b>{selectedVideo.events.length}건</b></li>
+            </ol>
+          </section>}
+
           {/* 좁은 화면(1024px 이하): 영상 위 헤더에 버튼 묶음.
               넓은 화면은 헤더 줄 없이 영상을 맨 위로 — 버튼은 왼쪽 칸 맨 위에 둔다 */}
           {!actionsInSide && (
@@ -2467,8 +2486,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   <>
                     <div className="event-sidebar-header">
                       <div>
-                        <h3>감지된 사고 의심 클립</h3>
-                        <p className="event-summary">총 {selectedVideo.events.length}건이 있습니다.</p>
+                        <h3>사고 의심 구간</h3>
+                        <p className="event-summary">클립 {selectedVideo.events.length}건 · 직접 검토가 필요합니다.</p>
                       </div>
                       {/* 닫기(×) 아래에 전체 삭제 — 제목이 한 줄에 들어가도록 세로로 쌓는다 */}
                       <div className="event-header-actions">
@@ -2554,6 +2573,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
                     {/* 달력을 사이드바 이벤트 목록 하단으로 삽입 */}
                     <div className="sidebar-calendar-container">
+                      <div className="calendar-section-label"><span>영상 캘린더</span><small>날짜를 눌러 영상 보기</small></div>
                       <section className="event-calendar-panel" style={{ background: "transparent", padding: 0 }}>
                         <div className="calendar-header">
                           <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
@@ -2608,6 +2628,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                           })}
                         </div>
                       </section>
+                      <div className="calendar-legend"><span><i /> 영상 있음</span><span><i /> 의심 구간 있음</span><span><i /> 선택한 날짜</span></div>
                     </div>
                   </>
                 ) : (
@@ -3025,6 +3046,23 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   const job = analyzingJobs.find((j) => j.taskId === taskId);
                   return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
                 }}
+                onSelect={(history) => {
+                  const event = selectedVideo.events
+                    .filter((event) => event.analysisNo === history.no)
+                    .sort((a, b) => a.timestamp - b.timestamp)[0];
+                  if (event) {
+                    seekToEvent(event);
+                    if (event.hasClip) setClipEvent(event);
+                  } else {
+                    setCurrentEventId(null);
+                    const video = videoElRef.current;
+                    if (video) {
+                      video.currentTime = 0;
+                      video.play().catch(() => {});
+                    }
+                  }
+                  playerContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}
                 onClose={() => setIsHistoryOpen(false)}
               />
             ) : (
@@ -3041,23 +3079,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         </main>
       )}
 
+      {!selectedVideo && <TeamFooter />}
       {/* 설정 모달 */}
       {isSettingsOpen && (
         <div className="settings-modal-overlay" onClick={() => setIsSettingsOpen(false)}>
-          <div className="settings-modal-container" onClick={(e) => e.stopPropagation()}>
+          <div className="settings-modal-container" role="dialog" aria-modal="true" aria-label="계정 설정" onClick={(e) => e.stopPropagation()}>
             <div className="settings-modal-sidebar">
-              <h3>설정</h3>
+              <span className="account-settings-kicker">PERSONAL SPACE</span><h3>계정 설정</h3><div className="settings-identity"><span>{avatarInitial}</span><strong>{displayName}</strong><small>{roleLabel}</small></div>
               <button
                 className={`settings-tab-btn ${activeSettingsTab === "account" ? "active" : ""}`}
                 onClick={() => setActiveSettingsTab("account")}
               >
-                👤 내 정보 설정
+                <InterfaceIcon name="user" /> 내 정보 설정
               </button>
               <button
                 className={`settings-tab-btn ${activeSettingsTab === "security" ? "active" : ""}`}
                 onClick={() => setActiveSettingsTab("security")}
               >
-                🔑 비밀번호 변경
+                <InterfaceIcon name="lock" /> 비밀번호 변경
               </button>
               <button
                 className="settings-modal-close-btn"
@@ -3070,6 +3109,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             <div className="settings-modal-content">
               {activeSettingsTab === "account" && (
                 <div className="settings-tab-content">
+                  <span className="account-settings-kicker">MY ACCOUNT</span>
                   <h2>{currentUser?.role === "ADMIN" ? "관리자 정보 설정" : "내 정보 설정"}</h2>
                   <p className="tab-description">
                     {currentUser?.role === "ADMIN"
@@ -3078,13 +3118,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   </p>
 
                   <div className="settings-form-group">
-                    <label>계정 아이디</label>
-                    <input type="text" value={currentUsername} disabled className="disabled-input" />
+                    <label htmlFor="account-username">계정 아이디</label>
+                    <input id="account-username" type="text" value={currentUsername} disabled className="disabled-input" />
                   </div>
 
                   <div className="settings-form-group">
-                    <label>이름</label>
-                    <input
+                    <label htmlFor="account-name">이름</label>
+                    <input id="account-name"
                       type="text"
                       value={adminRealName}
                       onChange={(e) => setAdminRealName(e.target.value)}
@@ -3093,8 +3133,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   </div>
 
                   <div className="settings-form-group">
-                    <label>연락처</label>
-                    <input
+                    <label htmlFor="account-phone">연락처</label>
+                    <input id="account-phone"
                       type="text"
                       value={adminPhone}
                       onChange={(e) => setAdminPhone(e.target.value)}
@@ -3103,8 +3143,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   </div>
 
                   <div className="settings-form-group">
-                    <label>이메일 주소</label>
-                    <input
+                    <label htmlFor="account-email">이메일 주소</label>
+                    <input id="account-email"
                       type="email"
                       value={adminEmail}
                       onChange={(e) => setAdminEmail(e.target.value)}
@@ -3140,12 +3180,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
               {activeSettingsTab === "security" && (
                 <div className="settings-tab-content">
+                  <span className="account-settings-kicker">MY ACCOUNT</span>
                   <h2>비밀번호 변경</h2>
                   <p className="tab-description">시스템 보안을 위해 주기적으로 비밀번호를 변경해 주십시오.</p>
 
                   <div className="settings-form-group">
-                    <label>현재 비밀번호</label>
-                    <input
+                    <label htmlFor="account-current-password">현재 비밀번호</label>
+                    <input id="account-current-password"
                       type="password"
                       placeholder="현재 비밀번호 입력"
                       value={currentPassword}
@@ -3154,8 +3195,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   </div>
 
                   <div className="settings-form-group">
-                    <label>새 비밀번호</label>
-                    <input
+                    <label htmlFor="account-new-password">새 비밀번호</label>
+                    <input id="account-new-password"
                       type="password"
                       placeholder="새 비밀번호 입력"
                       value={newPassword}
@@ -3164,8 +3205,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   </div>
 
                   <div className="settings-form-group">
-                    <label>새 비밀번호 확인</label>
-                    <input
+                    <label htmlFor="account-confirm-password">새 비밀번호 확인</label>
+                    <input id="account-confirm-password"
                       type="password"
                       placeholder="새 비밀번호 다시 입력"
                       value={confirmPassword}

@@ -659,10 +659,10 @@ body.dark-mode .list-search-bar:focus-within .search-icon {
 
 /* 선택된 날짜는 빨간색 테두리로 강렬하게 구분 (날짜 숫자는 계속 보이도록 어두운 글씨) */
 .calendar-day.selected {
-  outline: 3px solid #ef4444 !important;
+  outline: none;
   outline-offset: -3px;
-  background: #fee2e2 !important;
-  color: #b91c1c !important;
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .calendar-date-number {
@@ -4980,7 +4980,7 @@ body.dark-mode .analysis-job-cancel-btn:hover {
 }
 
 .auto-detect-btn.detecting:hover {
-  background: #fee2e2 !important;
+  background: #fee2e2;
   border-color: #fca5a5 !important;
 }
 
