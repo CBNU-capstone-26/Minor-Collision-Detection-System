@@ -98,6 +98,17 @@ function useMediaQuery(query) {
   return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches);
 }
 
+// 세로 점 세 개(⋮) — 더 보기
+function MoreIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="12" cy="5" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="12" cy="19" r="2" />
+    </svg>
+  );
+}
+
 // 검색 아이콘 — 색 없이 선만 있는 돋보기 (이모지 🔍 는 OS 마다 색·모양이 달라서)
 function SearchIcon({ size = 16 }) {
   return (
@@ -644,6 +655,7 @@ function AnalysisHistoryPanel({ history, events, progressText, onClose }) {
 
 function getVideoDisplayTitle(video, allVideos) {
   if (!video) return "";
+  if (video.title) return video.title; // 업로드할 때 넣은 제목이 있으면 그대로
   const sameDateVideos = (allVideos || []).filter((v) => v.date === video.date);
   if (sameDateVideos.length > 1) {
     const sorted = [...sameDateVideos].sort((a, b) => a.id - b.id);
@@ -1084,6 +1096,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [clipEvent, setClipEvent] = useState(null); // 사고 클립 팝업 대상 이벤트
   const [pendingDeleteEvent, setPendingDeleteEvent] = useState(null); // 삭제 확인 창 대상 이벤트
   const [pendingClearAll, setPendingClearAll] = useState(false); // 전체 삭제 확인 창
+  const [infoVideo, setInfoVideo] = useState(null); // 영상 목록 카드의 ⋮ → 영상 정보 팝업 대상
 
   // 업로드 모달
   const [showUpload, setShowUpload] = useState(false);
@@ -2096,7 +2109,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                 <div className="analysis-status-main">
                   <div className="analysis-status-info">
                     <span className="analysis-status-label">
-                      🔍 {lead.dateLabel} 분석 중
+                      {/* 영상 목록의 제목과 같게 (제목을 넣었으면 그 제목, 아니면 '녹화일 녹화본 #N') */}
+                      🔍 {(() => {
+                        const v = videos.find((x) => x.id === lead.videoId);
+                        return v ? getVideoDisplayTitle(v, videos) : lead.dateLabel;
+                      })()} 분석 중
                     </span>
                     <span className="analysis-status-eta">
                       {statusText}
@@ -2371,7 +2388,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         loading="lazy"
                         onError={(e) => { e.currentTarget.style.display = "none"; }}
                       />
-                      <span className="event-count-badge">이벤트 {video.events.length}건</span>
+                      {/* 왼쪽 아래 녹화일자(제목을 따로 넣으면 언제 찍었는지 모르니) · 오른쪽 아래 사고의심 수 */}
+                      {video.date && <span className="recording-date-badge">{video.date}</span>}
+                      <span className="event-count-badge">사고의심 {video.events.length}건</span>
                       {deleteMode && (
                         <span className={`delete-check ${isSelected ? "checked" : ""}`}>
                           {isSelected ? "✓" : ""}
@@ -2379,8 +2398,22 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       )}
                     </div>
                     <div className="video-info">
-                      <h3>{getVideoDisplayTitle(video, videos)}</h3>
-                      <p>영상 길이: {formatTime(video.duration)}</p>
+                      <div className="video-info-text">
+                        <h3>{getVideoDisplayTitle(video, videos)}</h3>
+                        <p>영상 길이: {formatTime(video.duration)}</p>
+                      </div>
+                      {/* ⋮ → 영상 정보(녹화일자·업로드 일시·파일 등) 팝업. 카드 클릭(재생)으로 번지지 않게 */}
+                      <button
+                        className="video-more-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setInfoVideo(video);
+                        }}
+                        aria-label="영상 정보"
+                        title="영상 정보"
+                      >
+                        <MoreIcon />
+                      </button>
                     </div>
                   </div>
                 );
@@ -3218,6 +3251,53 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         <div className={`app-toast app-toast-${toast.type}`}>{toast.message}</div>
       )}
 
+      {/* 영상 정보 팝업 (영상 목록 카드의 ⋮) — 화면 가운데, Esc·바깥 클릭·닫기로 닫힘 */}
+      {infoVideo && (() => {
+        const v = infoVideo;
+        const up = formatAnalyzedAt(v.uploadedAt);
+        const lastStatus = v.lastTask ? (HISTORY_STATUS[v.lastTask.status]?.label || v.lastTask.status) : null;
+        const rows = [
+          ["녹화일자", v.date || "-"],
+          ["업로드 일시", up ? `${up[0]} ${up[1]}` : "-"],
+          ["원본 파일", v.fileName || "-"],
+          ["영상 길이", formatTime(v.duration)],
+          ["해상도", v.width && v.height ? `${v.width}×${v.height}${v.fps ? ` · ${Math.round(v.fps)}fps` : ""}` : "-"],
+          ["사고 의심 클립", `${v.events.length}건`],
+          ["마지막 분석", lastStatus || "아직 없음"],
+        ];
+        return (
+          <div className="settings-modal-overlay" onClick={() => setInfoVideo(null)}>
+            <div
+              className="video-info-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="video-info-title"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setInfoVideo(null);
+              }}
+            >
+              <div className="video-info-modal-header">
+                <h2 id="video-info-title" title={getVideoDisplayTitle(v, videos)}>
+                  {getVideoDisplayTitle(v, videos)}
+                </h2>
+                <button className="clip-modal-close" onClick={() => setInfoVideo(null)} autoFocus aria-label="닫기">
+                  ✕
+                </button>
+              </div>
+              <dl className="video-info-list">
+                {rows.map(([k, val]) => (
+                  <div key={k}>
+                    <dt>{k}</dt>
+                    <dd title={val}>{val}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 사고 클립 삭제 확인 (1건 · 전체) — 화면 가운데. 기본 초점은 '취소'(Enter 실수로 지우지 않게), Esc·바깥 클릭으로 닫힘 */}
       {(pendingDeleteEvent || pendingClearAll) && (() => {
         const isAll = pendingClearAll;
@@ -3391,6 +3471,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
       id: `${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
       file,
       recordingDate: todayStr,
+      title: "", // 선택 — 비우면 '녹화일 녹화본 #N'
     }));
     setFilesList((prev) => [...prev, ...items]);
   };
@@ -3429,6 +3510,10 @@ function UploadModal({ onClose, onUploaded, onError }) {
     );
   };
 
+  const updateFileTitle = (id, title) => {
+    setFilesList((prev) => prev.map((item) => (item.id === id ? { ...item, title } : item)));
+  };
+
   const updateAllDates = (dateStr) => {
     setFilesList((prev) => prev.map((item) => ({ ...item, recordingDate: dateStr })));
   };
@@ -3450,7 +3535,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
         currentName: item.file.name,
       });
       try {
-        await api.uploadVideo(item.file, item.recordingDate || null);
+        await api.uploadVideo(item.file, item.recordingDate || null, item.title);
         successCount += 1;
       } catch (e) {
         failCount += 1;
@@ -3475,7 +3560,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
         <div className="upload-modal-header">
           <div>
             <h2>영상 다중 업로드</h2>
-            <p className="tab-description">분석할 CCTV 녹화 영상을 업로드합니다. 여러 파일을 한번에 선택하고 개별 날짜를 지정할 수 있습니다.</p>
+            <p className="tab-description">분석할 CCTV 녹화 영상을 업로드합니다. 여러 파일을 한번에 선택하고 파일마다 날짜와 제목을 지정할 수 있습니다.</p>
           </div>
           <button className="clip-modal-close" onClick={onClose} disabled={uploading}>✕</button>
         </div>
@@ -3570,6 +3655,20 @@ function UploadModal({ onClose, onUploaded, onError }) {
                   >
                     ✕
                   </button>
+
+                  {/* 제목(선택) — 파일 이름·녹화일자 줄 아래 한 줄 */}
+                  <div className="file-item-title-group">
+                    <label htmlFor={`upload-title-${item.id}`}>제목:</label>
+                    <input
+                      id={`upload-title-${item.id}`}
+                      type="text"
+                      value={item.title}
+                      maxLength={100}
+                      placeholder={`입력하지 않으면 '${item.recordingDate || "녹화일"} 녹화본'으로 표시됩니다`}
+                      onChange={(e) => updateFileTitle(item.id, e.target.value)}
+                      disabled={uploading}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -3636,7 +3735,7 @@ function DateVideosModal({ dateText, videos, onClose, onSelectVideo }) {
                   alt={`${v.date} 썸네일`}
                   onError={(e) => { e.currentTarget.style.display = "none"; }}
                 />
-                <span className="event-count-badge">이벤트 {v.events.length}건</span>
+                <span className="event-count-badge">사고의심 {v.events.length}건</span>
               </div>
               <div className="date-video-card-info">
                 <h3>{getVideoDisplayTitle(v, videos)}</h3>

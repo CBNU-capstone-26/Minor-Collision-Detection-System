@@ -872,6 +872,140 @@ body.dark-mode .list-search-bar:focus-within .search-icon {
   font-weight: 600;
 }
 
+/* 녹화일자 — 썸네일 왼쪽 아래 (사고의심 배지와 같은 모양) */
+.recording-date-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 카드 아래: 제목·길이 + 오른쪽 ⋮(영상 정보) */
+.video-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.video-info-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.video-more-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: -6px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.video-more-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+body.dark-mode .video-more-btn {
+  color: #7e91a6;
+}
+
+body.dark-mode .video-more-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+/* 영상 정보 팝업 */
+.video-info-modal {
+  width: min(440px, 92vw);
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 20px 22px 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  animation: confirmPop 0.18s ease-out;
+}
+
+.video-info-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.video-info-modal-header h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-info-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.video-info-list > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.video-info-list dt {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.video-info-list dd {
+  margin: 0;
+  font-size: 13.5px;
+  color: #0f172a;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+body.dark-mode .video-info-modal {
+  background: #0d1520;
+  border: 1px solid #1a2a3c;
+}
+
+body.dark-mode .video-info-modal-header h2,
+body.dark-mode .video-info-list dd {
+  color: #e2e8f0;
+}
+
+body.dark-mode .video-info-list > div {
+  border-top-color: #1a2a3c;
+}
+
+body.dark-mode .video-info-list dt {
+  color: #7e91a6;
+}
+
 .video-info h3 {
   margin: 0 0 4px 0;
   font-size: 16px;
@@ -5329,6 +5463,7 @@ body.dark-mode .bulk-date-bar input[type="date"] {
 .upload-file-item {
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* 제목 칸은 아래 줄로 */
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
@@ -5403,6 +5538,52 @@ body.dark-mode .file-item-date-group input[type="date"] {
   background: #080d14;
   border-color: #1a2a3c;
   color: #f8fafc;
+}
+
+/* 제목(선택) — 파일 이름·녹화일자 줄 아래 가로 전체 */
+.file-item-title-group {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.file-item-title-group input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 3px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.file-item-title-group input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+body.dark-mode .file-item-title-group {
+  color: #7e91a6;
+}
+
+body.dark-mode .file-item-title-group input {
+  background: #080d14;
+  border-color: #1a2a3c;
+  color: #f8fafc;
+}
+
+body.dark-mode .file-item-title-group input::placeholder {
+  color: #475569;
+}
+
+body.dark-mode .file-item-title-group input:focus {
+  border-color: #00e699;
+  box-shadow: 0 0 0 2px rgba(0, 230, 153, 0.2);
 }
 
 .file-item-remove-btn {
