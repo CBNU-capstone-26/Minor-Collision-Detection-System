@@ -3165,6 +3165,11 @@ body.dark-mode .video-card:hover {
   box-shadow: 0 8px 24px rgba(0, 230, 153, 0.15);
 }
 
+/* 다크 모드에선 카드에 테두리가 있어, 제목·길이·⋮ 가 테두리에 붙지 않게 안쪽 여백을 둔다 */
+body.dark-mode .video-info {
+  padding: 0 12px 12px;
+}
+
 body.dark-mode .video-info h3 {
   color: #f8fafc;
 }
