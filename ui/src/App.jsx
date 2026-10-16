@@ -3591,15 +3591,8 @@ function UploadModal({ onClose, onUploaded, onError }) {
           <div className="upload-file-list-container">
             <div className="upload-file-list-toolbar">
               <span className="file-count-badge">선택된 영상: <strong>{filesList.length}개</strong></span>
+              {/* 파일 추가는 목록 아래 끌어다 놓기 칸(클릭해도 선택)으로 한다 */}
               <div className="file-toolbar-actions">
-                <button
-                  type="button"
-                  className="add-more-files-btn"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  + 파일 추가
-                </button>
                 <button
                   type="button"
                   className="clear-all-files-btn"
@@ -3671,6 +3664,21 @@ function UploadModal({ onClose, onUploaded, onError }) {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* 파일이 있어도 끌어다 놓아 더 추가할 수 있는 작은 칸 (클릭하면 파일 선택) */}
+            <div
+              className={`upload-dropzone upload-dropzone-compact ${dragActive ? "drag-active" : ""} ${uploading ? "disabled" : ""}`}
+              onDragEnter={uploading ? undefined : handleDrag}
+              onDragOver={uploading ? undefined : handleDrag}
+              onDragLeave={uploading ? undefined : handleDrag}
+              onDrop={uploading ? undefined : handleDrop}
+              onClick={() => {
+                if (!uploading) fileInputRef.current?.click();
+              }}
+            >
+              <span className="dropzone-compact-icon" aria-hidden="true">＋</span>
+              <span>여기에 영상 파일을 끌어다 놓거나 클릭해서 추가</span>
             </div>
           </div>
         )}

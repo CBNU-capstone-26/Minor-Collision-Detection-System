@@ -5300,6 +5300,48 @@ body.dark-mode .upload-dropzone.drag-active {
   border-color: #00e699;
 }
 
+/* 파일 목록 아래의 작은 추가 칸 — 끌어다 놓기·클릭으로 파일 추가 */
+.upload-dropzone-compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.upload-dropzone-compact.drag-active,
+.upload-dropzone-compact:hover {
+  color: #1d4ed8;
+}
+
+/* 안쪽 글자 위로 끌고 지나갈 때 dragleave 가 나서 강조가 깜빡이지 않게 */
+.upload-dropzone-compact > * {
+  pointer-events: none;
+}
+
+.upload-dropzone-compact.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.dropzone-compact-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+body.dark-mode .upload-dropzone-compact {
+  color: #7e91a6;
+}
+
+body.dark-mode .upload-dropzone-compact.drag-active,
+body.dark-mode .upload-dropzone-compact:hover {
+  color: #00e699;
+}
+
 .dropzone-icon {
   font-size: 38px;
   margin-bottom: 10px;
@@ -5361,7 +5403,6 @@ body.dark-mode .file-count-badge {
   gap: 8px;
 }
 
-.add-more-files-btn,
 .clear-all-files-btn {
   padding: 6px 12px;
   border-radius: 4px;
@@ -5369,27 +5410,6 @@ body.dark-mode .file-count-badge {
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
-}
-
-.add-more-files-btn {
-  background: #eff6ff;
-  color: #2563eb;
-  border: 1px solid #bfdbfe;
-}
-
-.add-more-files-btn:hover {
-  background: #dbeafe;
-}
-
-body.dark-mode .add-more-files-btn {
-  background: rgba(0, 230, 153, 0.15);
-  color: #00e699;
-  border-color: rgba(0, 230, 153, 0.35);
-}
-
-body.dark-mode .add-more-files-btn:hover {
-  background: rgba(0, 230, 153, 0.25);
-  border-color: #00f5a0;
 }
 
 .clear-all-files-btn {
