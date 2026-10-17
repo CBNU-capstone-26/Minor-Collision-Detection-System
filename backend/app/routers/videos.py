@@ -56,6 +56,7 @@ def to_video_out(v: db_models.Video) -> api_schemas.VideoOut:
     return api_schemas.VideoOut(
         id=v.id,
         video_name=v.video_name,
+        title=v.title,
         recording_date=v.recording_date,
         camera_location=v.camera_location or "주차장",
         recording_start_time=v.recording_start_time or "20:30",
@@ -98,9 +99,14 @@ def _extract_metadata(path: Path):
 def upload_video(
     file: UploadFile = File(...),
     recording_date: str | None = Form(None),
+    title: str | None = Form(None),
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
+    title = (title or "").strip()
+    if len(title) > 100:
+        raise HTTPException(status_code=400, detail="제목은 100자까지 입력할 수 있습니다.")
+
     ext = Path(file.filename).suffix or ".mp4"
     stored_name = f"{uuid4().hex}{ext}"
     storage = get_storage()
@@ -126,6 +132,7 @@ def upload_video(
     video = db_models.Video(
         user_id=user.id,
         video_name=file.filename,
+        title=title or None,
         video_path=object_key,
         recording_date=rec_date,
         width=width,

@@ -78,7 +78,9 @@ export function normalizeVideo(v) {
   const created = v.created_at || "";
   return {
     id: v.id,
-    name: v.video_name,
+    title: v.title || "", // 업로드할 때 넣은 제목 (없으면 화면이 '녹화일 녹화본 #N')
+    fileName: v.video_name || "", // 업로드한 원본 파일 이름
+    uploadedAt: v.created_at || null, // 업로드 시각(ISO, UTC)
     date: v.recording_date || (created ? created.slice(0, 10) : ""),
     startTime: v.recording_start_time || "20:30",
     duration: Math.round(v.duration_sec || 0),
@@ -120,17 +122,12 @@ export const api = {
     return list.map(normalizeVideo);
   },
   getVideo: async (id) => normalizeVideo(await request(`/videos/${id}`)),
-  uploadVideo: (file, recordingDate) => {
+  uploadVideo: (file, recordingDate, title) => {
     const form = new FormData();
     form.append("file", file);
     if (recordingDate) form.append("recording_date", recordingDate);
+    if (title && title.trim()) form.append("title", title.trim());
     return request("/videos", { method: "POST", body: form, isForm: true });
-  },
-  importDriveVideo: (link, recordingDate) => {
-    const form = new FormData();
-    form.append("link", link);
-    if (recordingDate) form.append("recording_date", recordingDate);
-    return request("/videos/import-drive", { method: "POST", body: form, isForm: true });
   },
   streamUrl: (id) => `/api/videos/${id}/stream`,
   thumbnailUrl: (id) => `/api/videos/${id}/thumbnail`,
