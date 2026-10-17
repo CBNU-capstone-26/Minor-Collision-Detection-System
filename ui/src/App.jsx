@@ -748,349 +748,10 @@ function groupVideosByDate(videos) {
   }, {});
 }
 
-// 2. 이벤트 통계 분석 뷰 (Custom SVG Charts)
-function AnalyticsView({ filteredVideos, filterDays, setFilterDays }) {
-  const stats = useMemo(() => {
-    let totalEvents = 0;
-    let pendingCount = 0;
-    let resolvedCount = 0;
-
-    const dateCounts = {};
-    const eventTypeCounts = {};
-    const hourCounts = Array(24).fill(0);
-
-    // filteredVideos는 이미 API에서 정규화된 영상 목록
-    const matchingVideos = filteredVideos;
-
-    matchingVideos.forEach(video => {
-      const [startHour] = video.startTime.split(":").map(Number);
-
-      video.events.forEach(event => {
-        totalEvents += 1;
-
-        // Status counts
-        if (event.status === "확인 필요") pendingCount++;
-        else if (event.status === "분석 완료") resolvedCount++;
-
-        // Date grouping
-        dateCounts[video.date] = (dateCounts[video.date] || 0) + 1;
-
-        // Type grouping
-        let type = "기타";
-        if (event.title.includes("스크래치") || event.title.includes("긁힘")) type = "스크래치 의심";
-        else if (event.title.includes("문콕")) type = "문콕 접촉 의심";
-        else if (event.title.includes("충돌") || event.title.includes("접촉")) type = "차량 충돌 의심";
-        else if (event.title.includes("접근") || event.title.includes("감지")) type = "인물 접근 감지";
-
-        eventTypeCounts[type] = (eventTypeCounts[type] || 0) + 1;
-
-        // Hour computation
-        const eventSeconds = event.timestamp;
-        const eventHour = (startHour + Math.floor(eventSeconds / 3600)) % 24;
-        hourCounts[eventHour]++;
-      });
-    });
-
-    // Sort dates chronologically
-    const sortedDates = Object.keys(dateCounts).sort().map(date => ({
-      date: date.substring(5), // MM-DD
-      count: dateCounts[date]
-    }));
-
-    // Convert event types to array
-    const eventTypeList = Object.keys(eventTypeCounts).map(type => ({
-      name: type,
-      count: eventTypeCounts[type]
-    }));
-
-    // Hourly grouped brackets
-    const hourlyGroups = [
-      { name: "새벽 (00-06)", count: 0 },
-      { name: "오전 (06-12)", count: 0 },
-      { name: "오후 (12-18)", count: 0 },
-      { name: "야간 (18-24)", count: 0 }
-    ];
-    for (let h = 0; h < 24; h++) {
-      const count = hourCounts[h];
-      if (h < 6) hourlyGroups[0].count += count;
-      else if (h < 12) hourlyGroups[1].count += count;
-      else if (h < 18) hourlyGroups[2].count += count;
-      else hourlyGroups[3].count += count;
-    }
-
-    return {
-      totalVideos: matchingVideos.length,
-      totalEvents,
-      pendingCount,
-      resolvedCount,
-      sortedDates,
-      eventTypeList,
-      hourlyGroups
-    };
-  }, [filteredVideos]);
-
-  const dailyTrendChart = useMemo(() => {
-    const width = 500;
-    const height = 200;
-    const paddingX = 40;
-    const paddingY = 30;
-    const plotW = width - paddingX * 2;
-    const plotH = height - paddingY * 2;
-    const data = stats.sortedDates;
-    if (data.length === 0) return null;
-
-    const maxVal = Math.max(...data.map(d => d.count), 4) + 1;
-
-    const points = data.map((d, i) => {
-      const x = paddingX + (i * plotW) / (data.length - 1);
-      const y = height - paddingY - (d.count * plotH) / maxVal;
-      return { x, y, label: d.date, value: d.count };
-    });
-
-    const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-    const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - paddingY} L ${points[0].x} ${height - paddingY} Z`;
-
-    return (
-      <svg width="100%" height="200" viewBox={`0 0 ${width} ${height}`} className="stats-svg">
-        <defs>
-          <linearGradient id="area-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--chart-primary)" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="var(--chart-primary)" stopOpacity="0.0" />
-          </linearGradient>
-        </defs>
-
-        {/* Y Axis Grid lines */}
-        {[0, 1, 2, 3, 4, 5].map(v => {
-          const y = height - paddingY - (v * plotH) / maxVal;
-          return (
-            <g key={v}>
-              <line x1={paddingX} y1={y} x2={width - paddingX} y2={y} stroke="var(--chart-grid)" strokeDasharray="3 3" />
-              <text x={paddingX - 10} y={y + 4} textAnchor="end" className="chart-axis-text" fill="var(--chart-text)">{v}</text>
-            </g>
-          );
-        })}
-
-        {/* Area */}
-        <path d={areaPath} fill="url(#area-gradient)" />
-
-        {/* Line */}
-        <path d={linePath} fill="none" stroke="var(--chart-primary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-
-        {/* Dots */}
-        {points.map((p, i) => (
-          <g key={i}>
-            <circle cx={p.x} cy={p.y} r="4" fill="var(--chart-primary)" stroke="var(--chart-grid)" strokeWidth="1" />
-            <text x={p.x} y={p.y - 10} textAnchor="middle" className="chart-value-text" fill="var(--chart-text-primary)">
-              {p.value}
-            </text>
-            <text x={p.x} y={height - paddingY + 16} textAnchor="middle" className="chart-axis-text" fill="var(--chart-text)">
-              {p.label}
-            </text>
-          </g>
-        ))}
-      </svg>
-    );
-  }, [stats.sortedDates]);
-
-  const donutChart = useMemo(() => {
-    const total = stats.totalEvents;
-    if (total === 0) return null;
-    const r = 50;
-    const circ = 2 * Math.PI * r;
-    let currentAngle = -90;
-
-    const isDark = typeof document !== "undefined" && document.body.classList.contains("dark-mode");
-    const colors = isDark
-      ? ["#00e699", "#06b6d4", "#f59e0b", "#ef4444", "#a855f7"]
-      : ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
-
-    const segments = [];
-    for (let idx = 0; idx < stats.eventTypeList.length; idx++) {
-      const type = stats.eventTypeList[idx];
-      const percentage = (type.count / total) * 100;
-      const angle = (type.count / total) * 360;
-      const strokeDashoffset = circ - (type.count / total) * circ;
-      const rotation = currentAngle;
-      currentAngle += angle;
-      const color = colors[idx % colors.length];
-
-      segments.push({
-        ...type,
-        percentage: percentage.toFixed(1),
-        strokeDashoffset,
-        rotation,
-        color
-      });
-    }
-
-    return (
-      <div className="donut-chart-container">
-        <svg width="180" height="180" viewBox="0 0 200 200">
-          <circle cx="100" cy="100" r={r} fill="transparent" stroke="var(--chart-grid)" strokeWidth="16" />
-          {segments.map((seg, idx) => (
-            <circle
-              key={idx}
-              cx="100"
-              cy="100"
-              r={r}
-              fill="transparent"
-              stroke={seg.color}
-              strokeWidth="18"
-              strokeDasharray={circ}
-              strokeDashoffset={seg.strokeDashoffset}
-              transform={`rotate(${seg.rotation} 100 100)`}
-              className="donut-segment"
-            />
-          ))}
-          <g className="donut-center-text">
-            <text x="100" y="95" textAnchor="middle" className="donut-total" fill="var(--chart-text-primary)" style={{ fontSize: "28px", fontWeight: "800" }}>
-              {total}
-            </text>
-            <text x="100" y="115" textAnchor="middle" className="donut-label" fill="var(--chart-text)" style={{ fontSize: "12px", fontWeight: "600" }}>
-              총 감지 건수
-            </text>
-          </g>
-        </svg>
-
-        <div className="donut-legend">
-          {segments.map((seg, idx) => (
-            <div key={idx} className="legend-item">
-              <span className="legend-badge" style={{ backgroundColor: seg.color }} />
-              <span className="legend-name">{seg.name}</span>
-              <span className="legend-count">{seg.count}건 ({seg.percentage}%)</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }, [stats.eventTypeList, stats.totalEvents]);
-
-  const hourlyChartSvg = useMemo(() => {
-    const width = 450;
-    const height = 200;
-    const paddingX = 40;
-    const paddingY = 30;
-    const plotW = width - paddingX * 2;
-    const plotH = height - paddingY * 2;
-    const data = stats.hourlyGroups;
-    const maxVal = Math.max(...data.map(d => d.count), 4) + 1;
-
-    const barW = 32;
-    const gap = (plotW - barW * data.length) / (data.length - 1);
-
-    return (
-      <svg width="100%" height="200" viewBox={`0 0 ${width} ${height}`} className="stats-svg">
-        {[0, 1, 2, 3, 4, 5].map(v => {
-          const y = height - paddingY - (v * plotH) / maxVal;
-          return (
-            <g key={v}>
-              <line x1={paddingX} y1={y} x2={width - paddingX} y2={y} stroke="var(--chart-grid)" strokeDasharray="3 3" />
-              <text x={paddingX - 10} y={y + 4} textAnchor="end" className="chart-axis-text" fill="var(--chart-text)">{v}</text>
-            </g>
-          );
-        })}
-
-        {data.map((d, i) => {
-          const barH = (d.count * plotH) / maxVal;
-          const x = paddingX + i * (barW + gap);
-          const y = height - paddingY - barH;
-
-          return (
-            <g key={i}>
-              <rect
-                x={x}
-                y={y}
-                width={barW}
-                height={barH}
-                fill="var(--chart-secondary)"
-                rx="4"
-                className="chart-bar"
-              />
-              <text x={x + barW / 2} y={y - 6} textAnchor="middle" className="chart-value-text" fill="var(--chart-text-primary)">
-                {d.count}
-              </text>
-              <text x={x + barW / 2} y={height - paddingY + 16} textAnchor="middle" className="chart-axis-text" fill="var(--chart-text)">
-                {d.name.split(" ")[0]}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    );
-  }, [stats.hourlyGroups]);
-
-
-  return (
-    <div className="analytics-view">
-      <div className="analytics-header">
-        <h2>📊 AI 감지 이벤트 통계 분석</h2>
-        <p>CCTV 녹화본에서 감지된 차량 사고 및 접촉 의심 이벤트 통계 요약입니다.</p>
-      </div>
-
-      {/* 기간 필터 */}
-      <div className="filter-pills" style={{ marginBottom: "24px" }}>
-        <button className={filterDays === 9999 ? "active" : ""} onClick={() => setFilterDays(9999)}>전체</button>
-        <button className={filterDays === 7 ? "active" : ""} onClick={() => setFilterDays(7)}>1주일</button>
-        <button className={filterDays === 14 ? "active" : ""} onClick={() => setFilterDays(14)}>2주일</button>
-        <button className={filterDays === 30 ? "active" : ""} onClick={() => setFilterDays(30)}>1개월</button>
-        <button className={filterDays === 90 ? "active" : ""} onClick={() => setFilterDays(90)}>3개월</button>
-      </div>
-
-      {stats.totalEvents === 0 ? (
-        <div className="empty-state" style={{ padding: "80px 20px" }}>선택한 기간에 감지된 이벤트 통계 데이터가 없습니다.</div>
-      ) : (
-        <>
-          <div className="analytics-summary-cards">
-            <div className="summary-card">
-              <div className="card-icon">🎥</div>
-              <div className="card-data">
-                <span className="card-label">분석된 총 영상</span>
-                <span className="card-value">{stats.totalVideos}개</span>
-              </div>
-            </div>
-            <div className="summary-card">
-              <div className="card-icon">🚨</div>
-              <div className="card-data">
-                <span className="card-label">누적 감지 이벤트</span>
-                <span className="card-value">{stats.totalEvents}건</span>
-              </div>
-            </div>
-            <div className="summary-card warning">
-              <div className="card-icon">⚠️</div>
-              <div className="card-data">
-                <span className="card-label">확인 필요 이벤트</span>
-                <span className="card-value">{stats.pendingCount}건</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="analytics-grid">
-            <div className="analytics-chart-card">
-              <h3> 날짜별 감지 이벤트 추이</h3>
-              <div className="chart-wrapper">{dailyTrendChart}</div>
-            </div>
-
-            <div className="analytics-chart-card">
-              <h3> 이벤트 유형별 비율</h3>
-              <div className="chart-wrapper donut-wrapper">{donutChart}</div>
-            </div>
-
-            <div className="analytics-chart-card">
-              <h3> 시간대별 발생 빈도</h3>
-              <div className="chart-wrapper">{hourlyChartSvg}</div>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 // 대시보드 컴포넌트
 function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const navigate = useNavigate();
   const { videoId } = useParams();
-  const currentView = view === "analytics" ? "analytics" : "dashboard";
 
   // 상태 관리
   const [videos, setVideos] = useState([]); // API에서 로드한 영상 목록
@@ -1310,7 +971,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, videoId]);
 
-  // 기간 필터만 적용한 목록 — 통계 화면용 (검색창은 영상 목록 페이지에만 있어 통계엔 검색어를 걸지 않는다)
+  // 기간 필터만 적용한 목록
   const periodVideos = useMemo(() => {
     if (filterDays >= 9999) return videos;
     const startDate = formatDate(addDays(new Date(), -filterDays));
@@ -2069,7 +1730,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 넓은 화면의 영상 재생 화면에선 버튼 묶음을 왼쪽 칸 맨 위(사고 클립 사이드바 위)에 둔다.
   // 좁은 화면(1024px 이하)은 한 줄로 쌓여 사이드바가 영상 아래로 가므로 영상 위 헤더에 둔다.
   const isWideScreen = useMediaQuery("(min-width: 1025px)");
-  const actionsInSide = isWideScreen && currentView !== "analytics" && !!selectedVideo;
+  const actionsInSide = isWideScreen && !!selectedVideo;
 
   // 진행 단계(01 차량 선택 → 02 사고 구간 찾기 → 03 클립 검토).
   // 넓은 화면(1280px 이상)은 영상 오른쪽 칸 위에 세로로, 그보다 좁으면 작업 헤더 안에 가로로 둔다.
@@ -2222,7 +1883,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       <header className="top-navbar">
         <div className="nav-section nav-left">
           <button className="nav-logo nav-home-btn" onClick={handleBackToHome} aria-label="SIOT 홈으로 이동">
-            <span className="workspace-wordmark" translate="no">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span><span className="workspace-brand-caption" translate="no">{currentView === "analytics" ? "INSIGHTS" : selectedVideo ? "INCIDENT REVIEW" : "LIBRARY"}</span>
+            <span className="workspace-wordmark" translate="no">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span><span className="workspace-brand-caption" translate="no">{selectedVideo ? "INCIDENT REVIEW" : "LIBRARY"}</span>
           </button>
         </div>
 
@@ -2375,20 +2036,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
                   <div className="dropdown-divider" />
 
-                  {/* 화면 이동 */}
-                  <div className="dropdown-section-title">화면 이동</div>
-                  <button
-                    className={`dropdown-item ${currentView === "analytics" ? "active-menu-item" : ""}`}
-                    onClick={() => {
-                      setIsProfileOpen(false);
-                      navigate("/analytics");
-                    }}
-                  >
-                    <InterfaceIcon name="chart" /> 이벤트 통계
-                  </button>
-
-                  <div className="dropdown-divider" />
-
                   {/* 테마 설정 (Appearance) */}
                   <div className="dropdown-section-title">테마 설정</div>
                   <div className="dropdown-item-toggle">
@@ -2422,14 +2069,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         </div>
       </header>
 
-      {/* 컨텐츠 영역: 통계 뷰 또는 모니터링 뷰 */}
-      {currentView === "analytics" ? (
-        <AnalyticsView
-          filteredVideos={periodVideos}
-          filterDays={filterDays}
-          setFilterDays={setFilterDays}
-        />
-      ) : !selectedVideo ? (
+      {/* 컨텐츠 영역: 영상 목록 또는 재생 화면 */}
+      {!selectedVideo ? (
         <main className="home-view">
           <section className="incident-overview">
             <div className="incident-overview-copy"><span className="incident-eyebrow" translate="no">SIOT / INCIDENT REVIEW</span><h1>주차된 순간부터,<br />놓치지 않는 사고 단서.</h1><p>CCTV 속 접촉 의심 장면을 찾고, 필요한 구간을 빠르게 검토하세요.</p><button className="incident-upload" onClick={() => setShowUpload(true)}>영상 추가하고 분석 시작 <span aria-hidden="true">↗</span></button></div>
@@ -4026,19 +3667,6 @@ export default function App() {
                 onUpdateUser={handleUpdateUser}
                 onLogout={handleLogout}
                 view="watch"
-              />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/analytics"
-          element={
-            <RequireAuth>
-              <Dashboard
-                currentUser={currentUser}
-                onUpdateUser={handleUpdateUser}
-                onLogout={handleLogout}
-                view="analytics"
               />
             </RequireAuth>
           }

@@ -3801,253 +3801,14 @@ body.dark-mode .nav-tab-item.active {
 }
 
 /* ---------------- 통계 페이지 (Analytics Page) ---------------- */
-:root {
-  --chart-primary: #3b82f6;
-  --chart-secondary: #10b981;
-  --chart-grid: #e2e8f0;
-  --chart-text: #64748b;
-  --chart-text-primary: #1f2937;
-  --chart-text-muted: #94a3b8;
-}
-
-body.dark-mode {
-  --chart-primary: #42d7c3;
-  --chart-secondary: #06b6d4;
-  --chart-grid: #2a3641;
-  --chart-text: #9baab6;
-  --chart-text-primary: #f8fafc;
-  --chart-text-muted: #475569;
-}
-
-.analytics-view {
-  padding: 24px;
-  max-width: 1400px;
-  margin: 0 auto;
-  animation: fadeIn 0.3s ease-out;
-}
-
-.analytics-header {
-  margin-bottom: 24px;
-  text-align: left;
-}
-
-.analytics-header h2 {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--chart-text-primary);
-  margin: 0 0 6px;
-}
-
-.analytics-header p {
-  font-size: 14px;
-  color: var(--chart-text);
-  margin: 0;
-}
-
-.analytics-summary-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.summary-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 7px;
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.summary-card .card-icon {
-  width: 48px;
-  height: 48px;
-  background: #eff6ff;
-  color: #3b82f6;
-  border-radius: 6px;
-  font-size: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.summary-card.warning .card-icon {
-  background: #fffbeb;
-  color: #d97706;
-}
-
-.summary-card.info .card-icon {
-  background: #ecfdf5;
-  color: #10b981;
-}
-
-.card-data {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-
-.card-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--chart-text);
-}
-
-.card-value {
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--chart-text-primary);
-}
-
-body.dark-mode .summary-card {
-  background: #19232d;
-  border-color: #2a3641;
-}
-
-body.dark-mode .summary-card .card-icon {
-  background: rgba(66, 215, 195, 0.15);
-  color: #42d7c3;
-}
-
-body.dark-mode .summary-card.warning .card-icon {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-}
-
-body.dark-mode .summary-card.info .card-icon {
-  background: rgba(6, 182, 212, 0.15);
-  color: #06b6d4;
-}
 
 /* 차트 그리드 */
-.analytics-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-}
 
 /* 차트가 3개라 넓은 화면은 한 줄에 셋, 중간 화면은 둘 + 마지막 하나를 가로 전체로 */
-.analytics-grid > .analytics-chart-card:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
-@media (min-width: 1400px) {
-  .analytics-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .analytics-grid > .analytics-chart-card:last-child:nth-child(odd) {
-    grid-column: auto;
-  }
-}
-
-.analytics-chart-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-}
-
-.analytics-chart-card h3 {
-  margin: 0 0 20px;
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--chart-text-primary);
-  text-align: left;
-}
-
-.chart-wrapper {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 200px;
-  flex-grow: 1;
-}
-
-body.dark-mode .analytics-chart-card {
-  background: #19232d;
-  border-color: #2a3641;
-}
 
 /* SVG 차트 내부 스타일 */
-.chart-axis-text {
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.chart-value-text {
-  font-size: 11px;
-  font-weight: 700;
-}
 
 /* Donut Chart */
-.donut-wrapper {
-  flex-direction: column;
-}
-
-.donut-chart-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 32px;
-  width: 100%;
-}
-
-.donut-center-text {
-  dominant-baseline: middle;
-  text-anchor: middle;
-}
-
-.donut-center-text .donut-total {
-  font-family: inherit;
-}
-
-.donut-segment {
-  transition: stroke-width 0.2s ease;
-  cursor: pointer;
-}
-
-.donut-segment:hover {
-  stroke-width: 22;
-}
-
-.donut-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--chart-text-primary);
-}
-
-.legend-badge {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-}
-
-.legend-name {
-  color: var(--chart-text);
-  min-width: 100px;
-  text-align: left;
-}
-
-.legend-count {
-  font-weight: 700;
-}
 
 /* Bar Chart */
 .chart-bar {
@@ -4059,26 +3820,6 @@ body.dark-mode .analytics-chart-card {
 }
 
 /* Responsive Statistics */
-@media (max-width: 1024px) {
-  .analytics-summary-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .analytics-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 600px) {
-  .analytics-summary-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .donut-chart-container {
-    flex-direction: column;
-    gap: 16px;
-  }
-}
 
 /* ===================== 바운딩박스 지정 모드 ===================== */
 
@@ -6077,20 +5818,6 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
     min-height: 0;
     padding: 20px;
   }
-
-  .analytics-view {
-    padding: 16px;
-  }
-
-  .analytics-summary-cards,
-  .analytics-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .donut-chart-container {
-    flex-direction: column;
-    gap: 16px;
-  }
 }
 
 @media (max-width: 640px) {
@@ -6155,8 +5882,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
     font-size: 11px;
   }
 
-  .watch-view,
-  .analytics-view {
+  .watch-view {
     padding: 12px;
   }
 
@@ -6290,11 +6016,6 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 
   .pagination-info {
     font-size: 11px;
-  }
-
-  .summary-card,
-  .analytics-chart-card {
-    padding: 16px;
   }
 
   .calendar-day {
