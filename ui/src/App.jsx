@@ -167,6 +167,7 @@ function PlayerIcon({ name, size = 18 }) {
 }
 
 let toastSeq = 0; // 하단 알림 번호 (showToast)
+let bboxSeq = 0; // 고른 차량 박스 번호
 
 // 화면 너비 조건(CSS 미디어쿼리)이 지금 맞는지 — 창 크기가 바뀌면 다시 그린다
 function useMediaQuery(query) {
@@ -1398,18 +1399,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const box = bboxList[0];
     if (!box) return;
 
-    // 화면(오버레이) 좌표 → 원본 영상 해상도 픽셀 좌표 환산
-    // bboxList의 좌표는 오버레이 div 기준(레터박스 여백 포함)이므로,
-    // 그리기/선택과 동일한 레터박스 지오메트리로 되돌린다.
-    const geom = getVideoGeom();
-    const scale = geom ? geom.scale : 1;
-    const offX = geom ? geom.offsetX : 0;
-    const offY = geom ? geom.offsetY : 0;
+    // bboxList 는 원본 영상 해상도 좌표 — 지금 화면 크기와 상관없이 그대로 보낸다
     const bbox = {
-      bbox_xmin: Math.round((box.xmin - offX) / scale),
-      bbox_ymin: Math.round((box.ymin - offY) / scale),
-      bbox_xmax: Math.round((box.xmax - offX) / scale),
-      bbox_ymax: Math.round((box.ymax - offY) / scale),
+      bbox_xmin: box.xmin,
+      bbox_ymin: box.ymin,
+      bbox_xmax: box.xmax,
+      bbox_ymax: box.ymax,
     };
 
     // 분석 시작: 지정 모드를 끄고 해당 영상을 '분석 중'으로 표시
@@ -1579,11 +1574,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 영상 칸 크기가 바뀌면(창 크기 · 안내 바 · 실패 안내 · 전체화면) 차량 박스 위치를 다시 계산하도록 다시 그린다.
   // 영상 칸은 화면 높이에 맞춰 줄어들 수 있어, 렌더 시점의 크기로 그린 박스가 어긋나지 않게 한다.
-  const [, setOverlaySizeTick] = useState(0);
+  const [overlaySize, setOverlaySize] = useState(null); // { w, h } — 박스 그리기용(렌더 중 ref 를 읽지 않게 상태로 둔다)
   useEffect(() => {
     const el = bboxOverlayRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => setOverlaySizeTick((n) => n + 1));
+    const ro = new ResizeObserver(() => {
+      const { width, height } = el.getBoundingClientRect();
+      setOverlaySize((prev) => (prev && prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, [selectedVideo?.id, view]);
@@ -1709,19 +1707,49 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     return detectedBoxes.find(({ bbox: [x1, y1, x2, y2] }) => realX >= x1 && realX <= x2 && realY >= y1 && realY <= y2) || null;
   };
 
+  // 영상 칸 크기(w, h) → 원본 해상도와의 배율·레터박스 여백. 해상도는 서버가 분석에 쓰는 크기(DB width/height)
+  const geomFor = (w, h) => {
+    const vw = selectedVideo?.width || w;
+    const vh = selectedVideo?.height || h;
+    const scale = Math.min(w / vw, h / vh); // contain
+    return {
+      scale,
+      vw,
+      vh,
+      offsetX: (w - vw * scale) / 2, // 좌우 레터박스 여백
+      offsetY: (h - vh * scale) / 2, // 상하 레터박스 여백
+    };
+  };
+  // 마우스·터치 처리용 — 지금 영상 칸 크기를 직접 잰다
   const getVideoGeom = () => {
     const el = bboxOverlayRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
-    const vid = videoElRef.current;
-    const vw = (vid && vid.videoWidth) || selectedVideo?.width || rect.width;
-    const vh = (vid && vid.videoHeight) || selectedVideo?.height || rect.height;
-    const scale = Math.min(rect.width / vw, rect.height / vh); // contain
+    return geomFor(rect.width, rect.height);
+  };
+  // 그리기용 — ResizeObserver 가 기록한 영상 칸 크기로 계산(크기가 바뀌면 다시 그려진다)
+  const renderGeom = overlaySize ? geomFor(overlaySize.w, overlaySize.h) : null;
+
+  // 고른 차량 박스(bboxList)는 원본 영상 해상도 좌표로 저장한다.
+  // 영상 칸 크기가 바뀌어도(창 크기 · 사이드바 · 오른쪽 패널 · 영화관 모드 · 전체화면) 그릴 때마다 지금 크기로 바꾸므로
+  // 박스가 영상의 같은 자리에 있고, 분석에 보내는 좌표도 그대로다.
+  // 화면(오버레이) 좌표 → 원본 좌표 (영상 밖 레터박스로 나간 부분은 영상 안으로 자른다)
+  const toOrigBox = (x1, y1, x2, y2) => {
+    const g = getVideoGeom();
+    if (!g) return null;
+    const ox = (x) => Math.round(Math.min(g.vw, Math.max(0, (x - g.offsetX) / g.scale)));
+    const oy = (y) => Math.round(Math.min(g.vh, Math.max(0, (y - g.offsetY) / g.scale)));
+    return { xmin: ox(x1), ymin: oy(y1), xmax: ox(x2), ymax: oy(y2) };
+  };
+  // 원본 좌표 → 지금 영상 칸의 화면 위치
+  const toDispBox = (box) => {
+    const g = renderGeom;
+    if (!g) return null;
     return {
-      rect,
-      scale,
-      offsetX: (rect.width - vw * scale) / 2, // 좌우 레터박스 여백
-      offsetY: (rect.height - vh * scale) / 2, // 상하 레터박스 여백
+      left: g.offsetX + box.xmin * g.scale,
+      top: g.offsetY + box.ymin * g.scale,
+      width: (box.xmax - box.xmin) * g.scale,
+      height: (box.ymax - box.ymin) * g.scale,
     };
   };
 
@@ -2518,15 +2546,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     if (e.target.closest("button")) return; // 박스 ✕ 등 버튼을 누를 땐 그리기를 시작하지 않는다
                     // 터치에는 hover 가 없으니 누른 위치의 박스를 바로 찾는다
                     const picked = selectionMode === "auto" ? hoveredDetectedBox || detectedBoxAt(e) : null;
-                    if (selectionMode === "auto" && picked && getVideoGeom()) {
-                      const { scale, offsetX, offsetY } = getVideoGeom();
-                      const [x1, y1, x2, y2] = picked.bbox;
-                      const dispX1 = Math.round(offsetX + x1 * scale);
-                      const dispY1 = Math.round(offsetY + y1 * scale);
-                      const dispX2 = Math.round(offsetX + x2 * scale);
-                      const dispY2 = Math.round(offsetY + y2 * scale);
-
-                      setBboxList([{ id: Date.now(), xmin: dispX1, ymin: dispY1, xmax: dispX2, ymax: dispY2 }]);
+                    if (selectionMode === "auto" && picked) {
+                      const [x1, y1, x2, y2] = picked.bbox; // 탐지 결과는 이미 원본 해상도 좌표
+                      setBboxList([{ id: ++bboxSeq, xmin: x1, ymin: y1, xmax: x2, ymax: y2 }]);
                       showToast("차량이 선택되었습니다.", "success");
                       return;
                     }
@@ -2580,9 +2602,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       const ymin = Math.min(currentDraw.startY, y);
                       const xmax = Math.max(currentDraw.startX, x);
                       const ymax = Math.max(currentDraw.startY, y);
-                      if (xmax - xmin > 5 && ymax - ymin > 5) {
-                        setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
-                      }
+                      const orig = xmax - xmin > 5 && ymax - ymin > 5 ? toOrigBox(xmin, ymin, xmax, ymax) : null;
+                      if (orig) setBboxList([{ id: ++bboxSeq, ...orig }]);
                       setCurrentDraw(null);
                       setIsDrawing(false);
                     }
@@ -2598,9 +2619,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       const ymin = Math.min(currentDraw.startY, currentDraw.endY);
                       const xmax = Math.max(currentDraw.startX, currentDraw.endX);
                       const ymax = Math.max(currentDraw.startY, currentDraw.endY);
-                      if (xmax - xmin > 5 && ymax - ymin > 5) {
-                        setBboxList([{ id: Date.now(), xmin, ymin, xmax, ymax }]);
-                      }
+                      const orig = xmax - xmin > 5 && ymax - ymin > 5 ? toOrigBox(xmin, ymin, xmax, ymax) : null;
+                      if (orig) setBboxList([{ id: ++bboxSeq, ...orig }]);
                     }
                     setCurrentDraw(null);
                     setIsDrawing(false);
@@ -2648,16 +2668,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   )}
 
                   {/* 저장된 바운딩 박스 렌더링 (단일 박스) */}
-                  {bboxList.map((box) => (
+                  {bboxList.map((box) => {
+                    const d = toDispBox(box); // 원본 좌표 → 지금 영상 칸 위치(크기가 바뀌면 다시 그려 따라간다)
+                    return d && (
                     <div
                       key={box.id}
                       className={`bbox-drawn ${isBBoxMode ? "editing" : ""}`}
-                      style={{
-                        left: box.xmin,
-                        top: box.ymin,
-                        width: box.xmax - box.xmin,
-                        height: box.ymax - box.ymin,
-                      }}
+                      style={{ left: d.left, top: d.top, width: d.width, height: d.height }}
                     >
                       {/* 삭제(✕): 직접 지정 중엔 늘 보이고, 그 밖엔(차량 탐지로 고른 뒤 모드를 끝내도) 박스에 마우스를 올리면 보인다.
                           분석 중엔 숨긴다 — 분석은 시작할 때의 박스로 돌기 때문 */}
@@ -2674,7 +2691,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         </button>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
 
                   {/* 현재 수동 드래그 중인 박스 미리보기 */}
                   {selectionMode === "manual" && isDrawing && currentDraw && (() => {
@@ -2695,8 +2713,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   })()}
 
                   {/* YOLO 자동 탐지 모드: 탐지된 모든 bbox를 항상 표시 (진단용 #번호·클래스·신뢰도) */}
-                  {selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom() && (() => {
-                    const { scale, offsetX, offsetY } = getVideoGeom();
+                  {selectionMode === "auto" && detectedBoxes.length > 0 && renderGeom && (() => {
+                    const { scale, offsetX, offsetY } = renderGeom;
                     return detectedBoxes.map((box) => {
                       const [x1, y1, x2, y2] = box.bbox;
                       const dispX1 = Math.round(offsetX + x1 * scale);
@@ -2725,8 +2743,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   })()}
 
                   {/* YOLO 자동 탐지 모드: 마우스 Hover 미리보기 (Hover 시에만 가상 노출) */}
-                  {selectionMode === "auto" && hoveredDetectedBox && getVideoGeom() && (() => {
-                    const { scale, offsetX, offsetY } = getVideoGeom();
+                  {selectionMode === "auto" && hoveredDetectedBox && renderGeom && (() => {
+                    const { scale, offsetX, offsetY } = renderGeom;
                     const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
                     const dispX1 = Math.round(offsetX + x1 * scale);
                     const dispY1 = Math.round(offsetY + y1 * scale);
