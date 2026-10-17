@@ -57,16 +57,14 @@ pydantic-core==2.46.4
 python-multipart==0.0.32
 pyjwt==2.15.1  # 로그인 토큰(JWT) 서명·만료
 
-# ---- DB (MySQL local / PostgreSQL Supabase remote) ----
+# ---- DB (MySQL / Supabase PostgreSQL) ----
 sqlalchemy==2.0.50
 pymysql==1.2.0
 psycopg[binary]>=3.2.0
 cryptography==48.0.0
 
-# Local .env loading for this branch's DB connection settings.
+# Current branch database and Cloudflare R2/S3 storage support.
 python-dotenv>=1.0.0
-
-# Existing videos are stored in Cloudflare R2 / S3-compatible object storage.
 boto3>=1.35.0
 
 # ---- 비동기 작업 (Celery + Redis) ----
@@ -74,10 +72,10 @@ celery==5.6.3
 redis==8.0.0
 
 # ---- 영상처리 / 수치연산 (추론·CAM 클립 생성; torch는 위 별도 스텝) ----
-# OpenCV는 opencv-python 하나만 둔다. 차량 감지용 ultralytics가 opencv-python을 필수로 요구해서
-# headless 판을 따로 적으면 둘이 함께 깔려 같은 cv2를 덮어쓴다(2026-08-29~10-15 실제로 그랬음).
+# OpenCV 는 opencv-python 하나만 둔다. 차량 감지용 ultralytics 가 opencv-python 을 필수로 요구해서
+# headless 판을 따로 적으면 둘이 함께 깔려 같은 cv2 를 덮어쓴다(2026-08-29~10-15 실제로 그랬음).
 # ⚠️ Linux 서버·최소 도커 이미지는 화면 라이브러리가 필요하다: apt install -y libgl1 libglib2.0-0
-#    (Windows·macOS는 그대로 된다)
+#    (Windows·macOS 는 그대로 된다)
 opencv-python==5.0.0.93
 imageio-ffmpeg==0.6.0  # ffmpeg 바이너리 내장(libx264). 시스템 ffmpeg가 없는 macOS·Windows에서 CAM 클립 H.264 변환용
 numpy==2.4.6
@@ -93,10 +91,10 @@ ultralytics>=8.3.0  # YOLO11 지원(8.3.0+). matplotlib·pyyaml·scipy 등 의�
 # 설치 시 fvcore·iopath·av 등이 함께 설치된다.
 pytorchvideo==0.1.5
 
-# ---- 추론 가속 (선택 — 없거나 실패하면 PyTorch로 자동 대체, model/infer_runtime.py) ----
-# 서버 컴퓨터에서 처음 한 번 자가 검사해, PyTorch와 결과가 같은 것 중 가장 빠른 방식을 고른다.
+# ---- 추론 가속 (선택 — 없거나 실패하면 PyTorch 로 자동 대체, model/infer_runtime.py) ----
+# 서버 컴퓨터에서 처음 한 번 자가 검사해, PyTorch 와 결과가 같은 것 중 가장 빠른 방식을 쓴다
 # (정밀도 FP32 그대로). Windows·macOS(Intel·Apple Silicon)·Linux 모두 pip 패키지가 있다.
-openvino==2026.4.1    # Intel CPU에서 빠름 (개발 PC 측정: PyTorch 대비 약 3~4배)
+openvino==2026.4.1    # Intel CPU 에서 빠름 (개발 PC 측정: PyTorch 대비 약 3~4배)
 onnxruntime==1.31.0   # 그 밖의 CPU(AMD·Apple Silicon 등)
 onnx==1.23.2          # 위 두 방식이 읽는 변환 파일(ONNX)을 만들 때 필요
 

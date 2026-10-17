@@ -1,4 +1,5 @@
 """분석 요청 / 태스크 상태 / 이벤트·클립 조회 라우터."""
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,15 +35,20 @@ def _active_task_for_video(video_id: int, db: Session):
             .order_by(db_models.AnalysisTask.id).first())
 
 
-def _progress(task: db_models.AnalysisTask):
-    """처리 중이면 Celery 상태(Redis)에서 (진행도 %, 남은 시간 초, 최소추정 여부)를 읽어온다."""
+def _progress(task: db_models.AnalysisTask) -> dict:
+    """처리 중이면 Celery의 세분화된 진행 상태를 읽어온다."""
+    empty = {"progress": None, "eta_sec": None, "eta_is_min": False,
+             "stage": None, "stage_count": None, "stage_index": None}
     if task.status != "PROCESSING" or not task.celery_task_id:
-        return None, None, False
+        return empty
     from app.worker import celery_app
     res = celery_app.AsyncResult(task.celery_task_id)
     if res.state == "PROGRESS" and isinstance(res.info, dict):
-        return res.info.get("percent"), res.info.get("eta"), bool(res.info.get("eta_min"))
-    return None, None, False
+        info = res.info
+        return {"progress": info.get("percent"), "eta_sec": info.get("eta"),
+                "eta_is_min": bool(info.get("eta_min")), "stage": info.get("stage"),
+                "stage_count": info.get("count"), "stage_index": info.get("index")}
+    return empty
 
 
 def _enqueue(video_id: int, bbox: dict, db: Session) -> api_schemas.AnalyzeResponse:
@@ -96,13 +102,11 @@ def list_active_tasks(
              .order_by(db_models.AnalysisTask.id).all())
     out = []
     for t in tasks:
-        progress, eta_sec, eta_min = _progress(t)
         out.append(api_schemas.ActiveTaskOut(
             task_id=t.id, video_id=t.video_id, video_name=t.video.video_name,
             recording_date=t.video.recording_date,
             camera_location=t.video.camera_location or "주차장",
-            status=t.status, progress=progress, eta_sec=eta_sec, eta_is_min=eta_min,
-            created_at=t.created_at))
+            status=t.status, created_at=t.created_at, **_progress(t)))
     return out
 
 
@@ -115,13 +119,10 @@ def get_task_status(
     task = _get_owned_task(task_id, db, user)
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.task_id == task.id).all()
-    progress, eta_sec, eta_min = _progress(task)
     return api_schemas.TaskStatusOut(
         task_id=task.id,
         status=task.status,
-        progress=progress,
-        eta_sec=eta_sec,
-        eta_is_min=eta_min,
+        **_progress(task),
         error_message=task.error_message,
         events=[to_event_out(e) for e in events],
     )
@@ -137,6 +138,7 @@ def cancel_task(
     if task.status in ACTIVE_STATUSES:
         task.status = "CANCELLED"
         task.error_message = "사용자가 작업을 취소함"
+        task.finished_at = datetime.utcnow()
         if task.celery_task_id:
             try:
                 from app.worker import celery_app

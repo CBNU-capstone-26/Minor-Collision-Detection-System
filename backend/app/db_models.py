@@ -66,9 +66,11 @@ class AnalysisTask(Base):
     bbox_xmax = Column(Integer, nullable=False)
     bbox_ymax = Column(Integer, nullable=False)
 
-    status = Column(String(50), default="PENDING")  # PENDING/PROCESSING/SUCCESS/FAILURE
+    status = Column(String(50), default="PENDING")  # PENDING/PROCESSING/SUCCESS/FAILURE/CANCELLED
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    event_count = Column(Integer, nullable=True)
 
     video = relationship("Video", back_populates="analysis_tasks")
     crash_events = relationship("CrashEvent", back_populates="task")

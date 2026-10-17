@@ -1,9 +1,9 @@
 """학습 곡선 CSV → PNG 그래프.
 
-train.py 가 매 에포크 끝에 호출해 `outputs/trainlogs/<로그이름>.png` 를 갱신한다
+train.py 가 매 에포크 끝에 호출해 `outputs/trainlogs/<회차>/<로그이름>.png` 를 갱신한다
 (학습이 중간에 끊겨도 그때까지의 곡선이 남는다). 지난 로그도 그릴 수 있다:
 
-    python trainplot.py ../outputs/trainlogs/*.csv
+    python trainplot.py ../outputs/trainlogs/*/*.csv
 
 세 칸으로 그린다 (x축 = 에포크, 칸마다 y축 하나):
   1) 손실 — train / val_rc / val_real, 그리고 best 판단 지표(있으면)

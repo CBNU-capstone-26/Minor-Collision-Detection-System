@@ -55,6 +55,8 @@ class EventOut(BaseModel):
     crash_prob: Optional[float] = None
     has_clip: bool = False
     has_raw_clip: bool = False   # 합성 없는 원본 사고 클립을 내려받을 수 있는지
+    analyzed_at: Optional[datetime] = None
+    analysis_no: Optional[int] = None
 
 
 class ActiveTaskOut(BaseModel):
@@ -65,9 +67,12 @@ class ActiveTaskOut(BaseModel):
     recording_date: Optional[date] = None
     camera_location: str = "주차장"
     status: str
-    progress: Optional[int] = None
+    progress: Optional[float] = None
     eta_sec: Optional[int] = None
     eta_is_min: bool = False
+    stage: Optional[str] = None
+    stage_count: Optional[int] = None
+    stage_index: Optional[int] = None
     created_at: Optional[datetime] = None
 
 
@@ -94,6 +99,16 @@ class LastTaskOut(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class AnalysisHistoryOut(BaseModel):
+    analysis_no: int
+    task_id: int
+    status: str
+    error_message: Optional[str] = None
+    requested_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    event_count: Optional[int] = None
+
+
 class VideoOut(BaseModel):
     id: int
     video_name: str
@@ -111,6 +126,7 @@ class VideoOut(BaseModel):
     events: list[EventOut] = []
     last_task: Optional[LastTaskOut] = None
     analysis_done: bool = False   # 분석을 한 번이라도 완료(SUCCESS)했는지
+    analysis_history: list[AnalysisHistoryOut] = []
 
 
 
@@ -133,8 +149,11 @@ class AnalyzeResponse(BaseModel):
 class TaskStatusOut(BaseModel):
     task_id: int
     status: str
-    progress: Optional[int] = None   # 진행도 %(PROCESSING 중 추론 진행률, 없으면 None)
+    progress: Optional[float] = None
     eta_sec: Optional[int] = None    # 남은 시간(초) — 실제로 잰 처리 속도 기준, 모르면 None
     eta_is_min: bool = False         # True 면 '최소 이만큼'(거친 탐색 중이라 더 늘 수 있음)
+    stage: Optional[str] = None
+    stage_count: Optional[int] = None
+    stage_index: Optional[int] = None
     error_message: Optional[str] = None
     events: list[EventOut] = []
