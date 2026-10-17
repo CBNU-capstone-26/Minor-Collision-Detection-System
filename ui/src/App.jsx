@@ -626,7 +626,7 @@ const HISTORY_STATUS = {
 // 영상 재생 화면 오른쪽: 이 영상의 분석 이력 (최근 분석이 위)
 // history: 서버가 준 분석 이력, events: 지금 남아 있는 클립(분석 번호별로 셈),
 // progressText(taskId): 진행 중인 분석의 진행 문구(없으면 null)
-function AnalysisHistoryPanel({ history, events, progressText, onClose, onSelect, activeNo }) {
+function AnalysisHistoryPanel({ history, events, progressText, onSelect, activeNo }) {
   const remain = {};
   events.forEach((e) => {
     if (e.analysisNo != null) remain[e.analysisNo] = (remain[e.analysisNo] || 0) + 1;
@@ -653,14 +653,6 @@ function AnalysisHistoryPanel({ history, events, progressText, onClose, onSelect
       <div className="analysis-history-header">
         <h3>분석 이력</h3>
         <span className="analysis-history-count">총 {history.length}회</span>
-        <button
-          className="sidebar-icon-btn analysis-history-close"
-          onClick={onClose}
-          aria-label="분석 이력 숨기기"
-          title="분석 이력을 숨깁니다"
-        >
-          ›
-        </button>
       </div>
       {history.length === 0 ? (
         <div className="event-empty-hint">아직 분석한 적이 없습니다.</div>
@@ -1119,7 +1111,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false); // 오른쪽 분석 이력 — 기본은 숨김(영상을 열 때마다)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(true); // 오른쪽 패널(진행 단계 + 분석 이력) — 기본은 열림(영상을 열 때마다)
   const [highlightAnalysisNo, setHighlightAnalysisNo] = useState(null); // 분석 이력에서 고른 분석 — 그 클립을 왼쪽 목록에서 강조
   const eventListRef = useRef(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
@@ -1283,7 +1275,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         setIsPlaying(false);
         setIsTheaterMode(false);
         setIsSidebarOpen(true);
-        setIsHistoryOpen(false);
+        setIsHistoryOpen(true);
         setHighlightAnalysisNo(null);
         setBboxList([]);
         setIsBBoxMode(false);
@@ -2626,7 +2618,28 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       ) : (
         <main className={`watch-view ${isTheaterMode ? "theater-view" : ""}`}>
           {!isTheaterMode && <section className="incident-workspace-header">
-            <div className="incident-workspace-top"><div><button className="incident-back" onClick={handleBackToHome}>← 영상 보관함</button><h1>{getVideoDisplayTitle(selectedVideo, videos)}</h1></div></div>
+            <div className="incident-workspace-top"><div><button className="incident-back" onClick={handleBackToHome}>← 영상 보관함</button><h1>{getVideoDisplayTitle(selectedVideo, videos)}</h1></div>
+              {/* 오른쪽 패널(진행 단계·분석 이력) 열기·닫기 — 닫으면 그 칸이 빠지고 영상이 넓어진다(넓은 화면만).
+                  영상 크기가 바뀌므로 차량을 고르는 중엔 막는다 */}
+              {isXLScreen && (
+                <button
+                  className="panel-toggle-btn"
+                  onClick={() => setIsHistoryOpen((open) => !open)}
+                  disabled={isChoosingVehicle}
+                  aria-expanded={isHistoryOpen}
+                  title={isChoosingVehicle ? "차량을 고르는 중에는 쓸 수 없습니다"
+                    : isHistoryOpen ? "진행 단계·분석 이력 패널을 닫고 영상을 넓게 봅니다" : "진행 단계·분석 이력 패널을 엽니다"}
+                >
+                  {/* 오른쪽 패널 모양 아이콘 — 열려 있으면 오른쪽 칸이 칠해지고, 닫혀 있으면 빈 칸 */}
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="4.5" width="18" height="15" rx="1.5" />
+                    <path d="M15 4.5v15" />
+                    {isHistoryOpen && <rect x="15" y="4.5" width="6" height="15" fill="currentColor" stroke="none" opacity="0.45" />}
+                  </svg>
+                  {isHistoryOpen ? "오른쪽 패널 닫기" : "오른쪽 패널 열기"}
+                </button>
+              )}
+            </div>
             {!isXLScreen && workflowSteps}
           </section>}
 
@@ -2640,7 +2653,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             </div>
           )}
 
-          <div className={`watch-layout ${isTheaterMode ? "theater-mode" : ""} ${!isSidebarOpen ? "sidebar-collapsed" : ""} ${!isHistoryOpen ? "history-collapsed" : ""}`}>
+          <div className={`watch-layout ${isTheaterMode ? "theater-mode" : ""} ${!isSidebarOpen ? "sidebar-collapsed" : ""} ${!isHistoryOpen && isXLScreen ? "history-collapsed" : ""}`}>
             {/* 왼쪽 칸: (넓은 화면) 버튼 묶음 + 사고 클립 사이드바 */}
             <div className="watch-side">
               {actionsInSide && watchActionButtons}
@@ -3230,35 +3243,26 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               </div>
             </section>
 
-            {/* 오른쪽 칸: (1280px 이상) 진행 단계 + 이 영상의 분석 이력 — 이력을 숨기면 '분석 이력' 버튼만 남는다 */}
-            <div className="watch-right">
-            {isXLScreen && workflowSteps}
-            {isHistoryOpen ? (
-              <AnalysisHistoryPanel
-                history={selectedVideo.analysisHistory || []}
-                events={selectedVideo.events}
-                progressText={(taskId) => {
-                  const job = analyzingJobs.find((j) => j.taskId === taskId);
-                  return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
-                }}
-                activeNo={highlightAnalysisNo}
-                onSelect={(history) => {
-                  // 그 분석의 클립을 왼쪽 목록에서 강조(나머지는 흐리게). 같은 이력을 다시 누르면 해제
-                  setHighlightAnalysisNo((cur) => (cur === history.no ? null : history.no));
-                }}
-                onClose={() => setIsHistoryOpen(false)}
-              />
-            ) : (
-              <button
-                className="analysis-history-tab"
-                onClick={() => setIsHistoryOpen(true)}
-                title="분석 이력을 엽니다"
-              >
-                <span className="analysis-history-tab-arrow" aria-hidden="true">‹</span>
-                <span>분석 이력</span>
-              </button>
+            {/* 오른쪽 패널: (1280px 이상) 진행 단계 + 이 영상의 분석 이력. 넓은 화면에서 닫으면 칸째 빠진다(헤더의 '패널 닫기').
+                좁은 화면에선 영상 아래에 늘 보인다(영상 크기와 상관없음) */}
+            {(isHistoryOpen || !isXLScreen) && (
+              <div className="watch-right">
+                {isXLScreen && workflowSteps}
+                <AnalysisHistoryPanel
+                  history={selectedVideo.analysisHistory || []}
+                  events={selectedVideo.events}
+                  progressText={(taskId) => {
+                    const job = analyzingJobs.find((j) => j.taskId === taskId);
+                    return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
+                  }}
+                  activeNo={highlightAnalysisNo}
+                  onSelect={(history) => {
+                    // 그 분석의 클립을 왼쪽 목록에서 강조(나머지는 흐리게). 같은 이력을 다시 누르면 해제
+                    setHighlightAnalysisNo((cur) => (cur === history.no ? null : history.no));
+                  }}
+                />
+              </div>
             )}
-            </div>
           </div>
         </main>
       )}

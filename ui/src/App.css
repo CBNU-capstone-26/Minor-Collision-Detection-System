@@ -1086,6 +1086,15 @@ body.dark-mode .video-info-list dt {
     height: var(--watch-avail-h);
   }
 
+  /* 오른쪽 패널을 닫으면 그 칸이 빠지고 영상 칸이 넓어진다 (영상은 화면 높이에 꽉 찰 때까지 커짐) */
+  .watch-layout.history-collapsed {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .watch-layout.sidebar-collapsed.history-collapsed {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
   .watch-right > .analysis-history {
     flex: 1 1 auto;
     min-height: 0;
@@ -1147,49 +1156,38 @@ body.dark-mode .video-info-list dt {
 
 /* 영상 오른쪽 칸 (좁은 화면에선 영상 아래) */
 .watch-right {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
 }
 
-/* 분석 이력 열기 탭 (숨겼을 때) — 좁은 화면에선 가로 버튼 */
-.analysis-history-tab {
+/* 오른쪽 패널 열기·닫기 — 작업 헤더 윗줄 오른쪽 끝(오른쪽 패널 바로 위) */
+.panel-toggle-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  align-self: start;
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--incident-line, #e2e8f0);
   border-radius: 5px;
-  background: #ffffff;
-  color: #1e3a8a;
-  font-size: 13.5px;
+  background: var(--incident-surface, #ffffff);
+  color: var(--incident-muted, #64748b);
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  white-space: nowrap;
 }
 
-.analysis-history-tab:hover {
-  background: #f1f5f9;
+.panel-toggle-btn:hover:not(:disabled) {
+  color: var(--incident-accent, #087f83);
+  border-color: var(--incident-accent, #087f83);
 }
 
-.analysis-history-tab-arrow {
-  font-size: 18px;
-  line-height: 1;
-}
-
-body.dark-mode .analysis-history-tab {
-  background: #19232d;
-  border-color: #2a3641;
-  color: #42d7c3;
-}
-
-body.dark-mode .analysis-history-tab:hover {
-  background: #1f2b36;
-  border-color: #42d7c3;
+.panel-toggle-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ---- 분석 이력 (영상 오른쪽) ---- */
@@ -1221,14 +1219,6 @@ body.dark-mode .analysis-history-tab:hover {
   font-size: 12px;
   color: #1d4ed8;
   margin-right: auto;
-}
-
-/* 숨기기(›) — 왼쪽 사이드바의 닫기(×)와 같은 모양, 머리말 높이에 맞춰 조금 작게 */
-.analysis-history-close {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  align-self: center;
 }
 
 /* 이력이 많아지면 목록 안에서만 스크롤 */
