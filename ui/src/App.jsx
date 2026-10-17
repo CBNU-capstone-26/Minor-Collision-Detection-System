@@ -1479,9 +1479,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   // ── 실제 <video> 재생 제어 ──────────────────────────────
+  // 차량 탐지 중엔 재생·이동을 막는다 — 탐지는 요청한 순간의 화면으로 하므로 화면이 바뀌면 박스가 어긋난다
   const togglePlay = () => {
     const v = videoElRef.current;
-    if (!v) return;
+    if (!v || isDetectingVehicles) return;
     if (v.paused) v.play();
     else v.pause();
   };
@@ -1513,7 +1514,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   const handleSeekStart = (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || isDetectingVehicles) return;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     isSeekingRef.current = true;
     setIsSeeking(true);
@@ -1539,6 +1540,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 이벤트 구간 클릭 → 해당 시점으로 이동 후 재생
   const seekToEvent = (event) => {
+    if (isDetectingVehicles) return;
     setCurrentEventId(event.id);
     const v = videoElRef.current;
     if (v) {
@@ -2638,7 +2640,20 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     playsInline
                     controls={false}
 
-                    onPlay={() => setIsPlaying(true)}
+                    onPlay={(e) => {
+                      // 키보드 미디어 키·브라우저/OS 미디어 조작으로 재생돼도 탐지 중이면 바로 멈춘다
+                      if (isDetectingVehicles) {
+                        e.currentTarget.pause();
+                        return;
+                      }
+                      // 탐지 박스는 탐지한 순간의 화면 기준이라 재생하면 어긋난다 → 자동 탐지 모드를 끝낸다(고른 박스는 남는다)
+                      if (selectionMode === "auto") handleEndDesignateMode();
+                      setIsPlaying(true);
+                    }}
+                    onSeeking={() => {
+                      // 다른 장면으로 옮겨도(재생바·사고 의심 구간) 마찬가지
+                      if (selectionMode === "auto" && !isDetectingVehicles) handleEndDesignateMode();
+                    }}
                     onPause={() => setIsPlaying(false)}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                     onLoadedMetadata={(e) => {
@@ -2772,7 +2787,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                 {/* 재생바 + 재생 컨트롤 (영상 화면을 가리지 않게 화면 바깥 하단) */}
                 <div className="custom-progress-bar">
                   <div
-                    className={`progress-track ${isSeeking ? "seeking" : ""}`}
+                    className={`progress-track ${isSeeking ? "seeking" : ""} ${isDetectingVehicles ? "locked" : ""}`}
+                    title={isDetectingVehicles ? "차량 탐지 중에는 이동할 수 없습니다" : undefined}
                     onPointerDown={handleSeekStart}
                     onPointerMove={handleSeekMove}
                     onPointerUp={handleSeekEnd}
@@ -2818,8 +2834,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     <button
                       className="control-btn"
                       onClick={togglePlay}
+                      disabled={isDetectingVehicles}
                       aria-label={isPlaying ? "일시정지" : "재생"}
-                      title={isPlaying ? "일시정지합니다" : "재생합니다"}
+                      title={isDetectingVehicles ? "차량 탐지 중에는 재생할 수 없습니다"
+                        : isPlaying ? "일시정지합니다" : "재생합니다"}
                     >
                       <PlayerIcon name={isPlaying ? "pause" : "play"} size={20} />
                     </button>

@@ -1913,6 +1913,28 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   transition: none;
 }
 
+/* 차량 탐지 중: 이동할 수 없음을 보여 준다(흐리게, 손잡이·시각 말풍선 숨김) */
+.progress-track.locked,
+.progress-track.locked .event-range {
+  cursor: not-allowed;
+}
+
+.progress-track.locked {
+  opacity: 0.5;
+}
+
+.progress-track.locked:hover .progress-rail {
+  height: 12px;
+}
+
+.progress-track.locked:hover .progress-thumb {
+  transform: translate(-50%, -50%) scale(0);
+}
+
+.progress-track.locked:hover .progress-hover-time {
+  opacity: 0;
+}
+
 /* 사고 의심 구간 */
 .event-range {
   position: absolute;
