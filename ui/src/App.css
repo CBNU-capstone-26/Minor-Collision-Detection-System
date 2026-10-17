@@ -4764,13 +4764,13 @@ body.dark-mode .home-toolbar-actions .delete-confirm-btn:hover {
   display: inline-flex;
 }
 
-.detect-popover-overlay {
+.analyze-popover-overlay {
   position: fixed;
   inset: 0;
   z-index: 40;
 }
 
-.detect-popover {
+.analyze-popover {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
@@ -4783,20 +4783,20 @@ body.dark-mode .home-toolbar-actions .delete-confirm-btn:hover {
   padding: 16px;
 }
 
-.detect-popover-text {
+.analyze-popover-text {
   margin: 0 0 12px;
   font-size: 14px;
   color: #1e293b;
   font-weight: 600;
 }
 
-.detect-popover-actions {
+.analyze-popover-actions {
   display: flex;
   gap: 8px;
 }
 
-.detect-popover-run,
-.detect-popover-cancel {
+.analyze-popover-run,
+.analyze-popover-cancel {
   flex: 1;
   padding: 9px;
   border-radius: 4px;
@@ -4805,44 +4805,44 @@ body.dark-mode .home-toolbar-actions .delete-confirm-btn:hover {
   border: none;
 }
 
-.detect-popover-run {
+.analyze-popover-run {
   background: #dc2626;
   color: #fff;
 }
 
-.detect-popover-cancel {
+.analyze-popover-cancel {
   background: #e2e8f0;
   color: #334155;
 }
 
-body.dark-mode .detect-popover {
+body.dark-mode .analyze-popover {
   background: #19232d;
   border: 1px solid #2a3641;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75);
 }
 
-body.dark-mode .detect-popover-text {
+body.dark-mode .analyze-popover-text {
   color: #f8fafc;
 }
 
-body.dark-mode .detect-popover-cancel {
+body.dark-mode .analyze-popover-cancel {
   background: #101926;
   border: 1px solid #2a3641;
   color: #9baab6;
 }
 
-body.dark-mode .detect-popover-cancel:hover {
+body.dark-mode .analyze-popover-cancel:hover {
   background: #1f2b36;
   color: #cbd5e1;
 }
 
-body.dark-mode .detect-popover-run {
+body.dark-mode .analyze-popover-run {
   background: #ef4444;
   color: #ffffff;
   box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);
 }
 
-body.dark-mode .detect-popover-run:hover {
+body.dark-mode .analyze-popover-run:hover {
   background: #dc2626;
   box-shadow: 0 0 18px rgba(239, 68, 68, 0.6);
 }

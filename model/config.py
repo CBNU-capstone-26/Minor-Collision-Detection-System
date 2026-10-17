@@ -268,7 +268,7 @@ PREDICT_WINDOW_STRIDE = 1
 PREDICT_DISPLAY_OFFSET = 25
 # 서비스 사고 클립에 CAM 히트맵을 합성할지. 사용자 요청(2026-10-10)으로 기본은 끔 —
 # 클립에는 차량 박스와 아래 상태 띠(S/A)만 그린다. 끄면 CAM 계산 자체를 건너뛴다.
-# (CLI 전체 영상 출력 predict_hit_and_run_final 은 이 설정과 무관하게 CAM 을 그린다)
+# (CLI 전체 영상 출력 predict_full_video 은 이 설정과 무관하게 CAM 을 그린다)
 PREDICT_CLIP_CAM_OVERLAY = False
 # 사고 클립 앞뒤로 붙이는 여유(프레임). 사고 판정 구간 앞뒤로 이만큼 더 잘라 보여 준다.
 # (30fps 기준 1초. 프레임 단위라 fps 에 따라 실제 시간은 달라진다)

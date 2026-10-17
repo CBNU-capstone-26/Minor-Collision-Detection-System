@@ -128,7 +128,7 @@ def run_prediction_task(self, task_id: int):
                 end_timestamp_sec=r["end_sec"],
                 end_frame_number=r["end_frame"],
                 crash_prob=r["crash_prob"],
-                cam_heatmap_path=settings.rel_path(r["clip_path"]),
+                clip_path=settings.rel_path(r["clip_path"]),
             ))
 
         task.status = "SUCCESS"

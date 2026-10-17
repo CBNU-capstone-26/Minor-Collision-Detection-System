@@ -741,7 +741,7 @@ function getCalendarDays(monthDate) {
   return days;
 }
 
-function getVideosByDateApi(videos) {
+function groupVideosByDate(videos) {
   return videos.reduce((groups, video) => {
     groups[video.date] = [...(groups[video.date] ?? []), video];
     return groups;
@@ -1138,7 +1138,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
 
   // 사고감지 실행 / 분석 관련 상태
-  const [showDetectConfirm, setShowDetectConfirm] = useState(false); // 확인 팝오버
+  const [showAnalyzeConfirm, setShowAnalyzeConfirm] = useState(false); // 확인 팝오버
   const [toast, setToast] = useState(null); // { type, message }
   // 동시 분석 작업 목록: [{ taskId, videoId, dateLabel, estimatedSec, startedAt }]
   const [analyzingJobs, setAnalyzingJobs] = useState([]);
@@ -1206,15 +1206,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 설정 정보 (현재 로그인 사용자 정보와 동기화)
   const currentUsername = currentUser?.username || "user";
-  const [adminRealName, setAdminRealName] = useState(currentUser?.name || "");
-  const [adminPhone, setAdminPhone] = useState(currentUser?.phone || "");
-  const [adminEmail, setAdminEmail] = useState(currentUser?.email || "");
+  const [profileName, setProfileName] = useState(currentUser?.name || "");
+  const [profilePhone, setProfilePhone] = useState(currentUser?.phone || "");
+  const [profileEmail, setProfileEmail] = useState(currentUser?.email || "");
 
   useEffect(() => {
     if (currentUser) {
-      setAdminRealName(currentUser.name || "");
-      setAdminPhone(currentUser.phone || "");
-      setAdminEmail(currentUser.email || "");
+      setProfileName(currentUser.name || "");
+      setProfilePhone(currentUser.phone || "");
+      setProfileEmail(currentUser.email || "");
     }
   }, [currentUser]);
 
@@ -1280,7 +1280,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         setBboxList([]);
         setIsBBoxMode(false);
         setSelectionMode("none");
-        setShowDetectConfirm(false);
+        setShowAnalyzeConfirm(false);
 
         setCurrentTime(0);
         setMediaDuration(0);
@@ -1384,7 +1384,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   const videosByDate = useMemo(() => {
-    return getVideosByDateApi(videos);
+    return groupVideosByDate(videos);
   }, [videos]);
 
   const calendarDays = useMemo(() => getCalendarDays(calendarMonth), [calendarMonth]);
@@ -1547,13 +1547,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
 
 
-  // '사고감지 실행' 클릭 → bbox 없으면 경고, 있으면 확인 팝오버
-  const handleDetectClick = () => {
+  // '사고 구간 찾기' 클릭 → 차량 박스가 없으면 경고, 있으면 확인 팝오버
+  const handleAnalyzeClick = () => {
     if (bboxList.length === 0) {
       showToast("사고를 감지할 차량을 드래그하여 주십시오.", "warning");
       return;
     }
-    setShowDetectConfirm(true);
+    setShowAnalyzeConfirm(true);
   };
 
   // 사고감지 분석 작업 취소
@@ -1589,7 +1589,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
-  // 분석 태스크 상태 폴링 (analyzedId = 분석을 시작한 영상 id)
+  // 분석 태스크 상태 폴링 (videoId = 분석을 시작한 영상 id)
   const removeJob = (taskId) =>
     setAnalyzingJobs((prev) => prev.filter((j) => j.taskId !== taskId));
 
@@ -1605,7 +1605,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
-  const pollTask = (taskId, analyzedId) => {
+  const pollTask = (taskId, videoId) => {
     if (pollingRef.current.has(taskId)) return; // 같은 작업을 두 번 폴링하지 않는다
     pollingRef.current.add(taskId);
     const finish = () => {
@@ -1615,14 +1615,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const poll = async () => {
       if (!aliveRef.current) return; // 화면이 닫히면 멈춤 — 다시 열리면 복원하면서 새로 시작
       try {
-        const status = await api.taskStatus(taskId);
+        const status = await api.getTaskStatus(taskId);
         if (!aliveRef.current) return;
         if (status.status === "SUCCESS") {
           finish();
           notifyDone("분석 완료", `사고 의심 구간 ${status.events.length}건`, "success");
           // 분석한 영상을 아직 보고 있을 때만 화면 갱신 (다른 영상으로 이동했으면 덮어쓰지 않음)
-          if (selectedVideoIdRef.current === analyzedId) {
-            const v = await api.getVideo(analyzedId);
+          if (selectedVideoIdRef.current === videoId) {
+            const v = await api.getVideo(videoId);
             setSelectedVideo(v);
           }
           loadVideos();
@@ -1631,8 +1631,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         if (status.status === "FAILURE") {
           finish();
           notifyDone("분석 실패", status.error_message || "오류", "error");
-          if (selectedVideoIdRef.current === analyzedId) {
-            const v = await api.getVideo(analyzedId); // '다시 실행' 안내를 띄우기 위해 갱신
+          if (selectedVideoIdRef.current === videoId) {
+            const v = await api.getVideo(videoId); // '다시 실행' 안내를 띄우기 위해 갱신
             setSelectedVideo(v);
           }
           return;
@@ -1640,7 +1640,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         if (status.status === "CANCELLED") {
           finish();
           showToast("사고 감지 분석이 취소되었습니다.", "info");
-          refreshSelectedVideo(analyzedId);
+          refreshSelectedVideo(videoId);
           return;
         }
         // 진행도(%)와 서버가 실제로 잰 속도 기준의 남은 시간(초)을 반영한다.
@@ -1702,7 +1702,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     aliveRef.current = true;
     (async () => {
       try {
-        const tasks = await api.activeTasks();
+        const tasks = await api.listActiveTasks();
         if (!aliveRef.current) return;
         tasks.forEach((t) => {
           const job = {
@@ -1734,8 +1734,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   }, []);
 
   // 확인 팝오버에서 '실행' → bbox 원본해상도 환산 후 분석 요청
-  const runDetection = async () => {
-    setShowDetectConfirm(false);
+  const runAnalysis = async () => {
+    setShowAnalyzeConfirm(false);
     const box = bboxList[0];
     if (!box) return;
 
@@ -1755,7 +1755,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
     // 분석 시작: 지정 모드를 끄고 해당 영상을 '분석 중'으로 표시
     // (박스 그리기 판만 끄면 모드 값이 남아 분석 중에도 탐지 버튼이 켜진 상태로 보였다)
-    const analyzedId = selectedVideo.id;
+    const videoId = selectedVideo.id;
     handleEndDesignateMode();
 
     // 예상 소요시간(초) 추정: 슬라이딩 윈도우 수(총프레임/stride) 기반 (CPU ~1s/윈도우)
@@ -1765,7 +1765,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const estimatedSec = Math.max(10, Math.round((totalFrames / 5) * 1.1));
     const job = {
       taskId: null,
-      videoId: analyzedId,
+      videoId,
       dateLabel: selectedVideo.date,
       estimatedSec,
       startedAt: Date.now(),
@@ -1785,7 +1785,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     analyzeAbortControllerRef.current = controller;
 
     try {
-      const res = await api.analyze(analyzedId, bbox, controller.signal);
+      const res = await api.analyze(videoId, bbox, controller.signal);
       job.taskId = res.task_id;
       job.status = res.status;
       if (res.already_running) {
@@ -1793,8 +1793,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         showToast("이 영상은 이미 분석 중입니다. 진행 상황을 이어서 보여드릴게요.", "info");
       }
       setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === res.task_id) ? prev : [...prev, job]));
-      pollTask(res.task_id, analyzedId);
-      refreshSelectedVideo(analyzedId); // 분석 이력에 새 분석 추가
+      pollTask(res.task_id, videoId);
+      refreshSelectedVideo(videoId); // 분석 이력에 새 분석 추가
     } catch (e) {
       if (e.name === "AbortError") {
         return;
@@ -2082,7 +2082,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         : selectedVideo.events.length > 0 ? 3
           : bboxList.length > 0 ? 2
             : 1;
-  const analyzingJobHere = selectedVideo ? analyzingJobs.find((j) => j.videoId === selectedVideo.id) : null;
+  const selectedVideoJob = selectedVideo ? analyzingJobs.find((j) => j.videoId === selectedVideo.id) : null;
   // 차량 탐지·직접 지정 중 — 영상 크기·비율이 바뀌면 그리던 박스·탐지 박스 위치가 흔들리므로
   // 이 동안엔 영상 크기를 바꾸는 기능(영화관 모드·전체화면·왼쪽 클립 칸 닫기/열기)을 쓰지 못하게 한다
   const isChoosingVehicle = selectionMode !== "none" || isDetectingVehicles;
@@ -2097,7 +2097,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           n: 2,
           title: "사고 구간 찾기",
           desc: isAnalyzing
-            ? `분석 중 · ${typeof analyzingJobHere?.progress === "number" ? `${Math.round(analyzingJobHere.progress)}%` : "준비 중"}`
+            ? `분석 중 · ${typeof selectedVideoJob?.progress === "number" ? `${Math.round(selectedVideoJob.progress)}%` : "준비 중"}`
             : "선택한 차량의 접촉 장면 탐색",
         },
         { n: 3, title: "클립 검토", desc: "원본과 의심 장면을 함께 확인", count: selectedVideo.events.length },
@@ -2179,32 +2179,32 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         ) : (
           <button
             className="detect-run-btn"
-            onClick={handleDetectClick}
+            onClick={handleAnalyzeClick}
             title="선택한 차량의 사고 의심 구간을 찾습니다"
           >
             사고 구간 찾기
           </button>
         )}
 
-        {showDetectConfirm && (
+        {showAnalyzeConfirm && (
           <>
             <div
-              className="detect-popover-overlay"
-              onClick={() => setShowDetectConfirm(false)}
+              className="analyze-popover-overlay"
+              onClick={() => setShowAnalyzeConfirm(false)}
             />
-            <div className="detect-popover">
-              <p className="detect-popover-text">
+            <div className="analyze-popover">
+              <p className="analyze-popover-text">
                 {selectedVideo?.analyzedBefore
                   ? "이미 분석을 완료한 영상입니다. 다시 분석을 실행하시겠습니까?"
                   : "현재 선택하신 차량의 사고예상 구간을 탐지하시겠습니까?"}
               </p>
-              <div className="detect-popover-actions">
-                <button className="detect-popover-run" onClick={runDetection}>
+              <div className="analyze-popover-actions">
+                <button className="analyze-popover-run" onClick={runAnalysis}>
                   실행
                 </button>
                 <button
-                  className="detect-popover-cancel"
-                  onClick={() => setShowDetectConfirm(false)}
+                  className="analyze-popover-cancel"
+                  onClick={() => setShowAnalyzeConfirm(false)}
                 >
                   뒤로가기
                 </button>
@@ -3314,8 +3314,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     <label htmlFor="account-name">이름</label>
                     <input id="account-name"
                       type="text"
-                      value={adminRealName}
-                      onChange={(e) => setAdminRealName(e.target.value)}
+                      value={profileName}
+                      onChange={(e) => setProfileName(e.target.value)}
                       placeholder="이름 입력"
                     />
                   </div>
@@ -3324,8 +3324,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     <label htmlFor="account-phone">연락처</label>
                     <input id="account-phone"
                       type="text"
-                      value={adminPhone}
-                      onChange={(e) => setAdminPhone(e.target.value)}
+                      value={profilePhone}
+                      onChange={(e) => setProfilePhone(e.target.value)}
                       placeholder="연락처 입력 (예: 010-1234-5678)"
                     />
                   </div>
@@ -3334,8 +3334,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     <label htmlFor="account-email">이메일 주소</label>
                     <input id="account-email"
                       type="email"
-                      value={adminEmail}
-                      onChange={(e) => setAdminEmail(e.target.value)}
+                      value={profileEmail}
+                      onChange={(e) => setProfileEmail(e.target.value)}
                       placeholder="이메일 입력"
                     />
                   </div>
@@ -3343,15 +3343,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   <button
                     className="settings-save-btn"
                     onClick={async () => {
-                      if (!adminRealName.trim()) {
+                      if (!profileName.trim()) {
                         alert("이름을 입력해 주세요.");
                         return;
                       }
                       try {
                         const updated = await api.updateMe({
-                          name: adminRealName.trim(),
-                          phone: adminPhone.trim(),
-                          email: adminEmail.trim(),
+                          name: profileName.trim(),
+                          phone: profilePhone.trim(),
+                          email: profileEmail.trim(),
                         });
                         if (onUpdateUser) onUpdateUser(updated);
                         showToast("사용자 정보가 성공적으로 저장되었습니다.", "success");

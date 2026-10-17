@@ -205,9 +205,9 @@ def download_raw_clip(event_id: int, db: Session = Depends(get_db)):
 def get_event_clip(event_id: int, db: Session = Depends(get_db)):
     # <video src> 태그용 — 인증 미적용 (MVP)
     event = db.get(db_models.CrashEvent, event_id)
-    if event is None or not event.cam_heatmap_path:
+    if event is None or not event.clip_path:
         raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")
-    path = settings.abs_path(event.cam_heatmap_path)
+    path = settings.abs_path(event.clip_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="클립 파일이 없습니다.")
     media_type = "video/webm" if str(path).endswith(".webm") else "video/mp4"

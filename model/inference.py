@@ -82,7 +82,8 @@ def _finalize_clip(rendered_path, dest_stem):
     return final
 
 
-def get_activation(name):
+def make_activation_hook(name):
+    """forward hook — 그 층의 출력(특징맵)을 activation[name] 에 담는다."""
     def hook(model, input, output):
         activation[name] = output.detach()
     return hook
@@ -168,7 +169,7 @@ def _add_state_bar(frame, state):
     return np.vstack([frame, bar])
 
 
-def predict_hit_and_run_final(
+def predict_full_video(
     model,
     video_path=config.PREDICT_VIDEO_PATH,
     txt_path=config.PREDICT_TXT_PATH,
@@ -201,8 +202,8 @@ def predict_hit_and_run_final(
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
 
-    handle = model.inception5b.register_forward_hook(
-        get_activation('inception5b'))
+    handle = model.cam_layer.register_forward_hook(
+        make_activation_hook('cam_layer'))
     out_video = None
     write_queue = None
     writer_thread = None
@@ -314,7 +315,7 @@ def predict_hit_and_run_final(
                 outputs = model(clips)
                 probs = F.softmax(outputs, dim=1)
                 pred_classes = outputs.argmax(dim=1)
-                feat_maps = activation['inception5b']
+                feat_maps = activation['cam_layer']
 
                 for offset, window_idx in enumerate(batch_window_starts):
                     # 이벤트 경계는 창 끝(frame_idx) 기준, 판정·CAM 표시는 disp_idx 에 그린다
@@ -556,7 +557,7 @@ def predict_events_and_clips(
     # 3D-CNN 실행기 — 서버 컴퓨터에 맞는 가장 빠른 방식(infer_runtime.py, 처음 한 번만 고름).
     # CAM 히트맵 합성(개발용, 기본 꺼짐)을 켰을 때만 예전처럼 PyTorch + hook 으로 특징맵을 받는다.
     runner = None if cam_overlay else get_runner(model)
-    handle = (model.inception5b.register_forward_hook(get_activation('inception5b'))
+    handle = (model.cam_layer.register_forward_hook(make_activation_hook('cam_layer'))
               if cam_overlay else None)
     try:
         # ── 1패스: 추론용 224×224 프레임만 메모리에 보관 (원본 프레임은 보관 X) ──
@@ -636,7 +637,7 @@ def predict_events_and_clips(
         accident_overlays = {}
         # window_idx → pred_class / P(A) (3D-CNN을 실제로 실행한 윈도우만)
         window_pred = {}
-        window_pA = {}
+        window_prob_a = {}
 
         num_windows = full_video_tensor.size(1) - (clip_length - 1)
         window_starts = list(range(0, max(0, num_windows), window_stride))
@@ -715,7 +716,7 @@ def predict_events_and_clips(
                         outputs, feat_maps = runner(clips), None
                     else:
                         outputs = model(clips)
-                        feat_maps = activation['inception5b']
+                        feat_maps = activation['cam_layer']
                     probs = F.softmax(outputs, dim=1)
                     pred_classes = outputs.argmax(dim=1)
 
@@ -726,7 +727,7 @@ def predict_events_and_clips(
                         pred_class = int(pred_classes[offset].item())
                         prob = probs[offset, pred_class].item()
                         window_pred[window_idx] = pred_class
-                        window_pA[window_idx] = probs[offset, 1].item()
+                        window_prob_a[window_idx] = probs[offset, 1].item()
 
                         if pred_class == 1 and not cam_overlay:
                             # 클립에 히트맵을 안 그리면 CAM 계산을 건너뛰고 확률만 남긴다
@@ -748,7 +749,7 @@ def predict_events_and_clips(
                             ]
                             accident_overlays[disp_idx] = (heatmap_bbox, prob)
 
-                        if coarse_k > 1 and window_pA[window_idx] > coarse_prob:
+                        if coarse_k > 1 and window_prob_a[window_idx] > coarse_prob:
                             lo = max(0, window_idx - coarse_pad)
                             lo += (-lo) % window_stride       # 창 시작 격자에 맞춘다
                             near_set.update(range(lo, min(last_start, window_idx + coarse_pad) + 1,
@@ -778,7 +779,7 @@ def predict_events_and_clips(
         if coarse[-1] != window_starts[-1]:
             coarse.append(window_starts[-1])
         _run_windows(coarse, coarse_k=k, stage='coarse' if k > 1 else 'scan')
-        hot = [w for w in coarse if window_pA[w] > coarse_prob]
+        hot = [w for w in coarse if window_prob_a[w] > coarse_prob]
         refine = []
         if k > 1 and hot:
             near = np.zeros(window_starts[-1] + 1, dtype=bool)

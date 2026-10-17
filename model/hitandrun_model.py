@@ -52,10 +52,10 @@ class HitAndRun3DCNN(nn.Module):
        CAM은 어차피 시간축을 평균내므로(inference.py의 mean(cam, dim=0))
        시간축 보존은 필요 없고, post_conv를 T=1에서만 돌려 연산도 아낀다.
 
-    서비스 통합 인터페이스는 S3D 버전과 동일하게 유지한다:
+    서비스(inference.py)가 쓰는 인터페이스:
       - 입력 (B, 3, T, 224, 224) → 출력 (B, num_classes) logits
       - `head_conv`   : 1×1×1 Conv3d 분류 헤드 (CAM 가중치로 사용)
-      - `inception5b` : CAM forward hook 대상 (2048채널 공간 특징맵)
+      - `cam_layer`   : CAM forward hook 대상 (2048채널 공간 특징맵)
 
     Args:
         num_classes: 분류 클래스 수 (기본 2: S/A)
@@ -85,12 +85,13 @@ class HitAndRun3DCNN(nn.Module):
             X3D_HEAD_CHANNELS, num_classes, kernel_size=1)
 
     @property
-    def inception5b(self):
-        """CAM hook 호환 별칭 — 헤드 확장부 출력(2048채널, 공간 7×7 유지).
+    def cam_layer(self):
+        """CAM 이 특징맵을 받아 가는 층 — 헤드 확장부 출력(2048채널, 공간 7×7 유지).
 
-        property라 모듈이 중복 등록되지 않으며, inference.py 의
-        `model.inception5b.register_forward_hook(...)`이 수정 없이 동작한다.
+        property라 모듈이 중복 등록되지 않는다(가중치 키에 영향 없음). inference.py 가
+        `model.cam_layer.register_forward_hook(...)`으로 특징맵을 받는다.
         head_conv.weight(2048채널)와 채널 수가 맞아야 CAM 가중합이 성립한다.
+        (예전 S3D 백본의 층 이름 inception5b 를 그대로 쓰던 것을 역할에 맞게 바꿨다)
         """
         return self.head_pool
 

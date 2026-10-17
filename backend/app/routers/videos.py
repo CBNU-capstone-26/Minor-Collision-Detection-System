@@ -22,16 +22,16 @@ router = APIRouter(prefix="/api/videos", tags=["videos"])
 def raw_clip_path(ev: db_models.CrashEvent):
     """합성 없는 원본 사고 클립 경로 — 분석 때 표시 클립 옆에 '<이름>_raw.mp4' 로 만든다.
     (DB 컬럼을 늘리지 않으려고 이름 규칙으로 찾는다. 예전 분석 결과엔 없을 수 있다)"""
-    if not ev.cam_heatmap_path:
+    if not ev.clip_path:
         return None
-    p = settings.abs_path(ev.cam_heatmap_path)
+    p = settings.abs_path(ev.clip_path)
     return p.with_name(f"{p.stem}_raw{p.suffix}")
 
 
 def _unlink_event_clips(ev: db_models.CrashEvent):
     """이벤트의 표시 클립과 원본 클립 파일을 지운다."""
-    if ev.cam_heatmap_path:
-        settings.abs_path(ev.cam_heatmap_path).unlink(missing_ok=True)
+    if ev.clip_path:
+        settings.abs_path(ev.clip_path).unlink(missing_ok=True)
         raw_clip_path(ev).unlink(missing_ok=True)
 
 
@@ -54,8 +54,8 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_timestamp_sec=ev.end_timestamp_sec,
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
-        has_clip=bool(ev.cam_heatmap_path),
-        has_raw_clip=bool(ev.cam_heatmap_path) and raw_clip_path(ev).exists(),
+        has_clip=bool(ev.clip_path),
+        has_raw_clip=bool(ev.clip_path) and raw_clip_path(ev).exists(),
         analyzed_at=_utc(ev.created_at),
         analysis_no=analysis_no(ev),
     )
@@ -296,7 +296,7 @@ def stream_video(video_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{video_id}/thumbnail")
-def video_thumbnail(video_id: int, db: Session = Depends(get_db)):
+def get_video_thumbnail(video_id: int, db: Session = Depends(get_db)):
     # <img src> 태그용 — 인증 미적용 (MVP). 영상 첫 프레임을 jpg로 캐시 생성.
     video = db.get(db_models.Video, video_id)
     if video is None:

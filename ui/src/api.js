@@ -145,10 +145,10 @@ export const api = {
     }),
   analyze: (videoId, bbox, signal) =>
     request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox, signal }),
-  taskStatus: (taskId) => request(`/tasks/${taskId}`),
+  getTaskStatus: (taskId) => request(`/tasks/${taskId}`),
   cancelTask: (taskId) => request(`/tasks/${taskId}/cancel`, { method: "POST" }),
   // 로그인한 사용자의 대기·진행 중 분석(창을 다시 열 때 진행 상황 복원용)
-  activeTasks: () => request("/tasks/active"),
+  listActiveTasks: () => request("/tasks/active"),
   // 실패·취소된 분석을 같은 영상·같은 차량 박스로 다시 실행
   retryTask: (taskId) => request(`/tasks/${taskId}/retry`, { method: "POST" }),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,
