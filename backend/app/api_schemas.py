@@ -116,7 +116,6 @@ class VideoOut(BaseModel):
     title: Optional[str] = None   # 업로드할 때 넣은 제목 (없으면 None)
     recording_date: Optional[date] = None
     camera_location: str = "주차장"
-    recording_start_time: str = "20:30"
     width: int
     height: int
     fps: float

@@ -82,7 +82,6 @@ export function normalizeVideo(v) {
     fileName: v.video_name || "", // 업로드한 원본 파일 이름
     uploadedAt: v.created_at || null, // 업로드 시각(ISO, UTC)
     date: v.recording_date || (created ? created.slice(0, 10) : ""),
-    startTime: v.recording_start_time || "20:30",
     duration: Math.round(v.duration_sec || 0),
     width: v.width,
     height: v.height,

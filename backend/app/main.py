@@ -61,6 +61,22 @@ _ensure_column("videos", "title VARCHAR(100) NULL")             # 업로드할 �
 _ensure_column("analysis_tasks", "finished_at DATETIME NULL")   # 분석 이력: 끝난 시각
 _ensure_column("analysis_tasks", "event_count INT NULL")        # 분석 이력: 찾은 클립 수
 
+
+def _drop_column(table, column):
+    """더 이상 쓰지 않는 컬럼을 기존 테이블에서 지운다.
+    이미 없으면 MySQL 이 오류를 내므로 그냥 넘어간다."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column};"))
+            conn.commit()
+        except Exception:
+            pass
+
+
+# 녹화 시작 시각 — 입력받지 않아 늘 기본값(20:30)이었다. 시간대별 통계와 함께 삭제(2026-10-18)
+_drop_column("videos", "recording_start_time")
+
 app.include_router(auth.router)
 app.include_router(videos.router)
 app.include_router(analysis.router)

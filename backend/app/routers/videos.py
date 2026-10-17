@@ -94,7 +94,6 @@ def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.
         title=v.title,
         recording_date=v.recording_date,
         camera_location=v.camera_location or "주차장",
-        recording_start_time=v.recording_start_time or "20:30",
         width=v.width,
         height=v.height,
         fps=v.fps,

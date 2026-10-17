@@ -993,11 +993,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       );
     }
 
-    // 녹화 일자 최신순 정렬 (같은 날짜는 시작시간 → id 순)
+    // 녹화 일자 최신순 정렬 (같은 날짜는 나중에 올린 영상 먼저)
     return [...list].sort((a, b) => {
       if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
-      if ((a.startTime || "") !== (b.startTime || ""))
-        return (b.startTime || "").localeCompare(a.startTime || "");
       return b.id - a.id;
     });
   }, [periodVideos, searchQuery, videos]);
@@ -2474,7 +2472,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                           onClick={() => handleWatchVideo(video)}
                         >
                           <strong>{video.date}</strong>
-                          <small>{video.startTime} · 이벤트 {video.events.length}건 · {formatTime(video.duration)}</small>
+                          <small>사고 의심 {video.events.length}건 · {formatTime(video.duration)}</small>
                         </button>
                       ))}
                     </div>
@@ -3586,7 +3584,6 @@ function DateVideosModal({ dateText, videos, onClose, onSelectVideo }) {
                 <h3>{getVideoDisplayTitle(v, videos)}</h3>
                 <div className="date-video-card-meta">
                   <span>⏱ 영상 길이: {formatTime(v.duration)}</span>
-                  <span>⏱ 시작: {v.startTime}</span>
                 </div>
               </div>
               <button className="date-video-play-btn">
