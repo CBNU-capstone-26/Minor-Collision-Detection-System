@@ -59,7 +59,7 @@ function VideoCardActions({ video, title, onShowInfo, onDeleted, onError }) {
     </div>}
     {dialog && <div className="settings-modal-overlay" onClick={close}>
       <div className="confirm-modal video-card-dialog" role="alertdialog" aria-modal="true" aria-label="영상 삭제 확인" onClick={(e) => e.stopPropagation()}>
-        <span className="incident-eyebrow">DELETE VIDEO</span>
+        <span className="incident-eyebrow" translate="no">DELETE VIDEO</span>
         <h2>해당 영상을 삭제하시겠습니까?</h2>
         {/* 지울 영상을 카드처럼 — 썸네일 · 제목 · 녹화일자와 길이로 어떤 영상인지 바로 알아보게 */}
         <div className="video-dialog-target">
@@ -85,8 +85,8 @@ function VideoCardActions({ video, title, onShowInfo, onDeleted, onError }) {
 
 function TeamFooter({ animated = false }) {
   return <footer className={`siot-team-footer ${animated ? "scroll-reveal" : ""}`}>
-    <div className="team-footer-brand"><strong>SIOT<span>.</span></strong><p>충북대학교 소프트웨어학부</p><small>Parking incident intelligence</small></div>
-    <div className="team-footer-people"><span className="team-footer-label">THE TEAM</span><p><span>팀장</span> 이정주</p><p><span>팀원</span> 박마누엘정, 배기원, 서범교</p></div>
+    <div className="team-footer-brand"><strong translate="no">SIOT<span>.</span></strong><p>충북대학교 소프트웨어학부</p><small translate="no">Parking incident intelligence</small></div>
+    <div className="team-footer-people"><span className="team-footer-label" translate="no">THE TEAM</span><p><span>팀장</span> 이정주</p><p><span>팀원</span> 박마누엘정, 배기원, 서범교</p></div>
     <a className="team-footer-github" href="https://github.com/CBNU-capstone-26/Minor-Collision-Detection-System" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span><small>프로젝트 저장소</small></a>
   </footer>;
 }
@@ -249,11 +249,11 @@ function LoginPage({ onLogin }) {
     <div className="public-login-page">
       <header className="public-navbar">
         <button className="public-brand" onClick={() => navigate("/login")} aria-label="SIOT 홈으로 이동">
-          <span className="workspace-wordmark">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span>
+          <span className="workspace-wordmark" translate="no">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span>
         </button>
         <div className="public-nav-meta">
-          <nav className="premium-nav-links" aria-label="서비스 소개"><a href="#overview">SIOT</a><a href="#why-siot">주요 기능</a><a href="#review-preview">클립 검토</a></nav>
-          <button className="public-login-trigger" onClick={() => setIsLoginOpen(true)}>
+          <nav className="premium-nav-links" aria-label="서비스 소개"><a href="#overview" translate="no">SIOT</a><a href="#why-siot">주요 기능</a><a href="#review-preview">클립 검토</a></nav>
+          <button className="public-login-trigger" translate="no" onClick={() => setIsLoginOpen(true)}>
             LOGIN <span aria-hidden="true">↗</span>
           </button>
         </div>
@@ -262,7 +262,7 @@ function LoginPage({ onLogin }) {
       <main className="public-main">
         <section className="public-hero" id="overview">
           <div className="public-hero-copy scroll-reveal">
-            <p className="public-kicker"><span className="premium-status-dot" /> SIOT · PARKING INTELLIGENCE</p>
+            <p className="public-kicker" translate="no"><span className="premium-status-dot" /> SIOT · PARKING INTELLIGENCE</p>
             <h1>스쳐 간 순간.<br /><em>선명해지는 단서.</em></h1>
             <p className="public-hero-description">
               수많은 CCTV 기록에서, 확인이 필요한 순간으로.
@@ -277,7 +277,7 @@ function LoginPage({ onLogin }) {
           </div>
 
           <div className="public-hero-panel scroll-reveal" aria-label="SIOT 분석 흐름">
-            <div className="public-panel-topline">
+            <div className="public-panel-topline" translate="no">
               <span>INCIDENT PREVIEW</span>
               <span className="public-live-dot">● DEMO</span>
             </div>
@@ -288,7 +288,7 @@ function LoginPage({ onLogin }) {
                 <span className="public-car car-two" />
                 <span className="public-car car-three" />
                 <div className="public-detection-box box-blue-car">
-                  <span className="public-detected-label">DETECTED</span>
+                  <span className="public-detected-label" translate="no">DETECTED</span>
                 </div>
               </div>
               <div className="public-scan-caption">SIMULATION / 실제 분석 결과가 아닌 예시입니다</div>
@@ -311,22 +311,22 @@ function LoginPage({ onLogin }) {
         </section>
 
         <section className="premium-showcase scroll-reveal" id="review-preview">
-          <div className="premium-showcase-copy"><p className="public-kicker">SIOT. A CLOSER LOOK.</p><h2>놓치기 쉬운 접촉.<br /><span>다시 볼 수 있는 순간.</span></h2><p>긴 영상에서 의심 구간으로.<br />클립과 원본을 함께 확인하는 명확한 검토 경험.</p><a className="public-text-link" href="#why-siot">검토 흐름 살펴보기 <span aria-hidden="true">↗</span></a></div>
+          <div className="premium-showcase-copy"><p className="public-kicker" translate="no">SIOT. A CLOSER LOOK.</p><h2>놓치기 쉬운 접촉.<br /><span>다시 볼 수 있는 순간.</span></h2><p>긴 영상에서 의심 구간으로.<br />클립과 원본을 함께 확인하는 명확한 검토 경험.</p><a className="public-text-link" href="#why-siot">검토 흐름 살펴보기 <span aria-hidden="true">↗</span></a></div>
           <div className="premium-review-window" aria-label="사고 의심 구간 검토 화면 예시">
-            <div className="premium-window-top"><span><i /><i /><i /></span><b>SIOT / CLIP REVIEW</b><small>예시 화면</small></div>
+            <div className="premium-window-top"><span><i /><i /><i /></span><b translate="no">SIOT / CLIP REVIEW</b><small>예시 화면</small></div>
             <div className="premium-window-scene"><div className="premium-parking-lines" /><div className="premium-scene-car parked" /><div className="premium-scene-car passing" /><div className="premium-scene-target"><span>차량 선택</span></div><span className="premium-scene-note">접촉 의심 구간 · 원본 확인 필요</span></div>
             <div className="premium-window-bottom"><span aria-hidden="true">▶</span><div><i /></div><span>00:12 / 00:48</span></div>
           </div>
         </section>
         <section className="premium-story" id="why-siot">
-          <div className="premium-story-heading scroll-reveal"><p className="public-kicker">LESS SEARCHING. MORE CLARITY.</p><h2>긴 기록은 짧게.<br /><span>중요한 순간은 깊게.</span></h2><p>차량을 고르고, 의심 구간을 찾고, 원본으로 확인하는 일.<br />복잡했던 영상 검토를 하나의 흐름으로 연결합니다.</p></div>
+          <div className="premium-story-heading scroll-reveal"><p className="public-kicker" translate="no">LESS SEARCHING. MORE CLARITY.</p><h2>긴 기록은 짧게.<br /><span>중요한 순간은 깊게.</span></h2><p>차량을 고르고, 의심 구간을 찾고, 원본으로 확인하는 일.<br />복잡했던 영상 검토를 하나의 흐름으로 연결합니다.</p></div>
           <div className="premium-feature-grid">
-            <article className="premium-feature scroll-reveal"><span className="premium-feature-index">01 / FOCUS</span><div className="premium-focus-art" aria-hidden="true"><span /><i /><b /></div><h3>한 대에 집중하는 시선.</h3><p>자동 차량 탐지와 직접 지정으로<br />확인할 차량을 명확하게 선택하세요.</p><span className="premium-feature-tag">차량 탐지 · 영역 지정</span></article>
-            <article className="premium-feature scroll-reveal"><span className="premium-feature-index">02 / DISCOVER</span><div className="premium-wave-art" aria-hidden="true">{Array.from({length: 23}, (_, i) => <i key={i} style={{"--bar-height": `${20 + ((i * 37) % 65)}%`, "--bar-delay": `${i * 65}ms`}} />)}</div><h3>기록 속, 의심되는 순간.</h3><p>선택한 차량의 접촉 의심 장면을<br />분석하고 클립 단위로 살펴보세요.</p><span className="premium-feature-tag">의심 구간 분석 · 클립 확인</span></article>
-            <article className="premium-feature scroll-reveal"><span className="premium-feature-index">03 / REVIEW</span><div className="premium-review-art" aria-hidden="true"><span>00:12 <b>의심 구간</b></span><span>00:28 <b>원본 확인</b></span><span>00:41 <b>클립 검토</b></span></div><h3>판단을 위한, 더 나은 맥락.</h3><p>분석 이력과 원본 클립을 함께 확인해<br />장면의 전후 맥락을 검토하세요.</p><span className="premium-feature-tag">분석 이력 · 원본 다운로드</span></article>
+            <article className="premium-feature scroll-reveal"><span className="premium-feature-index" translate="no">01 / FOCUS</span><div className="premium-focus-art" aria-hidden="true"><span /><i /><b /></div><h3>한 대에 집중하는 시선.</h3><p>자동 차량 탐지와 직접 지정으로<br />확인할 차량을 명확하게 선택하세요.</p><span className="premium-feature-tag">차량 탐지 · 영역 지정</span></article>
+            <article className="premium-feature scroll-reveal"><span className="premium-feature-index" translate="no">02 / DISCOVER</span><div className="premium-wave-art" aria-hidden="true">{Array.from({length: 23}, (_, i) => <i key={i} style={{"--bar-height": `${20 + ((i * 37) % 65)}%`, "--bar-delay": `${i * 65}ms`}} />)}</div><h3>기록 속, 의심되는 순간.</h3><p>선택한 차량의 접촉 의심 장면을<br />분석하고 클립 단위로 살펴보세요.</p><span className="premium-feature-tag">의심 구간 분석 · 클립 확인</span></article>
+            <article className="premium-feature scroll-reveal"><span className="premium-feature-index" translate="no">03 / REVIEW</span><div className="premium-review-art" aria-hidden="true"><span>00:12 <b>의심 구간</b></span><span>00:28 <b>원본 확인</b></span><span>00:41 <b>클립 검토</b></span></div><h3>판단을 위한, 더 나은 맥락.</h3><p>분석 이력과 원본 클립을 함께 확인해<br />장면의 전후 맥락을 검토하세요.</p><span className="premium-feature-tag">분석 이력 · 원본 다운로드</span></article>
           </div>
         </section>
-        <section className="premium-closing scroll-reveal"><span className="public-kicker">YOUR NEXT CLEAR MOMENT</span><h2>이제, 필요한 장면에만<br />집중하세요.</h2><button className="public-primary-btn" onClick={() => setIsLoginOpen(true)}>SIOT 시작하기 <span aria-hidden="true">↗</span></button><p>AI 감지는 검토를 돕는 보조 정보입니다. 최종 확인은 원본 영상으로 진행하세요.</p></section>
+        <section className="premium-closing scroll-reveal"><span className="public-kicker" translate="no">YOUR NEXT CLEAR MOMENT</span><h2>이제, 필요한 장면에만<br />집중하세요.</h2><button className="public-primary-btn" onClick={() => setIsLoginOpen(true)}>SIOT 시작하기 <span aria-hidden="true">↗</span></button><p>AI 감지는 검토를 돕는 보조 정보입니다. 최종 확인은 원본 영상으로 진행하세요.</p></section>
       </main>
 
       <TeamFooter animated />
@@ -335,7 +335,7 @@ function LoginPage({ onLogin }) {
         <div className="login-modal-overlay" onClick={() => setIsLoginOpen(false)}>
           <div className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title" onClick={(e) => e.stopPropagation()}>
             <button className="login-modal-close" onClick={() => setIsLoginOpen(false)} aria-label="로그인 창 닫기">×</button>
-            <p className="public-kicker">SECURE ACCESS</p>
+            <p className="public-kicker" translate="no">SECURE ACCESS</p>
             <h2 id="login-modal-title">대시보드 로그인</h2>
             <p className="login-modal-description">분석된 영상과 사고 의심 이벤트를 확인하세요.</p>
 
@@ -432,7 +432,7 @@ function SignupModal({ onClose, onBackToLogin }) {
     <div className="login-modal-overlay" onClick={onClose}>
       <div className="login-modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title" onClick={(e) => e.stopPropagation()}>
         <button className="login-modal-close" onClick={onClose} aria-label="회원가입 창 닫기">×</button>
-        <p className="public-kicker">CREATE ACCOUNT</p>
+        <p className="public-kicker" translate="no">CREATE ACCOUNT</p>
         <h2 id="signup-modal-title">회원가입</h2>
         <p className="login-modal-description">SIOT 영상 분석 대시보드 계정을 생성합니다.</p>
 
@@ -1822,7 +1822,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       return;
     }
 
-    player.requestFullscreen?.();
+    if (player.requestFullscreen) {
+      player.requestFullscreen();
+    } else if (player.webkitRequestFullscreen) {
+      player.webkitRequestFullscreen(); // 옛 Safari
+    } else {
+      // iPhone Safari 는 영상 영역(div) 전체화면을 허용하지 않는다 → 영상만이라도 기기 전체화면으로
+      videoElRef.current?.webkitEnterFullscreen?.();
+    }
   };
 
   // ── 실제 <video> 재생 제어 ──────────────────────────────
@@ -2040,6 +2047,17 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 오버레이 div 안에서 실제 영상 콘텐츠가 차지하는 영역(object-fit:contain 레터박스)과
   // 원본해상도→화면 스케일을 반환. bbox 그리기/클릭 좌표 환산을 이걸로 통일한다.
+  // 화면 좌표(포인터 위치)에 있는 차량 탐지 박스 — 없으면 null
+  const detectedBoxAt = (e) => {
+    const geom = getVideoGeom();
+    const el = bboxOverlayRef.current;
+    if (!geom || !el || detectedBoxes.length === 0) return null;
+    const rect = el.getBoundingClientRect();
+    const realX = (e.clientX - rect.left - geom.offsetX) / geom.scale;
+    const realY = (e.clientY - rect.top - geom.offsetY) / geom.scale;
+    return detectedBoxes.find(({ bbox: [x1, y1, x2, y2] }) => realX >= x1 && realX <= x2 && realY >= y1 && realY <= y2) || null;
+  };
+
   const getVideoGeom = () => {
     const el = bboxOverlayRef.current;
     if (!el) return null;
@@ -2212,7 +2230,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       <header className="top-navbar">
         <div className="nav-section nav-left">
           <button className="nav-logo nav-home-btn" onClick={handleBackToHome} aria-label="SIOT 홈으로 이동">
-            <span className="workspace-wordmark">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span><span className="workspace-brand-caption">{currentView === "analytics" ? "INSIGHTS" : selectedVideo ? "INCIDENT REVIEW" : "LIBRARY"}</span>
+            <span className="workspace-wordmark" translate="no">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span><span className="workspace-brand-caption" translate="no">{currentView === "analytics" ? "INSIGHTS" : selectedVideo ? "INCIDENT REVIEW" : "LIBRARY"}</span>
           </button>
         </div>
 
@@ -2422,14 +2440,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       ) : !selectedVideo ? (
         <main className="home-view">
           <section className="incident-overview">
-            <div className="incident-overview-copy"><span className="incident-eyebrow">SIOT / INCIDENT REVIEW</span><h1>주차된 순간부터,<br />놓치지 않는 사고 단서.</h1><p>CCTV 속 접촉 의심 장면을 찾고, 필요한 구간을 빠르게 검토하세요.</p><button className="incident-upload" onClick={() => setShowUpload(true)}>영상 추가하고 분석 시작 <span aria-hidden="true">↗</span></button></div>
+            <div className="incident-overview-copy"><span className="incident-eyebrow" translate="no">SIOT / INCIDENT REVIEW</span><h1>주차된 순간부터,<br />놓치지 않는 사고 단서.</h1><p>CCTV 속 접촉 의심 장면을 찾고, 필요한 구간을 빠르게 검토하세요.</p><button className="incident-upload" onClick={() => setShowUpload(true)}>영상 추가하고 분석 시작 <span aria-hidden="true">↗</span></button></div>
             <div className="incident-metrics" aria-label="내 영상 현황">
               <div><span>보관 영상</span><strong>{videos.length}<small>개</small></strong></div>
               <div><span>사고 의심 구간</span><strong>{videos.reduce((sum, video) => sum + video.events.length, 0)}<small>건</small></strong></div>
               <div><span>분석 진행</span><strong>{analyzingJobs.length}<small>개</small></strong></div>
             </div>
           </section>
-          <div className="incident-section-title"><div><span className="incident-eyebrow">VIDEO LIBRARY</span><h2>영상 보관함</h2></div></div>
+          <div className="incident-section-title"><div><span className="incident-eyebrow" translate="no">VIDEO LIBRARY</span><h2>영상 보관함</h2></div></div>
           {/* 기간 필터 및 영상 관리 툴바 */}
           <div className="home-toolbar">
             <div className="home-toolbar-filters">
@@ -2842,11 +2860,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       ? `${selectedVideo.width} / ${selectedVideo.height}`
                       : "16 / 9",
                   }}
-                  onMouseDown={(e) => {
+                  /* 박스 그리기·차량 고르기는 pointer 이벤트 — 마우스·터치(폰·태블릿)·펜 모두 같은 코드로 동작 */
+                  onPointerDown={(e) => {
                     if (!isBBoxMode) return;
-                    if (selectionMode === "auto" && hoveredDetectedBox && getVideoGeom()) {
+                    if (e.target.closest("button")) return; // 박스 ✕ 등 버튼을 누를 땐 그리기를 시작하지 않는다
+                    // 터치에는 hover 가 없으니 누른 위치의 박스를 바로 찾는다
+                    const picked = selectionMode === "auto" ? hoveredDetectedBox || detectedBoxAt(e) : null;
+                    if (selectionMode === "auto" && picked && getVideoGeom()) {
                       const { scale, offsetX, offsetY } = getVideoGeom();
-                      const [x1, y1, x2, y2] = hoveredDetectedBox.bbox;
+                      const [x1, y1, x2, y2] = picked.bbox;
                       const dispX1 = Math.round(offsetX + x1 * scale);
                       const dispY1 = Math.round(offsetY + y1 * scale);
                       const dispX2 = Math.round(offsetX + x2 * scale);
@@ -2857,6 +2879,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       return;
                     }
                     if (selectionMode === "manual") {
+                      e.preventDefault();
+                      // 손가락·마우스가 영상 밖으로 나가도 끝까지 따라가게 포인터를 붙잡는다
+                      e.currentTarget.setPointerCapture?.(e.pointerId);
                       const rect = bboxOverlayRef.current.getBoundingClientRect();
                       const x = Math.round(e.clientX - rect.left);
                       const y = Math.round(e.clientY - rect.top);
@@ -2864,7 +2889,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       setCurrentDraw({ startX: x, startY: y, endX: x, endY: y });
                     }
                   }}
-                  onMouseMove={(e) => {
+                  onPointerMove={(e) => {
                     if (!isBBoxMode) return;
                     const rect = bboxOverlayRef.current.getBoundingClientRect();
 
@@ -2891,7 +2916,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       setHoveredDetectedBox(null);
                     }
                   }}
-                  onMouseUp={(e) => {
+                  onPointerUp={(e) => {
+                    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
                     if (selectionMode === "manual" && isDrawing && currentDraw) {
                       const rect = bboxOverlayRef.current.getBoundingClientRect();
                       const x = Math.round(e.clientX - rect.left);
@@ -2907,7 +2935,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       setIsDrawing(false);
                     }
                   }}
-                  onMouseLeave={() => {
+                  onPointerCancel={() => {
+                    // 시스템 제스처 등으로 끊기면 그리던 박스는 버린다
+                    setCurrentDraw(null);
+                    setIsDrawing(false);
+                  }}
+                  onPointerLeave={() => {
                     if (selectionMode === "manual" && isDrawing && currentDraw) {
                       const xmin = Math.min(currentDraw.startX, currentDraw.endX);
                       const ymin = Math.min(currentDraw.startY, currentDraw.endY);
@@ -3236,7 +3269,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         <div className="settings-modal-overlay" onClick={() => setIsSettingsOpen(false)}>
           <div className="settings-modal-container" role="dialog" aria-modal="true" aria-label="계정 설정" onClick={(e) => e.stopPropagation()}>
             <div className="settings-modal-sidebar">
-              <span className="account-settings-kicker">PERSONAL SPACE</span><h3>계정 설정</h3><div className="settings-identity"><span>{avatarInitial}</span><strong>{displayName}</strong><small>{roleLabel}</small></div>
+              <span className="account-settings-kicker" translate="no">PERSONAL SPACE</span><h3>계정 설정</h3><div className="settings-identity"><span>{avatarInitial}</span><strong>{displayName}</strong><small>{roleLabel}</small></div>
               <button
                 className={`settings-tab-btn ${activeSettingsTab === "account" ? "active" : ""}`}
                 onClick={() => setActiveSettingsTab("account")}
@@ -3260,7 +3293,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             <div className="settings-modal-content">
               {activeSettingsTab === "account" && (
                 <div className="settings-tab-content">
-                  <span className="account-settings-kicker">MY ACCOUNT</span>
+                  <span className="account-settings-kicker" translate="no">MY ACCOUNT</span>
                   <h2>{currentUser?.role === "ADMIN" ? "관리자 정보 설정" : "내 정보 설정"}</h2>
                   <p className="tab-description">
                     {currentUser?.role === "ADMIN"
@@ -3331,7 +3364,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
               {activeSettingsTab === "security" && (
                 <div className="settings-tab-content">
-                  <span className="account-settings-kicker">MY ACCOUNT</span>
+                  <span className="account-settings-kicker" translate="no">MY ACCOUNT</span>
                   <h2>비밀번호 변경</h2>
                   <p className="tab-description">시스템 보안을 위해 주기적으로 비밀번호를 변경해 주십시오.</p>
 

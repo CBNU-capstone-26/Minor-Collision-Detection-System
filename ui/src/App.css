@@ -2141,6 +2141,15 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 
   .player-section {
     justify-self: center;
+    order: 1; /* 한 줄로 쌓일 땐 영상이 맨 위 → 클립 목록·달력 → 분석 이력 */
+  }
+
+  .watch-side {
+    order: 2;
+  }
+
+  .watch-right {
+    order: 3;
   }
 
   .event-list {
@@ -4238,6 +4247,7 @@ body.dark-mode .auto-detect-btn.active:not(.detecting):hover {
   cursor: crosshair !important;
   outline: 3px solid #ef4444;
   outline-offset: -3px;
+  touch-action: none; /* 폰·태블릿에서 손가락으로 박스를 그릴 때 화면이 스크롤·확대되지 않게 */
 }
 
 /* 직접 차량 지정 버튼 + 안내 말풍선의 기준 */
@@ -4259,14 +4269,14 @@ body.dark-mode .auto-detect-btn.active:not(.detecting):hover {
   left: 0;
   z-index: 150; /* 상단 바(100) 위 */
   width: max-content;
-  max-width: 420px;
+  max-width: min(420px, calc(100vw - 32px)); /* 폰에서 화면 밖으로 넘치지 않게 — 넘치면 줄바꿈 */
   padding: 8px 14px;
   border-radius: 5px;
   background: #1e3a8a;
   color: #ffffff;
   font-size: 13.5px;
   font-weight: 700;
-  white-space: nowrap;
+  white-space: normal;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.3);
   pointer-events: none;
   animation: designate-hint-in 0.18s ease-out;
@@ -4279,6 +4289,19 @@ body.dark-mode .auto-detect-btn.active:not(.detecting):hover {
   left: 61px; /* 왼쪽 칸 버튼(폭 약 137px)의 가운데 */
   border: 7px solid transparent;
   border-top-color: #1e3a8a;
+}
+
+/* 폰(640px 이하): '직접 차량 지정'이 오른쪽 칸에 있어 왼쪽 기준이면 화면 오른쪽 밖으로 넘친다 → 버튼 오른쪽 끝 기준으로 펼친다 */
+@media (max-width: 640px) {
+  .designate-hint {
+    left: auto;
+    right: 0;
+  }
+
+  .designate-hint::after {
+    left: auto;
+    right: 40px;
+  }
 }
 
 @keyframes designate-hint-in {
@@ -4371,6 +4394,14 @@ body.dark-mode .designate-hint::after {
 .bbox-delete-btn:hover {
   background: #b91c1c;
   transform: scale(1.2);
+}
+
+/* 터치 화면(마우스 올리기가 없음)에선 박스 삭제 ✕ 를 늘 보인다 */
+@media (hover: none) {
+  .bbox-drawn:not(.editing) .bbox-delete-btn {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
 }
 
 /* 지정 모드가 아닐 땐 박스에 마우스를 올려야 삭제 버튼이 보인다 (직접 지정 중 .editing 은 늘 보임) */
@@ -5107,7 +5138,7 @@ body.dark-mode .upload-cancel-btn:disabled {
   /* 바깥 클릭으로 닫는 투명 덮개(.dropdown-overlay, 999)보다 위 — 아래면 덮개가 클릭을 가로채
      목록 안 '취소'를 눌러도 드롭다운만 닫혔다. 프로필 메뉴와 같은 높이 */
   z-index: 1000;
-  width: 400px; /* 오른쪽 상태 칸에 '서버에 분석을 요청하는 중'이 들어가도록 */
+  width: min(400px, calc(100vw - 24px)); /* 오른쪽 상태 칸에 '서버에 분석을 요청하는 중'이 들어가도록, 화면보다 넓지 않게 */
   max-height: 320px;
   overflow-y: auto;
   background: #ffffff;
@@ -5282,6 +5313,16 @@ body.dark-mode .analysis-job-name {
 
 body.dark-mode .analysis-job-pct {
   color: #42d7c3;
+}
+
+@media (max-width: 640px) {
+  .analysis-jobs-dropdown {
+    position: fixed;
+    top: 84px; /* 상단 바(76px) 바로 아래 */
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
 }
 
 /* 분석 중인 작업이 없을 때 안내 */
@@ -5982,14 +6023,6 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
     grid-template-columns: 1fr;
   }
 
-  .player-section {
-    order: 1;
-  }
-
-  .watch-side {
-    order: 2;
-  }
-
   .event-sidebar {
     height: auto;
   }
@@ -6137,8 +6170,13 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
     padding: 12px;
   }
 
+  /* 폰: 차량 탐지 | 직접 차량 지정을 한 줄에, 사고 구간 찾기는 아래 가로 전체 (세 줄로 쌓여 화면을 먹지 않게) */
   .watch-header-actions > button,
-  .watch-header-actions > .designate-btn-wrapper,
+  .watch-header-actions > .designate-btn-wrapper {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+  }
+
   .watch-header-actions .detect-btn-wrapper {
     flex-basis: 100%;
   }
@@ -6224,6 +6262,11 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 }
 
 @media (max-width: 480px) {
+  /* 폰에선 음량 막대를 숨기고 음소거 버튼만 남긴다 — 재생 컨트롤이 두 줄로 꺾이지 않게 */
+  .volume-slider {
+    display: none;
+  }
+
   .home-view {
     padding-inline: 14px;
   }
@@ -6292,10 +6335,6 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
     font-size: 13px;
   }
 
-  /* 아주 좁은 화면에선 음량 막대를 숨기고 음소거 버튼만 남긴다 */
-  .volume-slider {
-    display: none;
-  }
 }
 
 .public-login-page {
