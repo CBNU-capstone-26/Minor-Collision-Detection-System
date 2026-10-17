@@ -511,6 +511,7 @@ def predict_events_and_clips(
     coarse_pad=config.PREDICT_COARSE_PAD,
     render_clips=True,
     stats=None,
+    clip_name=None,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -525,6 +526,8 @@ def predict_events_and_clips(
         clip_pad_frames (int): 구간 앞뒤로 덧붙일 여유 프레임 수
         use_coarse_scan (bool): True면 거친 탐색(coarse_step 간격) 후 P(A) >
             coarse_prob 인 창 주변 ±coarse_pad 만 촘촘히 본다. False면 전체 스캔.
+        clip_name (str|None): 클립 파일 이름 앞부분('<clip_name>_event1.mp4'). 없으면 영상 파일 이름.
+            서비스는 분석마다 다른 이름을 준다 — 같은 영상을 다시 분석해도 이전 클립을 덮어쓰지 않게.
         render_clips (bool): False면 CAM 클립을 만들지 않고 이벤트 목록만 돌려준다
             (clip_path=None). 평가에서 '서비스와 동일한 경로'로 이벤트를 뽑을 때
             쓴다 — 렌더링은 평가에 불필요하고 가장 느린 단계다.
@@ -857,7 +860,7 @@ def predict_events_and_clips(
         # ── 2패스: 이벤트 구간 프레임만 영상에서 다시 읽어 CAM 클립 렌더링 ──────
         # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
         results = []
-        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        base_name = clip_name or os.path.splitext(os.path.basename(video_path))[0]
         render_cap = (cv2.VideoCapture(video_path)
                       if (events and render_clips) else None)
         # 클립 렌더링 남은 시간 = 남은 프레임 × 프레임당 시간(재기 전엔 디코딩 기준 추정)

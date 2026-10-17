@@ -28,11 +28,20 @@ def raw_clip_path(ev: db_models.CrashEvent):
     return p.with_name(f"{p.stem}_raw{p.suffix}")
 
 
-def _unlink_event_clips(ev: db_models.CrashEvent):
-    """이벤트의 표시 클립과 원본 클립 파일을 지운다."""
-    if ev.clip_path:
-        settings.abs_path(ev.clip_path).unlink(missing_ok=True)
-        raw_clip_path(ev).unlink(missing_ok=True)
+def _unlink_event_clips(events, db: Session):
+    """지우려는 이벤트들의 표시 클립과 원본 클립 파일을 지운다.
+    예전엔 같은 영상을 다시 분석하면 클립 이름이 같아 여러 이벤트가 한 파일을 함께 썼다
+    → 지우지 않는 다른 이벤트가 아직 쓰는 파일은 남긴다."""
+    ids = {ev.id for ev in events}
+    for path in {ev.clip_path for ev in events if ev.clip_path}:
+        still_used = db.query(db_models.CrashEvent).filter(
+            db_models.CrashEvent.clip_path == path,
+            db_models.CrashEvent.id.notin_(ids)).count()
+        if still_used:
+            continue
+        p = settings.abs_path(path)
+        p.unlink(missing_ok=True)
+        p.with_name(f"{p.stem}_raw{p.suffix}").unlink(missing_ok=True)
 
 
 def analysis_no(ev: db_models.CrashEvent):
@@ -219,8 +228,8 @@ def delete_video(
     # 1) 관련 CAM 클립 파일 삭제 + crash_events 행 삭제
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.video_id == video_id).all()
+    _unlink_event_clips(events, db)
     for ev in events:
-        _unlink_event_clips(ev)
         db.delete(ev)
 
     # 2) analysis_tasks 행 삭제
@@ -254,7 +263,7 @@ def delete_crash_event(
     if event is None:
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
 
-    _unlink_event_clips(event)
+    _unlink_event_clips([event], db)
 
     db.delete(event)
     db.commit()
@@ -273,8 +282,8 @@ def clear_all_crash_events(
         db_models.CrashEvent.video_id == video.id
     ).all()
     count = len(events)
+    _unlink_event_clips(events, db)
     for ev in events:
-        _unlink_event_clips(ev)
         db.delete(ev)
     db.commit()
     return {"deleted_count": count}

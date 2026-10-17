@@ -108,6 +108,8 @@ def run_prediction_task(self, task_id: int):
             bbox=(task.bbox_xmin, task.bbox_ymin, task.bbox_xmax, task.bbox_ymax),
             output_dir=settings.CLIP_DIR,
             progress_callback=_on_progress,
+            # 분석마다 다른 클립 이름 — 같은 영상을 다시 분석해도 이전 분석의 클립을 덮어쓰지 않게
+            clip_name=f"{Path(video.video_path).stem}_t{task.id}",
         )
 
         # 분석 도중 취소됐는데(revoke 실패 등) 끝까지 돌았다면 결과를 버린다
