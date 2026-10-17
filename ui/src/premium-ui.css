@@ -138,7 +138,6 @@ body.dark-mode .premium-review-art span { background: #233640; color: #9bcbc6; }
 /* Broad product chapters inspired by the supplied homepage reference. */
 .public-login-page { overflow: clip; }
 .public-login-page .public-navbar { min-height: 54px; padding-block: 8px; border-bottom: 1px solid #80808012; }
-.public-login-page .public-brand-logo { width: 65px; height: 28px; }
 .premium-nav-links { display: flex; align-items: center; gap: 28px; }
 .premium-nav-links a { font-size: 11px; color: var(--public-muted); text-decoration: none; transition: color .2s; }
 .premium-nav-links a:hover { color: var(--public-ink); }

@@ -6660,14 +6660,6 @@ body.dark-mode .public-scan-road {
   min-height: 34px;
 }
 
-.public-brand-logo {
-  display: block;
-  width: 82px;
-  height: 34px;
-  object-fit: contain;
-  background: transparent;
-}
-
 .nav-logo {
   width: 88px;
   height: 36px;
@@ -6675,18 +6667,6 @@ body.dark-mode .public-scan-road {
   overflow: hidden;
   border-radius: 4px;
   background: #ffffff;
-}
-
-.nav-logo img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-body.dark-mode .public-brand-logo,
-body.dark-mode .nav-logo img {
-  content: url("/siot-logo-dark.svg");
 }
 
 body.dark-mode .nav-logo {
