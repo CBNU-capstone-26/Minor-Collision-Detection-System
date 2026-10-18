@@ -241,6 +241,11 @@ EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
 SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
+# 서버에서 코드를 고치지 않고 바꿀 때: .env 에 SERVICE_WEIGHTS=weights/<파일>.pth (상대경로는 프로젝트 루트 기준)
+if os.getenv("SERVICE_WEIGHTS", "").strip():
+    SERVICE_WEIGHTS_PATH = Path(os.environ["SERVICE_WEIGHTS"].strip())
+    if not SERVICE_WEIGHTS_PATH.is_absolute():
+        SERVICE_WEIGHTS_PATH = _ROOT / SERVICE_WEIGHTS_PATH
 
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
 PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"

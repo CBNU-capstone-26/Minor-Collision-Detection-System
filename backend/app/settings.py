@@ -1,11 +1,24 @@
 """애플리케이션 설정 — DB/Redis 접속 정보, 로컬 저장소 경로.
 
-GPU·대용량 스토리지 서버가 없는 환경을 가정한다.
+서버 한 대에 웹·워커·DB·Redis·저장소를 함께 두는 구성을 가정한다.
 영상/클립은 프로젝트 루트의 storage/ 폴더(로컬 파일시스템)에 저장한다.
+
+배포 서버에선 프로젝트 루트 .env 로 값을 바꾼다(deploy/env.example 참고). 아무것도 안 주면
+개발 환경 기본값 그대로다.
 """
 import functools
 import os
 from pathlib import Path
+from urllib.parse import quote
+
+
+def _env_path(name: str, default: Path, base: Path) -> Path:
+    """환경변수 경로(상대경로면 프로젝트 루트 기준). 없거나 비어 있으면 default."""
+    value = os.getenv(name, "").strip()
+    if not value:
+        return default
+    path = Path(value)
+    return (path if path.is_absolute() else base / path).resolve()
 
 
 # 사용할 백본 → 모델 코드 폴더. 폴더마다 config.py / hitandrun_model.py 가
@@ -34,26 +47,34 @@ class Settings:
     MODEL_DIR: Path = BASE_DIR / MODEL_VARIANT_DIRS[MODEL_VARIANT]
     # 배포 가중치 경로는 각 폴더의 config.py 의 SERVICE_WEIGHTS_PATH 에서 관리한다.
 
-    STORAGE_DIR: Path = BASE_DIR / "storage"
+    # 영상·클립·썸네일 저장 폴더. 서버에서 영상용 디스크를 따로 붙였으면 STORAGE_DIR=/data/storage
+    STORAGE_DIR: Path = _env_path("STORAGE_DIR", BASE_DIR / "storage", BASE_DIR)
     UPLOAD_DIR: Path = STORAGE_DIR / "uploads"
     CLIP_DIR: Path = STORAGE_DIR / "clips"
     THUMBNAIL_DIR: Path = STORAGE_DIR / "thumbnails"
 
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        "mysql+pymysql://root:rootpassword@127.0.0.1:3306/capstone_db",
-    )
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+    # DB·Redis 접속 주소. 주소를 통째로 주거나(DATABASE_URL·REDIS_URL — 나중에 Supabase 등),
+    # 비밀번호만 주면(MYSQL_ROOT_PASSWORD·REDIS_PASSWORD — docker-compose 와 같은 .env 값)
+    # 이 서버 안의 MySQL·Redis 주소를 만든다.
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "").strip() or (
+        "mysql+pymysql://root:"
+        + quote(os.getenv("MYSQL_ROOT_PASSWORD", "").strip() or "rootpassword", safe="")
+        + "@127.0.0.1:3306/capstone_db")
+    REDIS_URL: str = os.getenv("REDIS_URL", "").strip() or (
+        f"redis://:{quote(os.getenv('REDIS_PASSWORD', '').strip(), safe='')}@127.0.0.1:6379/0"
+        if os.getenv("REDIS_PASSWORD", "").strip() else "redis://127.0.0.1:6379/0")
 
     # 로그인 토큰(JWT) 서명 키 · 유효 시간.
     # 키는 환경변수 AUTH_SECRET_KEY 를 우선 쓰고, 없으면 backend/.auth_secret 에 한 번 만들어
     # 두고 계속 쓴다(재시작해도 로그인이 유지되도록). 이 파일은 git 에서 제외한다.
     # 기본 8시간(하루 근무) — CCTV 영상(개인정보)을 다루므로 로그인 유지 시간을 짧게 둔다.
     # 개발할 때 자주 다시 로그인하기 싫으면: AUTH_TOKEN_TTL_HOURS=72 ./dev.sh
-    AUTH_TOKEN_TTL_HOURS: float = float(os.getenv("AUTH_TOKEN_TTL_HOURS", "8"))
+    AUTH_TOKEN_TTL_HOURS: float = float(os.getenv("AUTH_TOKEN_TTL_HOURS", "").strip() or "8")
 
-    # CORS 허용 오리진 (Vite 개발 서버)
-    CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # CORS 허용 오리진 (기본: Vite 개발 서버). 배포에선 nginx 가 화면과 /api 를 같은 주소로
+    # 내주므로 필요 없다. 화면을 다른 주소에서 띄울 때만 CORS_ORIGINS=https://a.com,https://b.com
+    CORS_ORIGINS = [o.strip() for o in os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 
     def abs_path(self, rel_path: str) -> Path:
         """storage 기준 상대경로 → 절대경로"""
