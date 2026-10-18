@@ -1,0 +1,149 @@
+/* Incident workspace: shared visual language for library, review and dialogs. */
+.dashboard-layout {
+  --incident-ink: #152c3d;
+  --incident-muted: #637b8a;
+  --incident-accent: #087f83;
+  --incident-line: #dce7ec;
+  --incident-surface: #fff;
+  background: #f1f5f7;
+  color: var(--incident-ink);
+}
+body.dark-mode .dashboard-layout {
+  --incident-ink: #e2eef4;
+  --incident-muted: #99b1bf;
+  --incident-accent: #42d7c3;
+  --incident-line: #263e4c;
+  --incident-surface: #122532;
+  background: #0b1923;
+}
+.dashboard-layout .top-navbar {
+  height: auto;
+  min-height: 72px;
+  padding: 12px 28px;
+  background: var(--incident-surface);
+  border-color: var(--incident-line);
+  box-shadow: 0 4px 24px #0c253507;
+}
+.dashboard-layout .nav-home-btn { box-shadow: none; background: transparent; }
+.dashboard-layout .analysis-status-idle {
+  border: 1px solid var(--incident-line);
+  background: transparent;
+  border-radius: 6px;
+  box-shadow: none;
+}
+.dashboard-layout .analysis-idle-text { color: var(--incident-muted); font-size: 12px; }
+.dashboard-layout .home-view { max-width: 1520px; padding: 32px; }
+.incident-eyebrow { display: block; font-size: 10px; font-weight: 800; letter-spacing: .19em; color: var(--incident-accent); }
+.incident-overview {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 32px;
+  padding: 36px;
+  margin-bottom: 32px;
+  border-radius: 6px;
+  background: #122d3c;
+  color: #fff;
+  overflow: hidden;
+  position: relative;
+  animation: incident-arrive .45s ease-out both;
+}
+.incident-overview::after {
+  content: ''; position: absolute; width: 260px; height: 260px; right: -140px; top: -170px;
+  border: 1px solid #58dcc451; border-radius: 50%; box-shadow: 0 0 0 35px #58dcc40b, 0 0 0 70px #58dcc408; pointer-events: none;
+}
+.incident-overview .incident-eyebrow { color: #64ddca; }
+.incident-overview h1 { font-size: clamp(25px, 3vw, 38px); line-height: 1.4; letter-spacing: -.055em; color: white; margin: 15px 0; font-weight: 750; }
+.incident-overview p { color: #adc4d1; font-size: 13px; line-height: 1.8; }
+.incident-upload { margin-top: 24px; background: #64ddca; border: 0; color: #102f3c; border-radius: 6px; padding: 13px 18px; font-weight: 800; display: flex; gap: 30px; align-items: center; }
+.incident-metrics { display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; gap: 18px; padding-bottom: 8px; }
+.incident-metrics > div { border-top: 1px solid #43606d; padding-top: 18px; }
+.incident-metrics span { color: #b3cbd6; font-size: 12px; }
+.incident-metrics strong { display: block; font-size: clamp(30px, 4vw, 48px); font-weight: 500; margin-top: 15px; letter-spacing: -.05em; }
+.incident-metrics small { font-size: 12px; margin-left: 5px; color: #a4bdca; }
+.incident-section-title { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 22px; }
+.incident-section-title h2 { color: var(--incident-ink); font-weight: 800; font-size: 23px; margin: 7px 0 0; }
+.incident-section-title p { color: var(--incident-muted); font-size: 12px; }
+.dashboard-layout .home-toolbar { background: var(--incident-surface); border: 1px solid var(--incident-line); padding: 14px; border-radius: 6px; }
+.dashboard-layout .video-card { border: 1px solid var(--incident-line); border-radius: 6px; overflow: hidden; background: var(--incident-surface); transition: transform .22s, box-shadow .22s, border-color .22s; }
+.dashboard-layout .video-card:hover { transform: translateY(-5px); box-shadow: 0 12px 28px #0b2c3e18; border-color: var(--incident-accent); }
+.dashboard-layout .video-thumbnail-img { transition: transform .4s ease; }
+.dashboard-layout .video-card:hover .video-thumbnail-img { transform: scale(1.035); }
+.dashboard-layout .video-info { padding: 18px; }
+.dashboard-layout .video-info h3 { color: var(--incident-ink); }
+/* 썸네일 배지 — 새 색, 글씨는 앞서 키운 14px 유지. 녹화일자 배지도 같은 모양 */
+.dashboard-layout .event-count-badge,
+.dashboard-layout .recording-date-badge { background: #183743ed; color: #a3f2df; border: 1px solid #8adfc955; border-radius: 6px; font-size: 14px; font-weight: 700; padding: 5px 10px; }
+/* 영상 칸 높이(--watch-avail-h)는 premium-ui.css 의 '.watch-view:not(.theater-view)' 에서 정한다 (영화관 모드는 아래) */
+.dashboard-layout .watch-view { padding: 22px 24px; }
+/* 작업 헤더는 작게: 윗줄(돌아가기 · 제목 · 상태) + 얇은 단계 줄 */
+.incident-workspace-header { margin-bottom: 14px; animation: incident-arrive .4s ease-out both; }
+.incident-workspace-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.incident-workspace-top > div { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.incident-back { flex-shrink: 0; border: 0; background: none; color: var(--incident-muted); font-size: 12px; padding: 0; margin: 0; white-space: nowrap; }
+.incident-back:hover { color: var(--incident-accent); }
+.incident-workspace-top h1 { font-size: clamp(16px, 1.4vw, 19px); color: var(--incident-ink); margin: 0; font-weight: 750; letter-spacing: -.035em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.incident-workflow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--incident-line); border-radius: 6px; background: var(--incident-surface); overflow: hidden; }
+.incident-workflow li { display: flex; align-items: center; gap: 10px; padding: 9px 16px; color: var(--incident-muted); border-right: 1px solid var(--incident-line); }
+.incident-workflow li:last-child { border: 0; }
+.incident-workflow li > span { font-size: 13px; font-weight: 800; color: var(--incident-muted); }
+.incident-workflow strong { display: block; font-size: 12.5px; font-weight: 750; color: var(--incident-ink); }
+.incident-workflow small { display: block; font-size: 10.5px; margin-top: 2px; }
+.incident-workflow b { margin-left: auto; font-size: 12px; color: #b25b26; white-space: nowrap; }
+.incident-workflow .is-current { background: #0e9f940c; box-shadow: inset 0 -3px var(--incident-accent); }
+.incident-workflow .is-current > span, .incident-workflow .is-complete > span { color: var(--incident-accent); }
+/* 진행 단계 상태: 끝난 단계 ✓(채운 칸) · 지금 할 단계(테두리 칸 + 이름 강조) · 남은 단계(흐리게) */
+.incident-workflow .step-num { flex-shrink: 0; display: grid; place-items: center; width: 28px; height: 28px; border: 1.5px solid var(--incident-line); border-radius: 6px; background: var(--incident-surface); color: var(--incident-muted); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.incident-workflow .is-complete .step-num { background: var(--incident-accent); border-color: var(--incident-accent); color: var(--incident-surface); }
+.incident-workflow .is-current .step-num { border-color: var(--incident-accent); background: #108c8814; color: var(--incident-accent); }
+.incident-workflow .is-current strong { color: var(--incident-accent); }
+.incident-workflow .is-pending { opacity: .55; }
+.dashboard-layout .event-sidebar, .dashboard-layout .analysis-history { background: var(--incident-surface); border: 1px solid var(--incident-line); border-radius: 6px; box-shadow: 0 4px 16px #0d293908; }
+.dashboard-layout .event-sidebar h3 { color: var(--incident-ink); font-size: 15px; }
+.dashboard-layout .event-summary { color: var(--incident-muted); font-size: 11px; line-height: 1.7; }
+.dashboard-layout .event-item { border: 1px solid var(--incident-line); border-left: 3px solid #db9a58; border-radius: 6px; background: var(--incident-surface); transition: background .2s, transform .2s; }
+.dashboard-layout .event-item:hover { transform: translateX(3px); background: #0e9f940a; }
+.dashboard-layout .event-item.active { border-color: #c98740; background: #c987400b; }
+.dashboard-layout .event-time-pill { background: #ab5d25; color: white; border-radius: 4px; }
+.dashboard-layout .event-title-text { color: var(--incident-ink); }
+.dashboard-layout .event-play-icon-btn { background: var(--incident-accent); color: var(--incident-surface); }
+.dashboard-layout .player-container { border: 1px solid #284354; border-radius: 6px; box-shadow: 0 12px 30px #0a23351c; }
+.dashboard-layout .player-container:fullscreen { border: 0; border-radius: 0; box-shadow: none; }
+.dashboard-layout .auto-detect-btn, .dashboard-layout .bbox-designate-btn { border-radius: 6px; }
+.dashboard-layout .detect-run-btn { background: #087f83; color: white; border: 1px solid #087f83; border-radius: 6px; box-shadow: 0 3px 8px #087f8320; }
+.dashboard-layout button { transition: background-color .18s, border-color .18s, box-shadow .18s, transform .18s; }
+.dashboard-layout button:focus-visible { outline: 3px solid #21b9b4; outline-offset: 3px; }
+.dashboard-layout button:active:not(:disabled) { transform: translateY(1px); }
+.dashboard-layout .watch-view.theater-view { --watch-avail-h: calc(100vh - 136px); background: #0b1923; }
+.public-login-page .public-primary-btn { background: #087f83; }
+.public-login-page .public-kicker { color: #087f83; }
+@keyframes incident-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 1024px) {
+  .incident-workflow li { padding: 9px 12px; gap: 9px; }
+  .incident-workflow small { line-height: 1.6; }
+}
+@media (max-width: 720px) {
+  .dashboard-layout .home-view, .dashboard-layout .watch-view { padding: 16px 12px; }
+  .dashboard-layout .top-navbar { padding: 12px 16px; }
+  .incident-overview { grid-template-columns: 1fr; padding: 25px; gap: 26px; border-radius: 6px; }
+  .incident-section-title { align-items: start; flex-direction: column; gap: 8px; }
+  .incident-workspace-top { align-items: start; }
+  .incident-workspace-top h1 { font-size: 16px; }
+  .incident-workflow li { padding: 8px 9px; gap: 7px; align-items: start; }
+  .incident-workflow strong { font-size: 11px; line-height: 1.5; }
+  .incident-workflow small { display: none; }
+  .incident-workflow b { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-layout *, .dashboard-layout *::before, .dashboard-layout *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+.dashboard-layout .auto-detect-btn:not(.active), .dashboard-layout .bbox-designate-btn:not(.active) {
+  color: var(--incident-accent); border-color: var(--incident-accent); background: var(--incident-surface);
+}
+.dashboard-layout .toolbar-upload-btn, .dashboard-layout .filter-pills button.active {
+  background: #087f83; color: white; border-color: #087f83;
+}
+.dashboard-layout .home-toolbar button:disabled, .dashboard-layout .watch-header-actions button:disabled { opacity: .5; cursor: not-allowed; }
+body.dark-mode .incident-workflow b { color: #efb477; }
+@media (max-width: 768px) {
+  .dashboard-layout .player-section { max-width: 100%; }
+}

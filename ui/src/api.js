@@ -60,6 +60,11 @@ function normalizeEvent(e) {
     timestamp: Math.round(e.timestamp_sec || 0),
     endTimestamp:
       e.end_timestamp_sec != null ? Math.round(e.end_timestamp_sec) : null,
+    // 반올림 전 값 — 재생바의 사고 구간 위치·이동처럼 1초보다 정확해야 하는 곳에 쓴다
+    startSec: e.timestamp_sec || 0,
+    endSec: e.end_timestamp_sec ?? null,
+    analyzedAt: e.analyzed_at || null, // 분석이 끝나 클립이 만들어진 시각(ISO, UTC)
+    analysisNo: e.analysis_no ?? null, // 이 영상의 몇 번째 분석에서 나온 클립인지 (한 번의 분석 = 같은 번호)
     prob: e.crash_prob,
     hasClip: !!e.has_clip,
     hasRawClip: !!e.has_raw_clip, // 합성 없는 원본 사고 클립을 내려받을 수 있는지
@@ -73,9 +78,11 @@ export function normalizeVideo(v) {
   const created = v.created_at || "";
   return {
     id: v.id,
+    title: v.title || "", // 업로드할 때 넣은 제목 (없으면 화면이 '녹화일 녹화본 #N')
+    fileName: v.video_name || "", // 업로드한 원본 파일 이름
+    uploadedAt: v.created_at || null, // 업로드 시각(ISO, UTC)
     date: v.recording_date || (created ? created.slice(0, 10) : ""),
     startTime: v.recording_start_time || "20:30",
-    camera: v.camera_location || "주차장",
     duration: Math.round(v.duration_sec || 0),
     width: v.width,
     height: v.height,
@@ -87,6 +94,16 @@ export function normalizeVideo(v) {
     lastTask: v.last_task
       ? { id: v.last_task.task_id, status: v.last_task.status, errorMessage: v.last_task.error_message }
       : null,
+    // 분석 이력(요청 순) — 영상 상세에서만 온다. 시각은 ISO(UTC)
+    analysisHistory: (v.analysis_history || []).map((h) => ({
+      no: h.analysis_no,
+      taskId: h.task_id,
+      status: h.status,
+      errorMessage: h.error_message,
+      requestedAt: h.requested_at,
+      finishedAt: h.finished_at,
+      eventCount: h.event_count, // 찾은 클립 수 (이력 기능 전 분석은 null)
+    })),
   };
 }
 
@@ -105,10 +122,11 @@ export const api = {
     return list.map(normalizeVideo);
   },
   getVideo: async (id) => normalizeVideo(await request(`/videos/${id}`)),
-  uploadVideo: (file, recordingDate) => {
+  uploadVideo: (file, recordingDate, title) => {
     const form = new FormData();
     form.append("file", file);
     if (recordingDate) form.append("recording_date", recordingDate);
+    if (title && title.trim()) form.append("title", title.trim());
     return request("/videos", { method: "POST", body: form, isForm: true });
   },
   streamUrl: (id) => `/api/videos/${id}/stream`,
@@ -137,6 +155,3 @@ export const api = {
   // 박스·상태 띠 없이 사고 구간만 자른 원본 클립(다운로드)
   rawClipUrl: (eventId) => `/api/events/${eventId}/clip/raw`,
 };
-
-
-

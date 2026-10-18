@@ -34,6 +34,7 @@ class Video(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     video_name = Column(String(255), nullable=False)   # 원본 파일명
+    title = Column(String(100), nullable=True)         # 업로드할 때 넣은 표시 제목
     video_path = Column(String(500), nullable=False)   # storage 기준 상대경로
     recording_date = Column(Date, nullable=True)       # 업로드 시 지정한 녹화일자
     camera_location = Column(String(255), nullable=False, default="주차장")   # 녹화 CCTV 위치
@@ -65,9 +66,11 @@ class AnalysisTask(Base):
     bbox_xmax = Column(Integer, nullable=False)
     bbox_ymax = Column(Integer, nullable=False)
 
-    status = Column(String(50), default="PENDING")  # PENDING/PROCESSING/SUCCESS/FAILURE
+    status = Column(String(50), default="PENDING")  # PENDING/PROCESSING/SUCCESS/FAILURE/CANCELLED
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    event_count = Column(Integer, nullable=True)
 
     video = relationship("Video", back_populates="analysis_tasks")
     crash_events = relationship("CrashEvent", back_populates="task")

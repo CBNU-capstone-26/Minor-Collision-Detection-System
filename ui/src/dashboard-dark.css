@@ -1,0 +1,79 @@
+/* 다크 모드 통일 — 새 대시보드 디자인(incident-ui.css · premium-ui.css)의 색을 다크 모드에서도 그대로 쓴다.
+   App.css 의 예전 다크 규칙(body.dark-mode .X)이 새 규칙(.dashboard-layout .X)보다 우선순위가 높아,
+   다크 모드에서만 예전 색이 섞여 보였다. 새 규칙의 색 관련 값(배경·테두리·글자·그림자)을
+   'body.dark-mode .dashboard-layout ...' 로 한 번 더 적용해 이기게 한다.
+   - 값은 대부분 --incident-* 변수라 다크 모드에선 저절로 어두운 값이 된다
+   - 새 디자인이 다크 값을 따로 정해 둔 곳은 건드리지 않는다
+   - 라이트 전용으로 밝게 적힌 값(밝은 배경·어두운 글자)은 옮기지 않는다 — 그 자리는 App.css 의 다크 규칙
+     (새 팔레트로 색만 바꿈)이 그대로 쓰인다
+   이 파일은 premium-ui.css 다음에 불러와야 한다(App.jsx). */
+
+body.dark-mode .dashboard-layout .top-navbar { border-color: var(--incident-line); box-shadow: 0 4px 24px #0c253507; }
+body.dark-mode .dashboard-layout .analysis-idle-text { color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .video-card { border: 1px solid var(--incident-line); background: var(--incident-surface); }
+body.dark-mode .dashboard-layout .video-card:hover { box-shadow: 0 12px 28px #0b2c3e18; border-color: var(--incident-accent); }
+body.dark-mode .dashboard-layout .video-info h3 { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .event-sidebar { background: var(--incident-surface); border: 1px solid var(--incident-line); box-shadow: 0 4px 16px #0d293908; }
+body.dark-mode .dashboard-layout .analysis-history { background: var(--incident-surface); border: 1px solid var(--incident-line); box-shadow: 0 4px 16px #0d293908; }
+body.dark-mode .dashboard-layout .event-sidebar h3 { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .event-summary { color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .event-item { border: 1px solid var(--incident-line); background: var(--incident-surface); }
+body.dark-mode .dashboard-layout .event-item:hover { background: #0e9f940a; }
+body.dark-mode .dashboard-layout .event-item.active { border-color: #c98740; background: #c987400b; }
+body.dark-mode .dashboard-layout .event-time-pill { background: #ab5d25; color: white; }
+body.dark-mode .dashboard-layout .event-title-text { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .event-play-icon-btn { background: var(--incident-accent); color: var(--incident-surface); }
+body.dark-mode .dashboard-layout .auto-detect-btn:not(.active) { color: var(--incident-accent); border-color: var(--incident-accent); background: var(--incident-surface); }
+body.dark-mode .dashboard-layout .bbox-designate-btn:not(.active) { color: var(--incident-accent); border-color: var(--incident-accent); background: var(--incident-surface); }
+body.dark-mode .dashboard-layout .toolbar-upload-btn { background: #087f83; color: white; border-color: #087f83; }
+body.dark-mode .dashboard-layout .filter-pills button.active { background: #087f83; color: white; border-color: #087f83; }
+body.dark-mode .dashboard-layout .top-navbar { box-shadow: 0 1px 0 #0d293909; border-bottom: 0; }
+body.dark-mode .dashboard-layout .filter-pills { border: 0; }
+body.dark-mode .dashboard-layout .filter-pills button { border: 0; background: transparent; color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .filter-pills button.active { background: var(--incident-surface); color: var(--incident-ink); box-shadow: 0 2px 6px #0000000c; }
+body.dark-mode .dashboard-layout .list-search-bar { background: var(--incident-surface); border-color: var(--incident-line); }
+body.dark-mode .dashboard-layout :is(.toolbar-upload-btn,.toolbar-delete-btn) { box-shadow: none; }
+body.dark-mode .dashboard-layout .video-card { border-color: transparent; box-shadow: 0 3px 20px #162f3b05; }
+body.dark-mode .dashboard-layout .video-card:hover { box-shadow: 0 16px 35px #162f3b13; }
+body.dark-mode .dashboard-layout .video-info p { color: var(--incident-muted); }
+body.dark-mode .dashboard-layout :is(.event-sidebar,.analysis-history) { border-color: transparent; box-shadow: 0 3px 16px #162f3b06; }
+body.dark-mode .dashboard-layout .profile-trigger-btn.simple-avatar-trigger { border: 1px solid var(--incident-line); background: var(--incident-surface); box-shadow: none; }
+body.dark-mode .dashboard-layout .profile-trigger-btn.simple-avatar-trigger:hover { box-shadow: 0 5px 15px #142e3d0c; }
+body.dark-mode .dashboard-layout .profile-avatar { border: 0; box-shadow: inset 0 1px #ffffff70; }
+body.dark-mode .dashboard-layout .profile-dropdown-menu { background: var(--incident-surface); border: 1px solid var(--incident-line); box-shadow: 0 20px 70px #172c3e25,0 3px 10px #172c3e05; }
+body.dark-mode .dashboard-layout .info-name { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .info-role { color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .dropdown-divider { background: var(--incident-line); }
+body.dark-mode .dashboard-layout .dropdown-item { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .dropdown-item-toggle { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .dropdown-item:hover { background: #108c880b; color: var(--incident-accent); }
+body.dark-mode .dashboard-layout .dropdown-item.logout-item { color: #b26355; }
+body.dark-mode .dashboard-layout .dropdown-item.logout-item:hover { background: #bc4b3410; }
+body.dark-mode .dashboard-layout .settings-modal-container { border: 1px solid var(--incident-line); background: var(--incident-surface); box-shadow: 0 30px 100px #06172c40; }
+body.dark-mode .dashboard-layout .settings-modal-sidebar { border-right: 1px solid var(--incident-line); }
+body.dark-mode .dashboard-layout .settings-modal-sidebar h3 { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .settings-tab-btn { color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .settings-tab-btn.active { color: var(--incident-accent); background: #108c8810; }
+body.dark-mode .dashboard-layout .settings-modal-content { background: var(--incident-surface); }
+body.dark-mode .dashboard-layout .settings-tab-content h2 { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .tab-description { color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .settings-form-group label { color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .settings-form-group input { background: var(--incident-surface); border-color: var(--incident-line); color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .settings-form-group input:focus { border-color: #108c88; box-shadow: 0 0 0 4px #108c880b; }
+body.dark-mode .dashboard-layout .settings-form-group input.disabled-input { background: #7f8b9609; color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .settings-save-btn { background: #087f83; color: white; box-shadow: none; }
+body.dark-mode .dashboard-layout .settings-save-btn:hover { background: #096b70; }
+body.dark-mode .dashboard-layout .settings-modal-close-btn { border: 1px solid var(--incident-line); color: var(--incident-muted); background: transparent; }
+body.dark-mode .dashboard-layout .sidebar-calendar-container { border-color: var(--incident-line); }
+body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-header h2 { color: var(--incident-ink); }
+body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-nav-btn { border: 1px solid var(--incident-line); background: var(--incident-surface); color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-weekdays { color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-day { border: 1px solid transparent; background: transparent; color: var(--incident-muted); }
+body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-day.has-video { background: #108c8810; color: var(--incident-accent); }
+body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-day:is(.intensity-1,.intensity-2,.intensity-3) { background: #d9a06319; color: #aa6a2d; }
+body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-day.selected { background: #087f83; color: #fff; border-color: #087f83; box-shadow: 0 3px 8px #087f8325; }
+body.dark-mode .dashboard-layout .analysis-status-box:not(.analysis-status-idle) { box-shadow: none; }
+body.dark-mode .dashboard-layout .analysis-jobs-dropdown { border-color: var(--incident-line); background: var(--incident-surface); }
+
+/* 클립 항목 왼쪽 주황 강조선 — 위 'border' 재적용이 왼쪽 선까지 덮지 않게 다크에서도 유지 */
+body.dark-mode .dashboard-layout .event-item { border-left: 3px solid #db9a58; }

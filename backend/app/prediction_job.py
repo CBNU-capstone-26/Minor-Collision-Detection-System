@@ -4,6 +4,7 @@ torch/opencv/모델 임포트는 모두 **태스크 내부에서 지연 로딩**
 → FastAPI 웹 프로세스는 ML 의존성 없이도 이 모듈을 임포트(.delay 호출)할 수 있다.
 """
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from app.worker import celery_app
@@ -70,6 +71,7 @@ def run_prediction_task(self, task_id: int):
 
         task.status = "PROCESSING"
         db.commit()
+        self.update_state(state="PROGRESS", meta={"percent": 0, "stage": "loading"})
 
         video = db.get(db_models.Video, task.video_id)
         model = _get_model()
@@ -86,14 +88,18 @@ def run_prediction_task(self, task_id: int):
         import time as _time
         _last = {"pct": -1, "t": 0.0}
 
-        def _on_progress(frac, eta=None, eta_min=False):
-            pct = min(99, int(frac * 100))
+        def _on_progress(frac, eta=None, eta_min=False, stage=None, count=None, index=None):
+            pct = round(min(99.0, frac * 100), 1)
             now = _time.time()
-            if pct != _last["pct"] or now - _last["t"] >= 1.5:
-                _last.update(pct=pct, t=now)
+            key = (stage, count, index)
+            if (key != _last.get("key")
+                    or (pct != _last["pct"] and now - _last["t"] >= 0.4)
+                    or now - _last["t"] >= 1.5):
+                _last.update(pct=pct, t=now, key=key)
                 self.update_state(state="PROGRESS", meta={
                     "percent": pct, "eta": None if eta is None else int(round(eta)),
-                    "eta_min": bool(eta_min)})
+                    "eta_min": bool(eta_min), "stage": stage,
+                    "count": count, "index": index})
 
         storage = get_storage()
         with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as source_path, \
@@ -131,6 +137,8 @@ def run_prediction_task(self, task_id: int):
 
         # 분석 도중 취소됐는데(revoke 실패 등) 끝까지 돌았다면 결과를 버린다
         task.status = "SUCCESS"
+        task.finished_at = datetime.utcnow()
+        task.event_count = len(results)
         db.commit()
         return {"task_id": task_id, "events": len(results)}
 
@@ -140,6 +148,7 @@ def run_prediction_task(self, task_id: int):
         if task is not None:
             task.status = "FAILURE"
             task.error_message = str(exc)[:2000]
+            task.finished_at = datetime.utcnow()
             db.commit()
         raise
     finally:

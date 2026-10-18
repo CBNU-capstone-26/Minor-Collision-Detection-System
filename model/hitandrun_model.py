@@ -49,7 +49,7 @@ class HitAndRun3DCNN(nn.Module):
 
        시간축만 뭉개고 공간 7×7을 남기므로 (a) T가 몇이든 동작하고
        (b) 2048채널 공간 특징맵이 살아 있어 CAM을 뽑을 수 있다.
-       CAM은 어차피 시간축을 평균내므로(predict_cam.py의 mean(cam, dim=0))
+       CAM은 어차피 시간축을 평균내므로(inference.py의 mean(cam, dim=0))
        시간축 보존은 필요 없고, post_conv를 T=1에서만 돌려 연산도 아낀다.
 
     서비스 통합 인터페이스는 S3D 버전과 동일하게 유지한다:
@@ -88,7 +88,7 @@ class HitAndRun3DCNN(nn.Module):
     def inception5b(self):
         """CAM hook 호환 별칭 — 헤드 확장부 출력(2048채널, 공간 7×7 유지).
 
-        property라 모듈이 중복 등록되지 않으며, predict_cam.py 의
+        property라 모듈이 중복 등록되지 않으며, inference.py 의
         `model.inception5b.register_forward_hook(...)`이 수정 없이 동작한다.
         head_conv.weight(2048채널)와 채널 수가 맞아야 CAM 가중합이 성립한다.
         """

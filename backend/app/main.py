@@ -61,7 +61,10 @@ def ensure_column(table_name: str, column_name: str, column_ddl: str):
 
 
 ensure_column("videos", "detected_vehicles", "TEXT NULL")
+ensure_column("videos", "title", "VARCHAR(100) NULL")
 ensure_column("users", "phone", "VARCHAR(50) NULL")
+ensure_column("analysis_tasks", "finished_at", "TIMESTAMP NULL")
+ensure_column("analysis_tasks", "event_count", "INTEGER NULL")
 
 app.include_router(auth.router)
 app.include_router(videos.router)

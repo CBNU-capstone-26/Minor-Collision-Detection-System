@@ -75,7 +75,10 @@ ensure_redis() {
 # '정상 종료'를 해서, 코드를 고쳐도 반영이 늦고 강제 종료 시 하위 프로세스가 남을 수 있다.
 run_worker() {
   cd "$ROOT/backend"
-  "$PY/celery" -A app.worker worker --concurrency=1 --loglevel=info &
+  # macOS에서는 PyTorch/ONNX/OpenCV 런타임을 Celery prefork 자식 프로세스에서
+  # 초기화할 때 SIGSEGV가 발생할 수 있다. 분석은 단일 워커로 순차 처리하므로
+  # 포크하지 않는 solo 풀을 사용해 모델 런타임을 한 프로세스에서 유지한다.
+  "$PY/celery" -A app.worker worker --pool=solo --concurrency=1 --loglevel=info &
   local pid=$!
   trap 'kill -QUIT "$pid" 2>/dev/null || true' INT TERM
   while kill -0 "$pid" 2>/dev/null; do
@@ -112,6 +115,25 @@ start() {
   tmux set-option -t "$SESSION:services" pane-border-status top
   tmux set-option -t "$SESSION" mouse on
   tmux select-pane -t "$SESSION:services.0" -T "백엔드 :$BACKEND_PORT (자동 재시작)"
+
+  # 백엔드가 준비되기 전에 UI가 /api/auth/me 를 호출하면 Vite 프록시가
+  # ECONNREFUSED 를 기록한다. 워커와 UI는 백엔드 헬스체크가 성공한 뒤
+  # 시작하여 초기 기동 순서를 보장한다.
+  log "백엔드 준비 대기 중…"
+  backend_ready=0
+  for _ in $(seq 1 60); do
+    if curl -fsS --max-time 1 "http://127.0.0.1:$BACKEND_PORT/" >/dev/null 2>&1; then
+      backend_ready=1
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ "$backend_ready" != "1" ]]; then
+    err "백엔드가 30초 안에 준비되지 않았습니다. 백엔드 창의 로그를 확인하세요."
+    tmux kill-session -t "$SESSION" 2>/dev/null || true
+    exit 1
+  fi
+  log "백엔드 준비 완료"
 
   tmux split-window -v -t "$SESSION:services" -c "$ROOT/backend" \
     "exec \"$PY/watchfiles\" --filter python --sigint-timeout 15 '\"$ROOT/dev.sh\" _worker' app ../model"

@@ -1,7 +1,7 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
 import shutil
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from pathlib import Path
 
@@ -48,14 +48,42 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         crash_prob=ev.crash_prob,
         has_clip=bool(ev.cam_heatmap_path),
         has_raw_clip=bool(ev.cam_heatmap_path) and raw_clip_path(ev).exists(),
+        analyzed_at=_utc(ev.created_at),
+        analysis_no=analysis_no(ev),
     )
 
 
-def to_video_out(v: db_models.Video) -> api_schemas.VideoOut:
+def _utc(dt):
+    return dt.replace(tzinfo=timezone.utc) if dt else None
+
+
+def analysis_no(ev: db_models.CrashEvent):
+    ids = sorted(task.id for task in ev.video.analysis_tasks)
+    return ids.index(ev.task_id) + 1 if ev.task_id in ids else None
+
+
+def analysis_history(v: db_models.Video) -> list[api_schemas.AnalysisHistoryOut]:
+    first_clip_at = {}
+    for event in v.crash_events:
+        if event.created_at and (event.task_id not in first_clip_at or event.created_at < first_clip_at[event.task_id]):
+            first_clip_at[event.task_id] = event.created_at
+    return [api_schemas.AnalysisHistoryOut(
+        analysis_no=index + 1,
+        task_id=task.id,
+        status=task.status,
+        error_message=task.error_message,
+        requested_at=_utc(task.created_at),
+        finished_at=_utc(task.finished_at or first_clip_at.get(task.id)),
+        event_count=task.event_count,
+    ) for index, task in enumerate(sorted(v.analysis_tasks, key=lambda item: item.id))]
+
+
+def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.VideoOut:
     duration = v.total_frames / v.fps if v.fps else 0.0
     return api_schemas.VideoOut(
         id=v.id,
         video_name=v.video_name,
+        title=v.title,
         recording_date=v.recording_date,
         camera_location=v.camera_location or "주차장",
         recording_start_time=v.recording_start_time or "20:30",
@@ -65,10 +93,11 @@ def to_video_out(v: db_models.Video) -> api_schemas.VideoOut:
         total_frames=v.total_frames,
         duration_sec=duration,
         detected_vehicles=v.detected_vehicles,
-        created_at=v.created_at,
+        created_at=_utc(v.created_at),
         events=[to_event_out(e) for e in v.crash_events],
         last_task=_last_task_out(v),
         analysis_done=any(t.status == "SUCCESS" for t in v.analysis_tasks),
+        analysis_history=analysis_history(v) if with_history else [],
     )
 
 
@@ -98,9 +127,14 @@ def _extract_metadata(path: Path):
 def upload_video(
     file: UploadFile = File(...),
     recording_date: str | None = Form(None),
+    title: str | None = Form(None),
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
+    title = (title or "").strip()
+    if len(title) > 100:
+        raise HTTPException(status_code=400, detail="제목은 100자까지 입력할 수 있습니다.")
+
     ext = Path(file.filename).suffix or ".mp4"
     stored_name = f"{uuid4().hex}{ext}"
     storage = get_storage()
@@ -126,6 +160,7 @@ def upload_video(
     video = db_models.Video(
         user_id=user.id,
         video_name=file.filename,
+        title=title or None,
         video_path=object_key,
         recording_date=rec_date,
         width=width,
@@ -166,7 +201,7 @@ def get_video(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
-    return to_video_out(_get_owned_video(video_id, db, user))
+    return to_video_out(_get_owned_video(video_id, db, user), with_history=True)
 
 
 @router.delete("/{video_id}")
