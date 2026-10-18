@@ -6626,6 +6626,13 @@ body.dark-mode .public-scan-road {
   padding: 24px;
   background: rgba(15, 23, 42, 0.74);
   backdrop-filter: blur(8px);
+  /* 배경은 서서히 어두워지고, 닫을 땐(.closing) 서서히 걷힌다 */
+  animation: public-overlay-in 0.3s ease-out both;
+}
+
+.login-modal-overlay.closing {
+  pointer-events: none;   /* 사라지는 동안 다시 누르지 않게 */
+  animation: public-overlay-out 0.2s ease-in forwards;
 }
 
 .login-modal {
@@ -6635,12 +6642,44 @@ body.dark-mode .public-scan-road {
   border: 1px solid rgba(var(--public-accent-rgb), 0.4);
   background: var(--public-paper);
   box-shadow: 14px 14px 0 var(--public-green);
-  animation: public-modal-in 0.22s ease-out;
+  /* 배경이 어두워지기 시작한 뒤 살짝 아래에서 떠오르며 커진다 */
+  animation: public-modal-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+
+/* 닫는 시간은 App.jsx 의 MODAL_EXIT_MS 와 같게 */
+.login-modal-overlay.closing .login-modal {
+  animation: public-modal-out 0.2s ease-in forwards;
+}
+
+@keyframes public-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes public-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @keyframes public-modal-in {
-  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  from { opacity: 0; transform: translateY(20px) scale(0.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes public-modal-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(12px) scale(0.98); }
+}
+
+/* 좁은 화면에선 아래에 붙는 시트라 아래에서 올라오고 아래로 내려간다 */
+@keyframes public-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes public-sheet-out {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
 }
 
 .login-modal-close {
@@ -6966,6 +7005,11 @@ body.dark-mode .nav-logo {
     width: 100%;
     padding: 32px 22px 24px;
     box-shadow: 0 -6px 0 var(--public-green);
+    animation-name: public-sheet-in;
+  }
+
+  .login-modal-overlay.closing .login-modal {
+    animation-name: public-sheet-out;
   }
 
 }

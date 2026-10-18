@@ -206,13 +206,42 @@ function SearchIcon({ size = 16 }) {
 const AUTH_EXPIRED_MSG = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
 const cameFromExpiredLogin = () => new URLSearchParams(window.location.search).has("expired");
 
+// 로그인·회원가입 팝업이 사라지는 효과 시간 — App.css 의 public-overlay-out·public-modal-out 과 같게
+const MODAL_EXIT_MS = 200;
+const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
 function LoginPage({ onLogin }) {
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [error, setError] = useState(() => (cameFromExpiredLogin() ? AUTH_EXPIRED_MSG : ""));
   const [isLoginOpen, setIsLoginOpen] = useState(cameFromExpiredLogin);
   const [isSignupOpen, setIsSignupOpen] = useState(false);
+  const [isModalClosing, setIsModalClosing] = useState(false);
+  const modalCloseTimerRef = useRef(null);
   const navigate = useNavigate();
+
+  // 팝업은 CSS 효과로 열리고, 닫을 땐 사라지는 효과가 끝난 뒤에 실제로 닫는다
+  // ('동작 줄이기' 설정이면 효과 없이 바로 닫는다 — 그땐 CSS 효과도 꺼져 있다)
+  const openLogin = () => {
+    clearTimeout(modalCloseTimerRef.current);
+    setIsModalClosing(false);
+    setIsSignupOpen(false);
+    setIsLoginOpen(true);
+  };
+  const closeModal = () => {
+    const finish = () => {
+      setIsLoginOpen(false);
+      setIsSignupOpen(false);
+      setIsModalClosing(false);
+    };
+    clearTimeout(modalCloseTimerRef.current);
+    if (prefersReducedMotion()) {
+      finish();
+      return;
+    }
+    setIsModalClosing(true);
+    modalCloseTimerRef.current = setTimeout(finish, MODAL_EXIT_MS);
+  };
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -254,7 +283,7 @@ function LoginPage({ onLogin }) {
         </button>
         <div className="public-nav-meta">
           <nav className="premium-nav-links" aria-label="서비스 소개"><a href="#overview" translate="no">SIOT</a><a href="#why-siot">주요 기능</a><a href="#review-preview">클립 검토</a></nav>
-          <button className="public-login-trigger" translate="no" onClick={() => setIsLoginOpen(true)}>
+          <button className="public-login-trigger" translate="no" onClick={openLogin}>
             LOGIN <span aria-hidden="true">↗</span>
           </button>
         </div>
@@ -270,7 +299,7 @@ function LoginPage({ onLogin }) {
               SIOT가 주차 중 접촉 의심 장면을 찾아 당신의 검토를 돕습니다.
             </p>
             <div className="public-hero-actions">
-              <button className="public-primary-btn" onClick={() => setIsLoginOpen(true)}>
+              <button className="public-primary-btn" onClick={openLogin}>
                 분석 시작하기 <span aria-hidden="true">→</span>
               </button>
               <a className="public-text-link" href="#why-siot">SIOT 살펴보기 <span aria-hidden="true">↓</span></a>
@@ -327,67 +356,70 @@ function LoginPage({ onLogin }) {
             <article className="premium-feature scroll-reveal"><span className="premium-feature-index" translate="no">03 / REVIEW</span><div className="premium-review-art" aria-hidden="true"><span>00:12 <b>의심 구간</b></span><span>00:28 <b>원본 확인</b></span><span>00:41 <b>클립 검토</b></span></div><h3>판단을 위한, 더 나은 맥락.</h3><p>분석 이력과 원본 클립을 함께 확인해<br />장면의 전후 맥락을 검토하세요.</p><span className="premium-feature-tag">분석 이력 · 원본 다운로드</span></article>
           </div>
         </section>
-        <section className="premium-closing scroll-reveal"><span className="public-kicker" translate="no">YOUR NEXT CLEAR MOMENT</span><h2>이제, 필요한 장면에만<br />집중하세요.</h2><button className="public-primary-btn" onClick={() => setIsLoginOpen(true)}>SIOT 시작하기 <span aria-hidden="true">↗</span></button><p>AI 감지는 검토를 돕는 보조 정보입니다. 최종 확인은 원본 영상으로 진행하세요.</p></section>
+        <section className="premium-closing scroll-reveal"><span className="public-kicker" translate="no">YOUR NEXT CLEAR MOMENT</span><h2>이제, 필요한 장면에만<br />집중하세요.</h2><button className="public-primary-btn" onClick={openLogin}>SIOT 시작하기 <span aria-hidden="true">↗</span></button><p>AI 감지는 검토를 돕는 보조 정보입니다. 최종 확인은 원본 영상으로 진행하세요.</p></section>
       </main>
 
       <TeamFooter animated />
 
-      {isLoginOpen && (
-        <div className="login-modal-overlay" onClick={() => setIsLoginOpen(false)}>
-          <div className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title" onClick={(e) => e.stopPropagation()}>
-            <button className="login-modal-close" onClick={() => setIsLoginOpen(false)} aria-label="로그인 창 닫기">×</button>
-            <p className="public-kicker" translate="no">SECURE ACCESS</p>
-            <h2 id="login-modal-title">대시보드 로그인</h2>
-            <p className="login-modal-description">분석된 영상과 사고 의심 이벤트를 확인하세요.</p>
+      {/* 로그인·회원가입이 어두운 배경 하나를 같이 쓴다 — 서로 넘어갈 때 배경이 깜빡이지 않게 */}
+      {(isLoginOpen || isSignupOpen) && (
+        <div className={`login-modal-overlay ${isModalClosing ? "closing" : ""}`} onClick={closeModal}>
+          {isLoginOpen ? (
+            <div className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title" onClick={(e) => e.stopPropagation()}>
+              <button className="login-modal-close" onClick={closeModal} aria-label="로그인 창 닫기">×</button>
+              <p className="public-kicker" translate="no">SECURE ACCESS</p>
+              <h2 id="login-modal-title">대시보드 로그인</h2>
+              <p className="login-modal-description">분석된 영상과 사고 의심 이벤트를 확인하세요.</p>
 
-            <div className="input-group">
-              <input
-                type="text"
-                placeholder="아이디"
-                value={id}
-                onChange={(e) => setId(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                autoFocus
-              />
+              <div className="input-group">
+                <input
+                  type="text"
+                  placeholder="아이디"
+                  value={id}
+                  onChange={(e) => setId(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                  autoFocus
+                />
+              </div>
+
+              <div className="input-group">
+                <input
+                  type="password"
+                  placeholder="비밀번호"
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                />
+              </div>
+
+              {error && <p className="login-error-text">{error}</p>}
+
+              <div className="login-options">
+                <label className="remember-me">
+                  <input type="checkbox" /> Remember me
+                </label>
+                <a href="#none" className="support-link">Support</a>
+              </div>
+
+              <button className="login-submit-btn" onClick={handleLogin}>로그인</button>
+              <button
+                className="login-signup-btn"
+                onClick={() => {
+                  setIsLoginOpen(false);
+                  setIsSignupOpen(true);
+                }}
+              >
+                회원가입
+              </button>
             </div>
-
-            <div className="input-group">
-              <input
-                type="password"
-                placeholder="비밀번호"
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              />
-            </div>
-
-            {error && <p className="login-error-text">{error}</p>}
-
-            <div className="login-options">
-              <label className="remember-me">
-                <input type="checkbox" /> Remember me
-              </label>
-              <a href="#none" className="support-link">Support</a>
-            </div>
-
-            <button className="login-submit-btn" onClick={handleLogin}>로그인</button>
-            <button
-              className="login-signup-btn"
-              onClick={() => {
-                setIsLoginOpen(false);
-                setIsSignupOpen(true);
-              }}
-            >
-              회원가입
-            </button>
-          </div>
+          ) : (
+            <SignupModal onClose={closeModal} onBackToLogin={() => {
+              setIsSignupOpen(false);
+              setIsLoginOpen(true);
+            }} />
+          )}
         </div>
       )}
-
-      {isSignupOpen && <SignupModal onClose={() => setIsSignupOpen(false)} onBackToLogin={() => {
-        setIsSignupOpen(false);
-        setIsLoginOpen(true);
-      }} />}
     </div>
   );
 }
@@ -429,60 +461,59 @@ function SignupModal({ onClose, onBackToLogin }) {
     }
   };
 
+  // 어두운 배경(login-modal-overlay)은 LoginPage 가 로그인 창과 함께 쓴다
   return (
-    <div className="login-modal-overlay" onClick={onClose}>
-      <div className="login-modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title" onClick={(e) => e.stopPropagation()}>
-        <button className="login-modal-close" onClick={onClose} aria-label="회원가입 창 닫기">×</button>
-        <p className="public-kicker" translate="no">CREATE ACCOUNT</p>
-        <h2 id="signup-modal-title">회원가입</h2>
-        <p className="login-modal-description">SIOT 영상 분석 대시보드 계정을 생성합니다.</p>
+    <div className="login-modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title" onClick={(e) => e.stopPropagation()}>
+      <button className="login-modal-close" onClick={onClose} aria-label="회원가입 창 닫기">×</button>
+      <p className="public-kicker" translate="no">CREATE ACCOUNT</p>
+      <h2 id="signup-modal-title">회원가입</h2>
+      <p className="login-modal-description">SIOT 영상 분석 대시보드 계정을 생성합니다.</p>
 
-        {done ? (
-          <div className="signup-complete-state">
-            <strong>가입이 완료되었습니다.</strong>
-            <span>이제 로그인하여 대시보드를 확인할 수 있습니다.</span>
-            <button className="login-submit-btn" onClick={onBackToLogin}>로그인하러 가기</button>
-          </div>
-        ) : (
-          <>
-            <div className="signup-modal-grid">
-              <div className="signup-field">
-                <label className="signup-field-label" htmlFor="signup-name">이름 <span>*</span></label>
-                <div className="input-group">
-                  <input id="signup-name" type="text" placeholder="이름을 입력하세요" value={form.name} onChange={update("name")} autoFocus />
-                </div>
-              </div>
-              <div className="signup-field">
-                <label className="signup-field-label" htmlFor="signup-email">이메일</label>
-                <div className="input-group">
-                  <input id="signup-email" type="email" placeholder="이메일을 입력하세요" value={form.email} onChange={update("email")} autoCapitalize="off" autoCorrect="off" />
-                </div>
-              </div>
-              <div className="signup-field">
-                <label className="signup-field-label" htmlFor="signup-username">아이디 <span>*</span></label>
-                <div className="input-group">
-                  <input id="signup-username" type="text" placeholder="로그인에 사용할 아이디" value={form.username} onChange={update("username")} autoCapitalize="off" autoCorrect="off" />
-                </div>
-              </div>
-              <div className="signup-field">
-                <label className="signup-field-label" htmlFor="signup-password">비밀번호 <span>*</span></label>
-                <div className="input-group">
-                  <input id="signup-password" type="password" placeholder="비밀번호를 입력하세요" value={form.password} onChange={update("password")} />
-                </div>
-              </div>
-              <div className="signup-field">
-                <label className="signup-field-label" htmlFor="signup-password-confirm">비밀번호 확인 <span>*</span></label>
-                <div className="input-group">
-                  <input id="signup-password-confirm" type="password" placeholder="비밀번호를 한 번 더 입력하세요" value={form.passwordConfirm} onChange={update("passwordConfirm")} />
-                </div>
+      {done ? (
+        <div className="signup-complete-state">
+          <strong>가입이 완료되었습니다.</strong>
+          <span>이제 로그인하여 대시보드를 확인할 수 있습니다.</span>
+          <button className="login-submit-btn" onClick={onBackToLogin}>로그인하러 가기</button>
+        </div>
+      ) : (
+        <>
+          <div className="signup-modal-grid">
+            <div className="signup-field">
+              <label className="signup-field-label" htmlFor="signup-name">이름 <span>*</span></label>
+              <div className="input-group">
+                <input id="signup-name" type="text" placeholder="이름을 입력하세요" value={form.name} onChange={update("name")} autoFocus />
               </div>
             </div>
-            {error && <p className="login-error-text">{error}</p>}
-            <button className="login-submit-btn" onClick={handleSignup}>가입하기</button>
-            <button className="login-signup-btn" onClick={onBackToLogin}>로그인으로 돌아가기</button>
-          </>
-        )}
-      </div>
+            <div className="signup-field">
+              <label className="signup-field-label" htmlFor="signup-email">이메일</label>
+              <div className="input-group">
+                <input id="signup-email" type="email" placeholder="이메일을 입력하세요" value={form.email} onChange={update("email")} autoCapitalize="off" autoCorrect="off" />
+              </div>
+            </div>
+            <div className="signup-field">
+              <label className="signup-field-label" htmlFor="signup-username">아이디 <span>*</span></label>
+              <div className="input-group">
+                <input id="signup-username" type="text" placeholder="로그인에 사용할 아이디" value={form.username} onChange={update("username")} autoCapitalize="off" autoCorrect="off" />
+              </div>
+            </div>
+            <div className="signup-field">
+              <label className="signup-field-label" htmlFor="signup-password">비밀번호 <span>*</span></label>
+              <div className="input-group">
+                <input id="signup-password" type="password" placeholder="비밀번호를 입력하세요" value={form.password} onChange={update("password")} />
+              </div>
+            </div>
+            <div className="signup-field">
+              <label className="signup-field-label" htmlFor="signup-password-confirm">비밀번호 확인 <span>*</span></label>
+              <div className="input-group">
+                <input id="signup-password-confirm" type="password" placeholder="비밀번호를 한 번 더 입력하세요" value={form.passwordConfirm} onChange={update("passwordConfirm")} />
+              </div>
+            </div>
+          </div>
+          {error && <p className="login-error-text">{error}</p>}
+          <button className="login-submit-btn" onClick={handleSignup}>가입하기</button>
+          <button className="login-signup-btn" onClick={onBackToLogin}>로그인으로 돌아가기</button>
+        </>
+      )}
     </div>
   );
 }
