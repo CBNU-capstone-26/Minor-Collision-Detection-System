@@ -71,6 +71,14 @@ class Settings:
     # 개발할 때 자주 다시 로그인하기 싫으면: AUTH_TOKEN_TTL_HOURS=72 ./dev.sh
     AUTH_TOKEN_TTL_HOURS: float = float(os.getenv("AUTH_TOKEN_TTL_HOURS", "").strip() or "8")
 
+    # 영상 보관 기간(일) — 업로드한 지 이만큼 지나면 영상과 딸린 것(사고 클립·원본 클립·썸네일·
+    # 분석 기록)을 모두 지운다(app/retention.py). 0 이하면 지우지 않는다.
+    VIDEO_RETENTION_DAYS: int = int(os.getenv("VIDEO_RETENTION_DAYS", "").strip() or "90")
+
+    # 차량 탐지 결과를 CCTV 화면 이미지로 outputs/ 에 남길지(개발 확인용). 영상을 지워도 남으므로
+    # 기본은 끈다 — 필요할 때만 DETECT_DEBUG_IMAGES=1
+    DETECT_DEBUG_IMAGES: bool = os.getenv("DETECT_DEBUG_IMAGES", "").strip().lower() in ("1", "true", "yes")
+
     # CORS 허용 오리진 (기본: Vite 개발 서버). 배포에선 nginx 가 화면과 /api 를 같은 주소로
     # 내주므로 필요 없다. 화면을 다른 주소에서 띄울 때만 CORS_ORIGINS=https://a.com,https://b.com
     CORS_ORIGINS = [o.strip() for o in os.getenv(

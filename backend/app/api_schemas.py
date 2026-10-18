@@ -123,6 +123,9 @@ class VideoOut(BaseModel):
     duration_sec: float
     detected_vehicles: Optional[str] = None
     created_at: datetime
+    # 보관 기간이 끝나 지워질 시각과 남은 날(서버 시계 기준, 올림). 보관 기간을 끄면 None
+    expires_at: Optional[datetime] = None
+    expires_in_days: Optional[int] = None
     events: list[EventOut] = []
     last_task: Optional[LastTaskOut] = None
     analysis_done: bool = False   # 분석을 한 번이라도 완료(SUCCESS)했는지

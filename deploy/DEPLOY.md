@@ -14,6 +14,10 @@
 - 대상: **Ubuntu 22.04 또는 24.04** — Oracle Cloud(ARM, CPU 추론) / AWS 등(x86, NVIDIA GPU 추론) 모두 같은 순서
 - 서버에 넣는 파일: 이 폴더(`deploy/`)의 nginx·systemd 설정을 `install.sh` 가 설치한다
 - 개발용 `dev.sh` 는 그대로 쓰면 된다(서버 설정은 `.env` 가 있을 때만 적용)
+- 보안: 모든 API 가 로그인을 확인한다(영상·썸네일·클립은 로그인 때 받는 HttpOnly 쿠키로, 본인 것만).
+  비밀번호는 PBKDF2(소금+60만 회)로 저장하고, nginx 가 로그인·가입을 같은 IP 분당 10번으로 제한한다
+- 영상 보관: 업로드한 지 90일(`VIDEO_RETENTION_DAYS`)이 지나면 영상과 사고 클립·원본 클립·썸네일·분석 기록을
+  모두 지운다(백엔드가 켜질 때 한 번, 그 뒤 1시간마다). 목록 카드에 '○일 뒤 만료'로 보인다
 
 ---
 
@@ -151,8 +155,10 @@ sudo ./deploy/install.sh
 | 업로드 413 | nginx 설정이 안 들어감 → `sudo ./deploy/install.sh` 다시. Cloudflare 등을 거치면 무료 플랜은 100MB 제한 |
 | `libGL.so.1` 오류 | 1단계 `libgl1 libglib2.0-0` 설치 |
 | 분석이 느림 | CPU 서버는 느리다. `check-backend` 결과(고른 실행 방식)와 `journalctl -u siot-worker` 의 속도 확인 |
+| 로그인이 '요청이 너무 많습니다' | 같은 IP 에서 로그인·가입을 몰아서 시도함 — 1분쯤 기다리면 풀린다(siot-http/https.conf 의 rate) |
+| 썸네일·영상이 안 나옴(401) | 영상 쿠키가 없음 — 다시 로그인. HTTPS 로 받은 쿠키는 HTTP 주소에선 안 실린다 |
 
 ## 시연 뒤 보완할 것
 
-- 영상·클립 주소(`/api/videos/{id}/stream`, `/api/events/{id}/clip`)에 인증이 없다 — 번호만 알면 열린다
 - DB 백업(`docker exec ... mysqldump`)과 `storage/` 백업
+- 업로드 크기 제한이 없다(로그인한 사용자가 디스크를 채울 수 있음) · 회원가입이 누구에게나 열려 있다

@@ -81,6 +81,8 @@ export function normalizeVideo(v) {
     title: v.title || "", // 업로드할 때 넣은 제목 (없으면 화면이 '녹화일 녹화본 #N')
     fileName: v.video_name || "", // 업로드한 원본 파일 이름
     uploadedAt: v.created_at || null, // 업로드 시각(ISO, UTC)
+    // 보관 기간이 끝나 영상·클립이 지워질 때까지 남은 날(서버 시계 기준). 보관 기간을 끄면 null
+    expiresInDays: v.expires_in_days ?? null,
     date: v.recording_date || (created ? created.slice(0, 10) : ""),
     duration: Math.round(v.duration_sec || 0),
     width: v.width,

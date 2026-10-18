@@ -2243,6 +2243,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       <div className="video-info-text">
                         <h3>{getVideoDisplayTitle(video, videos)}</h3>
                         <p>영상 길이: {formatTime(video.duration)}</p>
+                        {/* 보관 기간 — 지나면 영상과 분석 클립이 함께 지워진다. 7일 이하는 강조 */}
+                        {video.expiresInDays != null && (
+                          <p
+                            className={`video-expiry ${video.expiresInDays <= 7 ? "soon" : ""}`}
+                            title="보관 기간이 지나면 영상과 분석된 클립이 함께 삭제됩니다"
+                          >
+                            {video.expiresInDays > 0 ? `${video.expiresInDays}일 뒤 만료` : "곧 만료"}
+                          </p>
+                        )}
                       </div>
                       {/* ··· 메뉴: 영상 정보 확인(giwon 정보 팝업 — 업로드 일시 등 포함) / 영상 삭제 */}
                       {!deleteMode && <VideoCardActions video={video} title={getVideoDisplayTitle(video, videos)} onShowInfo={() => setInfoVideo(video)} onDeleted={(id) => {

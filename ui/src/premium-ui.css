@@ -381,6 +381,10 @@ body.dark-mode .video-dialog-thumb { background: #10151b; }
 .dashboard-layout .video-thumbnail { margin-bottom: 0; border-radius: 6px 6px 0 0; }
 .dashboard-layout .video-info { padding-top: 24px; padding-bottom: 24px; }
 .dashboard-layout .video-info h3 { font-size: 19px; } /* 카드 제목 — 목록에서 잘 읽히게 키움 */
+/* 카드의 보관 만료 안내 — 평소엔 흐리게, 7일 이하로 남으면 주황 */
+.dashboard-layout .video-info p.video-expiry { margin-top: 2px; font-size: 13px; }
+.dashboard-layout .video-info p.video-expiry.soon { color: #ab5d25; font-weight: 600; }
+body.dark-mode .dashboard-layout .video-info p.video-expiry.soon { color: #e5a46b; }
 .dashboard-layout .analysis-status-box:not(.analysis-status-idle) { background: #f0f8f7; border-color: #cde5e1; border-radius: 6px; box-shadow: none; }
 .dashboard-layout .analysis-status-label, .dashboard-layout .analysis-status-pct { color: #087f83; }
 .dashboard-layout .analysis-progress-track { background: #d7eae6; }

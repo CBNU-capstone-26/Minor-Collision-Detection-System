@@ -1,4 +1,7 @@
-"""FastAPI 진입점 — CORS, 라우터 등록, 시작 시 테이블 생성."""
+"""FastAPI 진입점 — CORS, 라우터 등록, 시작 시 테이블 생성, 보관 기간 지난 영상 정리."""
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,7 +10,28 @@ from app import db_models  # noqa: F401  (테이블 등록을 위해 임포트)
 from app.settings import settings
 from app.routers import auth, videos, analysis
 
-app = FastAPI(title="물피도주 자동감지 API")
+
+async def _retention_loop():
+    """보관 기간(VIDEO_RETENTION_DAYS)이 지난 영상을 서버가 켜질 때 한 번, 그 뒤 1시간마다 지운다."""
+    from app.retention import CHECK_INTERVAL_SEC, delete_expired_videos
+    while True:
+        try:
+            deleted = await asyncio.to_thread(delete_expired_videos)
+            if deleted:
+                print(f"[보관기간] {settings.VIDEO_RETENTION_DAYS}일 지난 영상 {len(deleted)}개를 지웠습니다: {deleted}", flush=True)
+        except Exception as exc:  # noqa: BLE001 — 정리에 실패해도 서버는 계속 돈다(다음 회차에 다시)
+            print(f"[보관기간] 정리 실패(다음에 다시): {exc}", flush=True)
+        await asyncio.sleep(CHECK_INTERVAL_SEC)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    task = asyncio.create_task(_retention_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="물피도주 자동감지 API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

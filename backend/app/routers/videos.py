@@ -1,4 +1,5 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
+import math
 import shutil
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
@@ -95,8 +96,18 @@ def analysis_history(v: db_models.Video) -> list[api_schemas.AnalysisHistoryOut]
     return out
 
 
+def video_expires_at(v: db_models.Video):
+    """보관 기간이 끝나는 시각(UTC, 시간대 없음 — DB 와 같은 형식). 보관 기간을 끄면 None."""
+    if settings.VIDEO_RETENTION_DAYS <= 0 or v.created_at is None:
+        return None
+    return v.created_at + timedelta(days=settings.VIDEO_RETENTION_DAYS)
+
+
 def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.VideoOut:
     duration = v.total_frames / v.fps if v.fps else 0.0
+    expires_at = video_expires_at(v)
+    expires_in_days = (math.ceil((expires_at - datetime.utcnow()).total_seconds() / 86400)
+                       if expires_at else None)
     return api_schemas.VideoOut(
         id=v.id,
         video_name=v.video_name,
@@ -110,6 +121,8 @@ def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.
         duration_sec=duration,
         detected_vehicles=v.detected_vehicles,
         created_at=_utc(v.created_at),   # 업로드 시각 — UTC 라고 붙여 보내 브라우저 시간대로 표시
+        expires_at=_utc(expires_at),
+        expires_in_days=expires_in_days,
         events=[to_event_out(e) for e in v.crash_events],
         last_task=_last_task_out(v),
         analysis_done=any(t.status == "SUCCESS" for t in v.analysis_tasks),
@@ -224,17 +237,24 @@ def delete_video(
 ):
     """영상 삭제 — 관련 파일(원본·썸네일·CAM 클립)과 DB(이벤트·태스크·영상) 모두 제거."""
     video = _get_owned_video(video_id, db, user)
+    purge_video(video, db)
+    db.commit()
+    return {"deleted": video_id}
 
-    # 1) 관련 CAM 클립 파일 삭제 + crash_events 행 삭제
+
+def purge_video(video: db_models.Video, db: Session) -> None:
+    """영상과 딸린 것을 모두 지운다 — 사용자가 지울 때와 보관 기간이 지났을 때(app/retention.py) 같이 쓴다.
+    commit 은 부르는 쪽이 한다."""
+    # 1) 관련 CAM 클립·원본 클립 파일 삭제 + crash_events 행 삭제
     events = db.query(db_models.CrashEvent).filter(
-        db_models.CrashEvent.video_id == video_id).all()
+        db_models.CrashEvent.video_id == video.id).all()
     _unlink_event_clips(events, db)
     for ev in events:
         db.delete(ev)
 
     # 2) analysis_tasks 행 삭제
     for task in db.query(db_models.AnalysisTask).filter(
-            db_models.AnalysisTask.video_id == video_id).all():
+            db_models.AnalysisTask.video_id == video.id).all():
         db.delete(task)
 
     # 3) 원본 영상 + 썸네일 파일 삭제
@@ -243,8 +263,6 @@ def delete_video(
 
     # 4) 영상 행 삭제
     db.delete(video)
-    db.commit()
-    return {"deleted": video_id}
 
 
 @router.delete("/{video_id}/events/{event_id}")
@@ -388,23 +406,25 @@ def detect_vehicles_in_video(
 
     # [디버그] 서비스가 실제로 탐지한 결과를 이미지로 저장 (outputs/) — 눈으로 확인용.
     #   탐지에 쓴 원본 프레임에 bbox(#번호·클래스·신뢰도)를 그려 저장한다.
-    try:
-        import cv2
-        dbg = frame.copy()
-        for item in detected_list:
-            x1, y1, x2, y2 = item["bbox"]
-            cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            label = f'#{item["id"] + 1} {item["class_name"]} {round(item["confidence"] * 100)}%'
-            cv2.putText(dbg, label, (x1, max(y1 - 4, 10)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-        out_dir = settings.BASE_DIR / "outputs"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        base = Path(video.video_name).stem
-        out_img = out_dir / f"detect_{base}_f{frame_index}.jpg"
-        cv2.imwrite(str(out_img), dbg)
-        print(f"[detect] 결과 이미지 저장: {out_img}  (탐지 {len(detected_list)}대, 프레임 {frame.shape[1]}x{frame.shape[0]})")
-    except Exception as _dbg_err:  # 디버그 저장 실패는 탐지 응답에 영향 없음
-        print(f"[detect] 결과 이미지 저장 실패(무시): {_dbg_err}")
+    #   CCTV 화면이 영상을 지워도 남으므로 DETECT_DEBUG_IMAGES=1 일 때만(settings).
+    if settings.DETECT_DEBUG_IMAGES:
+        try:
+            import cv2
+            dbg = frame.copy()
+            for item in detected_list:
+                x1, y1, x2, y2 = item["bbox"]
+                cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                label = f'#{item["id"] + 1} {item["class_name"]} {round(item["confidence"] * 100)}%'
+                cv2.putText(dbg, label, (x1, max(y1 - 4, 10)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            out_dir = settings.BASE_DIR / "outputs"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            base = Path(video.video_name).stem
+            out_img = out_dir / f"detect_{base}_f{frame_index}.jpg"
+            cv2.imwrite(str(out_img), dbg)
+            print(f"[detect] 결과 이미지 저장: {out_img}  (탐지 {len(detected_list)}대, 프레임 {frame.shape[1]}x{frame.shape[0]})")
+        except Exception as _dbg_err:  # 디버그 저장 실패는 탐지 응답에 영향 없음
+            print(f"[detect] 결과 이미지 저장 실패(무시): {_dbg_err}")
 
     json_str = json.dumps(detected_list, ensure_ascii=False)
     video.detected_vehicles = json_str
