@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
 from app import db_models, api_schemas
-from app.auth_guard import get_current_user
+from app.auth_guard import get_current_user, get_media_user
 from app.settings import settings
 from app.routers.videos import to_event_out, _get_owned_video, raw_clip_path
 
@@ -186,12 +186,24 @@ def list_events(
     return [to_event_out(e) for e in events]
 
 
-@router.get("/events/{event_id}/clip/raw")
-def download_raw_clip(event_id: int, db: Session = Depends(get_db)):
-    """합성(박스·상태 띠)이 전혀 없는 원본 사고 클립 내려받기.
-    <a href download> 용이라 표시 클립과 마찬가지로 인증 미적용 (MVP)."""
+def _get_owned_event(event_id: int, db: Session, user: db_models.User):
+    """본인 영상의 사고 구간만 — 남의 것이면 없는 것처럼 404."""
     event = db.get(db_models.CrashEvent, event_id)
-    path = raw_clip_path(event) if event is not None else None
+    if event is None or event.video is None or event.video.user_id != user.id:
+        raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")
+    return event
+
+
+@router.get("/events/{event_id}/clip/raw")
+def download_raw_clip(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_media_user),
+):
+    """합성(박스·상태 띠)이 전혀 없는 원본 사고 클립 내려받기.
+    <a href download> 는 헤더를 못 실어서 영상 쿠키로 확인한다(auth_guard)."""
+    event = _get_owned_event(event_id, db, user)
+    path = raw_clip_path(event)
     if path is None or not path.exists():
         raise HTTPException(status_code=404,
                             detail="원본 클립이 없습니다. 영상을 다시 분석하면 만들어집니다.")
@@ -202,10 +214,14 @@ def download_raw_clip(event_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/events/{event_id}/clip")
-def get_event_clip(event_id: int, db: Session = Depends(get_db)):
-    # <video src> 태그용 — 인증 미적용 (MVP)
-    event = db.get(db_models.CrashEvent, event_id)
-    if event is None or not event.clip_path:
+def get_event_clip(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_media_user),
+):
+    # <video src> 태그용 — 영상 쿠키로 확인
+    event = _get_owned_event(event_id, db, user)
+    if not event.clip_path:
         raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")
     path = settings.abs_path(event.clip_path)
     if not path.exists():

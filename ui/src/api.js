@@ -110,7 +110,9 @@ export function normalizeVideo(v) {
 export const api = {
   signup: (data) => request("/auth/signup", { method: "POST", body: data }),
   login: (data) => request("/auth/login", { method: "POST", body: data }),
-  getMe: () => request("/auth/me"),
+  // 화면을 새로 열 때 — 최신 사용자 정보 + 영상·썸네일·클립용 쿠키(로그인 때도 받는다)
+  startSession: () => request("/auth/session", { method: "POST" }),
+  logout: () => request("/auth/logout", { method: "POST" }),
   updateMe: (data) => request("/auth/me", { method: "PUT", body: data }),
   changePassword: (data) => request("/auth/change-password", { method: "POST", body: data }),
 

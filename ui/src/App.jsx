@@ -3671,15 +3671,17 @@ function RequireAuth({ children }) {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
   const [user, setUser] = useState(() => !!getToken());
+  // 로그인돼 있으면 화면을 그리기 전에 세션부터 연다 — 영상·썸네일·클립은 이때 받는
+  // 쿠키로 열리므로(헤더를 못 싣는 <video>·<img>), 먼저 그리면 첫 썸네일이 막힌다
+  const [sessionReady, setSessionReady] = useState(() => !getToken());
 
-  // 저장된 사용자 정보로 바로 화면을 그리고, 최신 정보는 뒤에서 받아 갱신한다
   useEffect(() => {
-    if (getToken()) {
-      api.getMe().then((u) => {
-        setCurrentUser(u);
-        saveAuth(getToken(), u);
-      }).catch(() => { });
-    }
+    if (!getToken()) return;
+    api.startSession().then((u) => {
+      setCurrentUser(u);
+      saveAuth(getToken(), u);
+    }).catch(() => { })   // 만료(401)면 api.js 가 로그인 화면으로 보낸다
+      .finally(() => setSessionReady(true));
   }, []);
 
   const handleUpdateUser = (updatedUser) => {
@@ -3688,10 +3690,13 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    api.logout().catch(() => { });   // 영상 쿠키도 지운다
     clearAuth();
     setCurrentUser(null);
     setUser(false);
   };
+
+  if (!sessionReady) return null;
 
   return (
 

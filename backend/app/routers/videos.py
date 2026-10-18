@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
 from app import db_models, api_schemas
-from app.auth_guard import get_current_user
+from app.auth_guard import get_current_user, get_media_user
 from app.settings import settings
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
@@ -291,11 +291,13 @@ def clear_all_crash_events(
 
 
 @router.get("/{video_id}/stream")
-def stream_video(video_id: int, db: Session = Depends(get_db)):
-    # <video src> 태그는 커스텀 헤더를 못 보내므로 인증 미적용 (MVP)
-    video = db.get(db_models.Video, video_id)
-    if video is None:
-        raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+def stream_video(
+    video_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_media_user),
+):
+    # <video src> 태그는 헤더를 못 실어서 로그인 때 받은 영상 쿠키로 확인한다(auth_guard)
+    video = _get_owned_video(video_id, db, user)
     path = settings.abs_path(video.video_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
@@ -304,11 +306,13 @@ def stream_video(video_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{video_id}/thumbnail")
-def get_video_thumbnail(video_id: int, db: Session = Depends(get_db)):
-    # <img src> 태그용 — 인증 미적용 (MVP). 영상 첫 프레임을 jpg로 캐시 생성.
-    video = db.get(db_models.Video, video_id)
-    if video is None:
-        raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+def get_video_thumbnail(
+    video_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_media_user),
+):
+    # <img src> 태그용 — 영상 쿠키로 확인. 영상 첫 프레임을 jpg로 캐시 생성.
+    video = _get_owned_video(video_id, db, user)
 
     thumb = settings.THUMBNAIL_DIR / f"{Path(video.video_path).stem}.jpg"
     if not thumb.exists():
