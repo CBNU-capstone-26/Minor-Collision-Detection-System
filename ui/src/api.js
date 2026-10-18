@@ -81,8 +81,9 @@ export function normalizeVideo(v) {
     title: v.title || "", // 업로드할 때 넣은 제목 (없으면 화면이 '녹화일 녹화본 #N')
     fileName: v.video_name || "", // 업로드한 원본 파일 이름
     uploadedAt: v.created_at || null, // 업로드 시각(ISO, UTC)
+    // 보관 기간이 끝나 영상·클립이 지워질 때까지 남은 날(서버 시계 기준). 보관 기간을 끄면 null
+    expiresInDays: v.expires_in_days ?? null,
     date: v.recording_date || (created ? created.slice(0, 10) : ""),
-    startTime: v.recording_start_time || "20:30",
     duration: Math.round(v.duration_sec || 0),
     width: v.width,
     height: v.height,
@@ -111,7 +112,9 @@ export function normalizeVideo(v) {
 export const api = {
   signup: (data) => request("/auth/signup", { method: "POST", body: data }),
   login: (data) => request("/auth/login", { method: "POST", body: data }),
-  getMe: () => request("/auth/me"),
+  // 화면을 새로 열 때 — 최신 사용자 정보 + 영상·썸네일·클립용 쿠키(로그인 때도 받는다)
+  startSession: () => request("/auth/session", { method: "POST" }),
+  logout: () => request("/auth/logout", { method: "POST" }),
   updateMe: (data) => request("/auth/me", { method: "PUT", body: data }),
   changePassword: (data) => request("/auth/change-password", { method: "POST", body: data }),
 
@@ -145,10 +148,10 @@ export const api = {
     }),
   analyze: (videoId, bbox, signal) =>
     request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox, signal }),
-  taskStatus: (taskId) => request(`/tasks/${taskId}`),
+  getTaskStatus: (taskId) => request(`/tasks/${taskId}`),
   cancelTask: (taskId) => request(`/tasks/${taskId}/cancel`, { method: "POST" }),
   // 로그인한 사용자의 대기·진행 중 분석(창을 다시 열 때 진행 상황 복원용)
-  activeTasks: () => request("/tasks/active"),
+  listActiveTasks: () => request("/tasks/active"),
   // 실패·취소된 분석을 같은 영상·같은 차량 박스로 다시 실행
   retryTask: (taskId) => request(`/tasks/${taskId}/retry`, { method: "POST" }),
   clipUrl: (eventId) => `/api/events/${eventId}/clip`,

@@ -110,6 +110,8 @@ def run_prediction_task(self, task_id: int):
                 bbox=(task.bbox_xmin, task.bbox_ymin, task.bbox_xmax, task.bbox_ymax),
                 output_dir=Path(output_dir),
                 progress_callback=_on_progress,
+                # 분석마다 고유한 이름을 써 이전 분석의 클립을 덮어쓰지 않는다.
+                clip_name=f"{Path(video.video_path).stem}_t{task.id}",
             )
 
             db.refresh(task)
@@ -132,7 +134,7 @@ def run_prediction_task(self, task_id: int):
                     end_timestamp_sec=r["end_sec"],
                     end_frame_number=r["end_frame"],
                     crash_prob=r["crash_prob"],
-                    cam_heatmap_path=clip_key,
+                    clip_path=clip_key,
                 ))
 
         # 분석 도중 취소됐는데(revoke 실패 등) 끝까지 돌았다면 결과를 버린다

@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
 from app import db_models, api_schemas
-from app.auth_guard import get_current_user
+from app.auth_guard import get_current_user, get_media_user
 from app.settings import settings
-from app.routers.videos import to_event_out, _get_owned_video, raw_clip_path
+from app.routers.videos import to_event_out, _get_owned_video, raw_clip_key
 from app.object_storage import LocalObjectStorage, get_storage
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -187,33 +187,43 @@ def list_events(
     return [to_event_out(e) for e in events]
 
 
-@router.get("/events/{event_id}/clip/raw")
-def download_raw_clip(event_id: int, db: Session = Depends(get_db)):
-    """합성(박스·상태 띠)이 전혀 없는 원본 사고 클립 내려받기.
-    <a href download> 용이라 표시 클립과 마찬가지로 인증 미적용 (MVP)."""
+def _get_owned_event(event_id: int, db: Session, user: db_models.User):
+    """다른 사용자의 사고 구간은 없는 것처럼 숨긴다."""
     event = db.get(db_models.CrashEvent, event_id)
-    path = raw_clip_path(event) if event is not None else None
-    if path is None or not path.exists():
+    if event is None or event.video is None or event.video.user_id != user.id:
+        raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")
+    return event
+
+
+@router.get("/events/{event_id}/clip/raw")
+def download_raw_clip(event_id: int, db: Session = Depends(get_db),
+                      user: db_models.User = Depends(get_media_user)):
+    event = _get_owned_event(event_id, db, user)
+    key = raw_clip_key(event)
+    storage = get_storage()
+    if key is None or not storage.exists(key):
         raise HTTPException(status_code=404,
                             detail="원본 클립이 없습니다. 영상을 다시 분석하면 만들어집니다.")
+    if not isinstance(storage, LocalObjectStorage):
+        return RedirectResponse(storage.presigned_url(key, settings.S3_PRESIGNED_URL_EXPIRES))
     t = event.timestamp_sec or 0.0
     stem = Path(event.video.video_name).stem if event.video else "video"
     name = f"{stem}_{int(t // 60):02d}분{int(t % 60):02d}초_원본사고클립.mp4"
-    return FileResponse(str(path), media_type="video/mp4", filename=name)
+    return FileResponse(str(storage.local_path(key)), media_type="video/mp4", filename=name)
 
 
 @router.get("/events/{event_id}/clip")
-def get_event_clip(event_id: int, db: Session = Depends(get_db)):
-    # <video src> 태그용 — 인증 미적용 (MVP)
-    event = db.get(db_models.CrashEvent, event_id)
-    if event is None or not event.cam_heatmap_path:
+def get_event_clip(event_id: int, db: Session = Depends(get_db),
+                   user: db_models.User = Depends(get_media_user)):
+    event = _get_owned_event(event_id, db, user)
+    if not event.clip_path:
         raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")
     storage = get_storage()
-    if not storage.exists(event.cam_heatmap_path):
+    if not storage.exists(event.clip_path):
         raise HTTPException(status_code=404, detail="클립 파일이 없습니다.")
     if not isinstance(storage, LocalObjectStorage):
         return RedirectResponse(storage.presigned_url(
-            event.cam_heatmap_path, settings.S3_PRESIGNED_URL_EXPIRES))
-    path = storage.local_path(event.cam_heatmap_path)
+            event.clip_path, settings.S3_PRESIGNED_URL_EXPIRES))
+    path = storage.local_path(event.clip_path)
     media_type = "video/webm" if str(path).endswith(".webm") else "video/mp4"
     return FileResponse(str(path), media_type=media_type)

@@ -1086,6 +1086,15 @@ body.dark-mode .video-info-list dt {
     height: var(--watch-avail-h);
   }
 
+  /* 오른쪽 패널을 닫으면 그 칸이 빠지고 영상 칸이 넓어진다 (영상은 화면 높이에 꽉 찰 때까지 커짐) */
+  .watch-layout.history-collapsed {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .watch-layout.sidebar-collapsed.history-collapsed {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
   .watch-right > .analysis-history {
     flex: 1 1 auto;
     min-height: 0;
@@ -1147,49 +1156,38 @@ body.dark-mode .video-info-list dt {
 
 /* 영상 오른쪽 칸 (좁은 화면에선 영상 아래) */
 .watch-right {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
 }
 
-/* 분석 이력 열기 탭 (숨겼을 때) — 좁은 화면에선 가로 버튼 */
-.analysis-history-tab {
+/* 오른쪽 패널 열기·닫기 — 작업 헤더 윗줄 오른쪽 끝(오른쪽 패널 바로 위) */
+.panel-toggle-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  align-self: start;
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--incident-line, #e2e8f0);
   border-radius: 5px;
-  background: #ffffff;
-  color: #1e3a8a;
-  font-size: 13.5px;
+  background: var(--incident-surface, #ffffff);
+  color: var(--incident-muted, #64748b);
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  white-space: nowrap;
 }
 
-.analysis-history-tab:hover {
-  background: #f1f5f9;
+.panel-toggle-btn:hover:not(:disabled) {
+  color: var(--incident-accent, #087f83);
+  border-color: var(--incident-accent, #087f83);
 }
 
-.analysis-history-tab-arrow {
-  font-size: 18px;
-  line-height: 1;
-}
-
-body.dark-mode .analysis-history-tab {
-  background: #19232d;
-  border-color: #2a3641;
-  color: #42d7c3;
-}
-
-body.dark-mode .analysis-history-tab:hover {
-  background: #1f2b36;
-  border-color: #42d7c3;
+.panel-toggle-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ---- 분석 이력 (영상 오른쪽) ---- */
@@ -1221,14 +1219,6 @@ body.dark-mode .analysis-history-tab:hover {
   font-size: 12px;
   color: #1d4ed8;
   margin-right: auto;
-}
-
-/* 숨기기(›) — 왼쪽 사이드바의 닫기(×)와 같은 모양, 머리말 높이에 맞춰 조금 작게 */
-.analysis-history-close {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  align-self: center;
 }
 
 /* 이력이 많아지면 목록 안에서만 스크롤 */
@@ -1921,6 +1911,28 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 .progress-track.seeking .progress-fill,
 .progress-track.seeking .progress-thumb {
   transition: none;
+}
+
+/* 차량 탐지 중: 이동할 수 없음을 보여 준다(흐리게, 손잡이·시각 말풍선 숨김) */
+.progress-track.locked,
+.progress-track.locked .event-range {
+  cursor: not-allowed;
+}
+
+.progress-track.locked {
+  opacity: 0.5;
+}
+
+.progress-track.locked:hover .progress-rail {
+  height: 12px;
+}
+
+.progress-track.locked:hover .progress-thumb {
+  transform: translate(-50%, -50%) scale(0);
+}
+
+.progress-track.locked:hover .progress-hover-time {
+  opacity: 0;
 }
 
 /* 사고 의심 구간 */
@@ -3811,253 +3823,14 @@ body.dark-mode .nav-tab-item.active {
 }
 
 /* ---------------- 통계 페이지 (Analytics Page) ---------------- */
-:root {
-  --chart-primary: #3b82f6;
-  --chart-secondary: #10b981;
-  --chart-grid: #e2e8f0;
-  --chart-text: #64748b;
-  --chart-text-primary: #1f2937;
-  --chart-text-muted: #94a3b8;
-}
-
-body.dark-mode {
-  --chart-primary: #42d7c3;
-  --chart-secondary: #06b6d4;
-  --chart-grid: #2a3641;
-  --chart-text: #9baab6;
-  --chart-text-primary: #f8fafc;
-  --chart-text-muted: #475569;
-}
-
-.analytics-view {
-  padding: 24px;
-  max-width: 1400px;
-  margin: 0 auto;
-  animation: fadeIn 0.3s ease-out;
-}
-
-.analytics-header {
-  margin-bottom: 24px;
-  text-align: left;
-}
-
-.analytics-header h2 {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--chart-text-primary);
-  margin: 0 0 6px;
-}
-
-.analytics-header p {
-  font-size: 14px;
-  color: var(--chart-text);
-  margin: 0;
-}
-
-.analytics-summary-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.summary-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 7px;
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.summary-card .card-icon {
-  width: 48px;
-  height: 48px;
-  background: #eff6ff;
-  color: #3b82f6;
-  border-radius: 6px;
-  font-size: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.summary-card.warning .card-icon {
-  background: #fffbeb;
-  color: #d97706;
-}
-
-.summary-card.info .card-icon {
-  background: #ecfdf5;
-  color: #10b981;
-}
-
-.card-data {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-
-.card-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--chart-text);
-}
-
-.card-value {
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--chart-text-primary);
-}
-
-body.dark-mode .summary-card {
-  background: #19232d;
-  border-color: #2a3641;
-}
-
-body.dark-mode .summary-card .card-icon {
-  background: rgba(66, 215, 195, 0.15);
-  color: #42d7c3;
-}
-
-body.dark-mode .summary-card.warning .card-icon {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-}
-
-body.dark-mode .summary-card.info .card-icon {
-  background: rgba(6, 182, 212, 0.15);
-  color: #06b6d4;
-}
 
 /* 차트 그리드 */
-.analytics-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-}
 
 /* 차트가 3개라 넓은 화면은 한 줄에 셋, 중간 화면은 둘 + 마지막 하나를 가로 전체로 */
-.analytics-grid > .analytics-chart-card:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
-@media (min-width: 1400px) {
-  .analytics-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .analytics-grid > .analytics-chart-card:last-child:nth-child(odd) {
-    grid-column: auto;
-  }
-}
-
-.analytics-chart-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-}
-
-.analytics-chart-card h3 {
-  margin: 0 0 20px;
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--chart-text-primary);
-  text-align: left;
-}
-
-.chart-wrapper {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 200px;
-  flex-grow: 1;
-}
-
-body.dark-mode .analytics-chart-card {
-  background: #19232d;
-  border-color: #2a3641;
-}
 
 /* SVG 차트 내부 스타일 */
-.chart-axis-text {
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.chart-value-text {
-  font-size: 11px;
-  font-weight: 700;
-}
 
 /* Donut Chart */
-.donut-wrapper {
-  flex-direction: column;
-}
-
-.donut-chart-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 32px;
-  width: 100%;
-}
-
-.donut-center-text {
-  dominant-baseline: middle;
-  text-anchor: middle;
-}
-
-.donut-center-text .donut-total {
-  font-family: inherit;
-}
-
-.donut-segment {
-  transition: stroke-width 0.2s ease;
-  cursor: pointer;
-}
-
-.donut-segment:hover {
-  stroke-width: 22;
-}
-
-.donut-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--chart-text-primary);
-}
-
-.legend-badge {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-}
-
-.legend-name {
-  color: var(--chart-text);
-  min-width: 100px;
-  text-align: left;
-}
-
-.legend-count {
-  font-weight: 700;
-}
 
 /* Bar Chart */
 .chart-bar {
@@ -4069,26 +3842,6 @@ body.dark-mode .analytics-chart-card {
 }
 
 /* Responsive Statistics */
-@media (max-width: 1024px) {
-  .analytics-summary-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .analytics-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 600px) {
-  .analytics-summary-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .donut-chart-container {
-    flex-direction: column;
-    gap: 16px;
-  }
-}
 
 /* ===================== 바운딩박스 지정 모드 ===================== */
 
@@ -4774,13 +4527,13 @@ body.dark-mode .home-toolbar-actions .delete-confirm-btn:hover {
   display: inline-flex;
 }
 
-.detect-popover-overlay {
+.analyze-popover-overlay {
   position: fixed;
   inset: 0;
   z-index: 40;
 }
 
-.detect-popover {
+.analyze-popover {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
@@ -4793,20 +4546,20 @@ body.dark-mode .home-toolbar-actions .delete-confirm-btn:hover {
   padding: 16px;
 }
 
-.detect-popover-text {
+.analyze-popover-text {
   margin: 0 0 12px;
   font-size: 14px;
   color: #1e293b;
   font-weight: 600;
 }
 
-.detect-popover-actions {
+.analyze-popover-actions {
   display: flex;
   gap: 8px;
 }
 
-.detect-popover-run,
-.detect-popover-cancel {
+.analyze-popover-run,
+.analyze-popover-cancel {
   flex: 1;
   padding: 9px;
   border-radius: 4px;
@@ -4815,44 +4568,44 @@ body.dark-mode .home-toolbar-actions .delete-confirm-btn:hover {
   border: none;
 }
 
-.detect-popover-run {
+.analyze-popover-run {
   background: #dc2626;
   color: #fff;
 }
 
-.detect-popover-cancel {
+.analyze-popover-cancel {
   background: #e2e8f0;
   color: #334155;
 }
 
-body.dark-mode .detect-popover {
+body.dark-mode .analyze-popover {
   background: #19232d;
   border: 1px solid #2a3641;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75);
 }
 
-body.dark-mode .detect-popover-text {
+body.dark-mode .analyze-popover-text {
   color: #f8fafc;
 }
 
-body.dark-mode .detect-popover-cancel {
+body.dark-mode .analyze-popover-cancel {
   background: #101926;
   border: 1px solid #2a3641;
   color: #9baab6;
 }
 
-body.dark-mode .detect-popover-cancel:hover {
+body.dark-mode .analyze-popover-cancel:hover {
   background: #1f2b36;
   color: #cbd5e1;
 }
 
-body.dark-mode .detect-popover-run {
+body.dark-mode .analyze-popover-run {
   background: #ef4444;
   color: #ffffff;
   box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);
 }
 
-body.dark-mode .detect-popover-run:hover {
+body.dark-mode .analyze-popover-run:hover {
   background: #dc2626;
   box-shadow: 0 0 18px rgba(239, 68, 68, 0.6);
 }
@@ -6087,20 +5840,6 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
     min-height: 0;
     padding: 20px;
   }
-
-  .analytics-view {
-    padding: 16px;
-  }
-
-  .analytics-summary-cards,
-  .analytics-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .donut-chart-container {
-    flex-direction: column;
-    gap: 16px;
-  }
 }
 
 @media (max-width: 640px) {
@@ -6165,8 +5904,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
     font-size: 11px;
   }
 
-  .watch-view,
-  .analytics-view {
+  .watch-view {
     padding: 12px;
   }
 
@@ -6300,11 +6038,6 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 
   .pagination-info {
     font-size: 11px;
-  }
-
-  .summary-card,
-  .analytics-chart-card {
-    padding: 16px;
   }
 
   .calendar-day {
@@ -6893,6 +6626,13 @@ body.dark-mode .public-scan-road {
   padding: 24px;
   background: rgba(15, 23, 42, 0.74);
   backdrop-filter: blur(8px);
+  /* 배경은 서서히 어두워지고, 닫을 땐(.closing) 서서히 걷힌다 */
+  animation: public-overlay-in 0.3s ease-out both;
+}
+
+.login-modal-overlay.closing {
+  pointer-events: none;   /* 사라지는 동안 다시 누르지 않게 */
+  animation: public-overlay-out 0.2s ease-in forwards;
 }
 
 .login-modal {
@@ -6902,12 +6642,44 @@ body.dark-mode .public-scan-road {
   border: 1px solid rgba(var(--public-accent-rgb), 0.4);
   background: var(--public-paper);
   box-shadow: 14px 14px 0 var(--public-green);
-  animation: public-modal-in 0.22s ease-out;
+  /* 배경이 어두워지기 시작한 뒤 살짝 아래에서 떠오르며 커진다 */
+  animation: public-modal-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+
+/* 닫는 시간은 App.jsx 의 MODAL_EXIT_MS 와 같게 */
+.login-modal-overlay.closing .login-modal {
+  animation: public-modal-out 0.2s ease-in forwards;
+}
+
+@keyframes public-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes public-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @keyframes public-modal-in {
-  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  from { opacity: 0; transform: translateY(20px) scale(0.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes public-modal-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(12px) scale(0.98); }
+}
+
+/* 좁은 화면에선 아래에 붙는 시트라 아래에서 올라오고 아래로 내려간다 */
+@keyframes public-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes public-sheet-out {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
 }
 
 .login-modal-close {
@@ -6949,14 +6721,6 @@ body.dark-mode .public-scan-road {
   min-height: 34px;
 }
 
-.public-brand-logo {
-  display: block;
-  width: 82px;
-  height: 34px;
-  object-fit: contain;
-  background: transparent;
-}
-
 .nav-logo {
   width: 88px;
   height: 36px;
@@ -6964,18 +6728,6 @@ body.dark-mode .public-scan-road {
   overflow: hidden;
   border-radius: 4px;
   background: #ffffff;
-}
-
-.nav-logo img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-body.dark-mode .public-brand-logo,
-body.dark-mode .nav-logo img {
-  content: url("/siot-logo-dark.svg");
 }
 
 body.dark-mode .nav-logo {
@@ -7253,6 +7005,11 @@ body.dark-mode .nav-logo {
     width: 100%;
     padding: 32px 22px 24px;
     box-shadow: 0 -6px 0 var(--public-green);
+    animation-name: public-sheet-in;
+  }
+
+  .login-modal-overlay.closing .login-modal {
+    animation-name: public-sheet-out;
   }
 
 }

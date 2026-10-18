@@ -9,6 +9,10 @@
    이 파일은 premium-ui.css 다음에 불러와야 한다(App.jsx). */
 
 body.dark-mode .dashboard-layout .top-navbar { border-color: var(--incident-line); box-shadow: 0 4px 24px #0c253507; }
+/* 왼쪽 위 글자 로고 — App.css 의 예전 로고 버튼 다크 규칙(.nav-logo: 검은 글자 #10151b, 어두운 배경, 청록 그림자)이
+   남아 있어 S·I·T 가 배경에 묻혔다. 새 디자인 값(글자 = --incident-ink, 배경·그림자 없음)으로 되돌린다. */
+body.dark-mode .dashboard-layout .nav-home-btn,
+body.dark-mode .dashboard-layout .nav-home-btn:hover { color: var(--incident-ink); background: transparent; box-shadow: none; }
 body.dark-mode .dashboard-layout .analysis-idle-text { color: var(--incident-muted); }
 body.dark-mode .dashboard-layout .video-card { border: 1px solid var(--incident-line); background: var(--incident-surface); }
 body.dark-mode .dashboard-layout .video-card:hover { box-shadow: 0 12px 28px #0b2c3e18; border-color: var(--incident-accent); }

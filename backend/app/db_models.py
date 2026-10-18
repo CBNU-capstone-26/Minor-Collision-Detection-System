@@ -92,7 +92,8 @@ class CrashEvent(Base):
     end_frame_number = Column(Integer, nullable=True)
 
     crash_prob = Column(Float, nullable=True)          # 구간 대표 확률 (0~1)
-    cam_heatmap_path = Column(String(500), nullable=True)  # 사고구간 CAM 클립 경로(storage 상대경로)
+    # DB 컬럼명은 기존 cam_heatmap_path 를 유지하고, 코드에서는 실제 역할인 clip_path 로 쓴다.
+    clip_path = Column("cam_heatmap_path", String(500), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

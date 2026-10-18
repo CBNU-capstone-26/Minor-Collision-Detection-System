@@ -82,7 +82,8 @@ def _finalize_clip(rendered_path, dest_stem):
     return final
 
 
-def get_activation(name):
+def make_activation_hook(name):
+    """forward hook — 그 층의 출력(특징맵)을 activation[name] 에 담는다."""
     def hook(model, input, output):
         activation[name] = output.detach()
     return hook
@@ -168,7 +169,7 @@ def _add_state_bar(frame, state):
     return np.vstack([frame, bar])
 
 
-def predict_hit_and_run_final(
+def predict_full_video(
     model,
     video_path=config.PREDICT_VIDEO_PATH,
     txt_path=config.PREDICT_TXT_PATH,
@@ -201,8 +202,8 @@ def predict_hit_and_run_final(
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
 
-    handle = model.inception5b.register_forward_hook(
-        get_activation('inception5b'))
+    handle = model.cam_layer.register_forward_hook(
+        make_activation_hook('cam_layer'))
     out_video = None
     write_queue = None
     writer_thread = None
@@ -314,7 +315,7 @@ def predict_hit_and_run_final(
                 outputs = model(clips)
                 probs = F.softmax(outputs, dim=1)
                 pred_classes = outputs.argmax(dim=1)
-                feat_maps = activation['inception5b']
+                feat_maps = activation['cam_layer']
 
                 for offset, window_idx in enumerate(batch_window_starts):
                     # 이벤트 경계는 창 끝(frame_idx) 기준, 판정·CAM 표시는 disp_idx 에 그린다
@@ -510,6 +511,7 @@ def predict_events_and_clips(
     coarse_pad=config.PREDICT_COARSE_PAD,
     render_clips=True,
     stats=None,
+    clip_name=None,
 ):
     """웹 서비스용: 단일 대상 차량(bbox)에 대해 사고 의심 구간만 탐지하고,
     각 구간에 대해서만 짧은 CAM 오버레이 클립을 생성한다.
@@ -524,6 +526,8 @@ def predict_events_and_clips(
         clip_pad_frames (int): 구간 앞뒤로 덧붙일 여유 프레임 수
         use_coarse_scan (bool): True면 거친 탐색(coarse_step 간격) 후 P(A) >
             coarse_prob 인 창 주변 ±coarse_pad 만 촘촘히 본다. False면 전체 스캔.
+        clip_name (str|None): 클립 파일 이름 앞부분('<clip_name>_event1.mp4'). 없으면 영상 파일 이름.
+            서비스는 분석마다 다른 이름을 준다 — 같은 영상을 다시 분석해도 이전 클립을 덮어쓰지 않게.
         render_clips (bool): False면 CAM 클립을 만들지 않고 이벤트 목록만 돌려준다
             (clip_path=None). 평가에서 '서비스와 동일한 경로'로 이벤트를 뽑을 때
             쓴다 — 렌더링은 평가에 불필요하고 가장 느린 단계다.
@@ -556,7 +560,7 @@ def predict_events_and_clips(
     # 3D-CNN 실행기 — 서버 컴퓨터에 맞는 가장 빠른 방식(infer_runtime.py, 처음 한 번만 고름).
     # CAM 히트맵 합성(개발용, 기본 꺼짐)을 켰을 때만 예전처럼 PyTorch + hook 으로 특징맵을 받는다.
     runner = None if cam_overlay else get_runner(model)
-    handle = (model.inception5b.register_forward_hook(get_activation('inception5b'))
+    handle = (model.cam_layer.register_forward_hook(make_activation_hook('cam_layer'))
               if cam_overlay else None)
     try:
         # ── 1패스: 추론용 224×224 프레임만 메모리에 보관 (원본 프레임은 보관 X) ──
@@ -636,7 +640,7 @@ def predict_events_and_clips(
         accident_overlays = {}
         # window_idx → pred_class / P(A) (3D-CNN을 실제로 실행한 윈도우만)
         window_pred = {}
-        window_pA = {}
+        window_prob_a = {}
 
         num_windows = full_video_tensor.size(1) - (clip_length - 1)
         window_starts = list(range(0, max(0, num_windows), window_stride))
@@ -715,7 +719,7 @@ def predict_events_and_clips(
                         outputs, feat_maps = runner(clips), None
                     else:
                         outputs = model(clips)
-                        feat_maps = activation['inception5b']
+                        feat_maps = activation['cam_layer']
                     probs = F.softmax(outputs, dim=1)
                     pred_classes = outputs.argmax(dim=1)
 
@@ -726,7 +730,7 @@ def predict_events_and_clips(
                         pred_class = int(pred_classes[offset].item())
                         prob = probs[offset, pred_class].item()
                         window_pred[window_idx] = pred_class
-                        window_pA[window_idx] = probs[offset, 1].item()
+                        window_prob_a[window_idx] = probs[offset, 1].item()
 
                         if pred_class == 1 and not cam_overlay:
                             # 클립에 히트맵을 안 그리면 CAM 계산을 건너뛰고 확률만 남긴다
@@ -748,7 +752,7 @@ def predict_events_and_clips(
                             ]
                             accident_overlays[disp_idx] = (heatmap_bbox, prob)
 
-                        if coarse_k > 1 and window_pA[window_idx] > coarse_prob:
+                        if coarse_k > 1 and window_prob_a[window_idx] > coarse_prob:
                             lo = max(0, window_idx - coarse_pad)
                             lo += (-lo) % window_stride       # 창 시작 격자에 맞춘다
                             near_set.update(range(lo, min(last_start, window_idx + coarse_pad) + 1,
@@ -778,7 +782,7 @@ def predict_events_and_clips(
         if coarse[-1] != window_starts[-1]:
             coarse.append(window_starts[-1])
         _run_windows(coarse, coarse_k=k, stage='coarse' if k > 1 else 'scan')
-        hot = [w for w in coarse if window_pA[w] > coarse_prob]
+        hot = [w for w in coarse if window_prob_a[w] > coarse_prob]
         refine = []
         if k > 1 and hot:
             near = np.zeros(window_starts[-1] + 1, dtype=bool)
@@ -856,7 +860,7 @@ def predict_events_and_clips(
         # ── 2패스: 이벤트 구간 프레임만 영상에서 다시 읽어 CAM 클립 렌더링 ──────
         # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
         results = []
-        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        base_name = clip_name or os.path.splitext(os.path.basename(video_path))[0]
         render_cap = (cv2.VideoCapture(video_path)
                       if (events and render_clips) else None)
         # 클립 렌더링 남은 시간 = 남은 프레임 × 프레임당 시간(재기 전엔 디코딩 기준 추정)

@@ -70,6 +70,11 @@ class Settings:
     # 개발할 때 자주 다시 로그인하기 싫으면: AUTH_TOKEN_TTL_HOURS=72 ./dev.sh
     AUTH_TOKEN_TTL_HOURS: float = float(os.getenv("AUTH_TOKEN_TTL_HOURS", "8"))
 
+    # 업로드한 지 이만큼 지난 영상·클립·분석 이력을 정리한다. 0 이하면 비활성화.
+    VIDEO_RETENTION_DAYS: int = int(os.getenv("VIDEO_RETENTION_DAYS", "90"))
+    # 탐지 디버그 이미지는 원본 영상 보관 기간과 다르게 남을 수 있으므로 기본 비활성화.
+    DETECT_DEBUG_IMAGES: bool = os.getenv("DETECT_DEBUG_IMAGES", "").strip().lower() in ("1", "true", "yes")
+
     # CORS 허용 오리진 (Vite 개발 서버)
     CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 

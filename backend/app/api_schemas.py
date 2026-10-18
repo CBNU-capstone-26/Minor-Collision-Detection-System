@@ -55,8 +55,8 @@ class EventOut(BaseModel):
     crash_prob: Optional[float] = None
     has_clip: bool = False
     has_raw_clip: bool = False   # 합성 없는 원본 사고 클립을 내려받을 수 있는지
-    analyzed_at: Optional[datetime] = None
-    analysis_no: Optional[int] = None
+    analyzed_at: Optional[datetime] = None   # 분석이 끝나 이 클립이 만들어진 시각(UTC, 시간대 포함)
+    analysis_no: Optional[int] = None        # 이 클립을 만든 분석이 그 영상의 몇 번째 분석인지(실패·취소 포함, 1부터)
 
 
 class ActiveTaskOut(BaseModel):
@@ -70,7 +70,7 @@ class ActiveTaskOut(BaseModel):
     progress: Optional[float] = None
     eta_sec: Optional[int] = None
     eta_is_min: bool = False
-    stage: Optional[str] = None
+    stage: Optional[str] = None        # 지금 단계(TaskStatusOut 참고)
     stage_count: Optional[int] = None
     stage_index: Optional[int] = None
     created_at: Optional[datetime] = None
@@ -100,22 +100,22 @@ class LastTaskOut(BaseModel):
 
 
 class AnalysisHistoryOut(BaseModel):
-    analysis_no: int
+    """영상의 분석 1회 — 재생 화면 오른쪽 '분석 이력'. 시각은 모두 UTC(시간대 포함)."""
+    analysis_no: int                       # 이 영상의 몇 번째 분석인지(실패·취소 포함, 1부터)
     task_id: int
-    status: str
+    status: str                            # PENDING/PROCESSING/SUCCESS/FAILURE/CANCELLED
     error_message: Optional[str] = None
     requested_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    event_count: Optional[int] = None
+    finished_at: Optional[datetime] = None  # 이력 기능 전 분석은 클립이 만들어진 시각으로 대신(없으면 None)
+    event_count: Optional[int] = None       # 찾은 클립 수 — 이력 기능 전 분석은 모름(None)
 
 
 class VideoOut(BaseModel):
     id: int
     video_name: str
-    title: Optional[str] = None
+    title: Optional[str] = None   # 업로드할 때 넣은 제목 (없으면 None)
     recording_date: Optional[date] = None
     camera_location: str = "주차장"
-    recording_start_time: str = "20:30"
     width: int
     height: int
     fps: float
@@ -123,10 +123,13 @@ class VideoOut(BaseModel):
     duration_sec: float
     detected_vehicles: Optional[str] = None
     created_at: datetime
+    # 보관 기간이 끝나 지워질 시각과 남은 날(서버 시계 기준, 올림). 보관 기간을 끄면 None
+    expires_at: Optional[datetime] = None
+    expires_in_days: Optional[int] = None
     events: list[EventOut] = []
     last_task: Optional[LastTaskOut] = None
     analysis_done: bool = False   # 분석을 한 번이라도 완료(SUCCESS)했는지
-    analysis_history: list[AnalysisHistoryOut] = []
+    analysis_history: list[AnalysisHistoryOut] = []   # 영상 상세(GET /videos/{id})에서만 채운다
 
 
 
@@ -149,11 +152,14 @@ class AnalyzeResponse(BaseModel):
 class TaskStatusOut(BaseModel):
     task_id: int
     status: str
-    progress: Optional[float] = None
-    eta_sec: Optional[int] = None    # 남은 시간(초) — 실제로 잰 처리 속도 기준, 모르면 None
-    eta_is_min: bool = False         # True 면 '최소 이만큼'(거친 탐색 중이라 더 늘 수 있음)
+    progress: Optional[float] = None  # 진행도 %(소수 첫째 자리, PROCESSING 중일 때만)
+    eta_sec: Optional[int] = None    # '지금 단계'의 남은 시간(초) — 실제로 잰 처리 속도 기준, 모르면 None
+    eta_is_min: bool = False         # True 면 '최소 이만큼'(지금은 쓰지 않음, 옛 워커 호환)
+    # 지금 단계: loading(분석 엔진 준비) · decode(영상 불러오기) · motion(차량 움직임 계산)
+    #   · coarse(영상 전체 훑어보기) · refine(의심 구간 자세히 보기) · scan(전부 보기)
+    #   · events(사고 구간 정리) · render(사고 클립 만들기)
     stage: Optional[str] = None
-    stage_count: Optional[int] = None
-    stage_index: Optional[int] = None
+    stage_count: Optional[int] = None  # coarse: 찾은 의심 지점 수 · refine: 의심 구간 수 · render: 클립 수
+    stage_index: Optional[int] = None  # refine·render: 지금 몇 번째인지(1부터)
     error_message: Optional[str] = None
     events: list[EventOut] = []

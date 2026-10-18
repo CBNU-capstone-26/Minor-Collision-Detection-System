@@ -22,6 +22,8 @@ backend/.auth_secret
 
 # This branch's local database credentials.
 backend/.env
+# 서버 배포 환경 변수(Supabase·R2 비밀값 포함)
+.env
 
 # Runtime uploads and generated media
 storage/
@@ -48,6 +50,8 @@ weights/
 *.md
 # 팀원 온보딩 문서(README)는 저장소에 포함
 !README.md
+# 서버 배포 안내는 저장소에 포함
+!deploy/DEPLOY.md
 
 # Local editor and OS files
 .vscode/

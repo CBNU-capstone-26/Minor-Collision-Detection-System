@@ -100,29 +100,29 @@ def main() -> int:
             continue
         loader = DataLoader(Subset(ds_eval, idxs),
                             batch_size=config.TRAIN_BATCH_SIZE, shuffle=False)
-        pA, pS = [], []
+        a_sample_probs, s_sample_probs = [], []
         with torch.inference_mode():
             for x, y in loader:
                 p = torch.softmax(model(x.to(device)), dim=1)[:, 1].cpu()
                 for prob, lab in zip(p.tolist(), y.tolist()):
-                    (pA if lab == 1 else pS).append(prob)
+                    (a_sample_probs if lab == 1 else s_sample_probs).append(prob)
 
-        print(f"══ {name}  (A {len(pA)} / S {len(pS)})")
-        if pA:
-            print(f"   A 샘플의 A확률 : 평균 {sum(pA)/len(pA):.4f}  "
-                  f"최소 {min(pA):.4f}  최대 {max(pA):.4f}")
-        print(f"   S 샘플의 A확률 : 평균 {sum(pS)/len(pS):.4f}  "
-              f"최소 {min(pS):.4f}  최대 {max(pS):.4f}")
-        if pA:
-            gap = sum(pA)/len(pA) - sum(pS)/len(pS)
-            auc = _auc(pA, pS)
+        print(f"══ {name}  (A {len(a_sample_probs)} / S {len(s_sample_probs)})")
+        if a_sample_probs:
+            print(f"   A 샘플의 A확률 : 평균 {sum(a_sample_probs)/len(a_sample_probs):.4f}  "
+                  f"최소 {min(a_sample_probs):.4f}  최대 {max(a_sample_probs):.4f}")
+        print(f"   S 샘플의 A확률 : 평균 {sum(s_sample_probs)/len(s_sample_probs):.4f}  "
+              f"최소 {min(s_sample_probs):.4f}  최대 {max(s_sample_probs):.4f}")
+        if a_sample_probs:
+            gap = sum(a_sample_probs)/len(a_sample_probs) - sum(s_sample_probs)/len(s_sample_probs)
+            auc = _auc(a_sample_probs, s_sample_probs)
             print(f"   판별력         : 평균차 {gap:+.4f}   AUC {auc:.4f}"
                   f"   {'← 판별 중' if auc and auc > 0.6 else '← 거의 무작위'}")
             print(f"   {'임계값':>8} {'recall':>8} {'precision':>10} {'예측A수':>8}")
             for th in (0.5, 0.4, 0.3, 0.2, 0.1):
-                tp = sum(1 for p in pA if p >= th)
-                fp = sum(1 for p in pS if p >= th)
-                rec = tp / len(pA)
+                tp = sum(1 for p in a_sample_probs if p >= th)
+                fp = sum(1 for p in s_sample_probs if p >= th)
+                rec = tp / len(a_sample_probs)
                 prec = tp / (tp + fp) if (tp + fp) else 0.0
                 mark = "  ← 현재 추론 기준" if th == 0.5 else ""
                 print(f"   {th:>8.1f} {rec:>8.3f} {prec:>10.3f} {tp+fp:>8}{mark}")

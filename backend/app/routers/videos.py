@@ -1,4 +1,5 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
+import math
 import shutil
 import tempfile
 from datetime import date, datetime, timedelta, timezone
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
 from app import db_models, api_schemas
-from app.auth_guard import get_current_user
+from app.auth_guard import get_current_user, get_media_user
 from app.settings import settings
 from app.object_storage import LocalObjectStorage, get_storage, materialize
 
@@ -24,18 +25,30 @@ router = APIRouter(prefix="/api/videos", tags=["videos"])
 def raw_clip_path(ev: db_models.CrashEvent):
     """합성 없는 원본 사고 클립 경로 — 분석 때 표시 클립 옆에 '<이름>_raw.mp4' 로 만든다.
     (DB 컬럼을 늘리지 않으려고 이름 규칙으로 찾는다. 예전 분석 결과엔 없을 수 있다)"""
-    if not ev.cam_heatmap_path:
+    if not ev.clip_path:
         return None
-    p = settings.abs_path(ev.cam_heatmap_path)
+    p = settings.abs_path(ev.clip_path)
     return p.with_name(f"{p.stem}_raw{p.suffix}")
 
 
-def _unlink_event_clips(ev: db_models.CrashEvent):
-    """이벤트의 표시 클립과 원본 클립 파일을 지운다."""
-    if ev.cam_heatmap_path:
-        storage = get_storage()
-        storage.delete(ev.cam_heatmap_path)
-        storage.delete(f"{Path(ev.cam_heatmap_path).with_suffix('')}_raw.mp4")
+def raw_clip_key(ev: db_models.CrashEvent):
+    if not ev.clip_path:
+        return None
+    return f"{Path(ev.clip_path).with_suffix('')}_raw.mp4"
+
+
+def _unlink_event_clips(events, db: Session):
+    """다른 이벤트가 공유하지 않는 R2/로컬 클립만 지운다."""
+    ids = {ev.id for ev in events}
+    storage = get_storage()
+    for path in {ev.clip_path for ev in events if ev.clip_path}:
+        still_used = db.query(db_models.CrashEvent).filter(
+            db_models.CrashEvent.clip_path == path,
+            db_models.CrashEvent.id.notin_(ids),
+        ).count()
+        if not still_used:
+            storage.delete(path)
+            storage.delete(f"{Path(path).with_suffix('')}_raw.mp4")
 
 
 def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
@@ -46,8 +59,8 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_timestamp_sec=ev.end_timestamp_sec,
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
-        has_clip=bool(ev.cam_heatmap_path),
-        has_raw_clip=bool(ev.cam_heatmap_path) and raw_clip_path(ev).exists(),
+        has_clip=bool(ev.clip_path),
+        has_raw_clip=bool(raw_clip_key(ev)) and get_storage().exists(raw_clip_key(ev)),
         analyzed_at=_utc(ev.created_at),
         analysis_no=analysis_no(ev),
     )
@@ -80,13 +93,15 @@ def analysis_history(v: db_models.Video) -> list[api_schemas.AnalysisHistoryOut]
 
 def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.VideoOut:
     duration = v.total_frames / v.fps if v.fps else 0.0
+    expires_at = video_expires_at(v)
+    expires_in_days = (math.ceil((expires_at - datetime.utcnow()).total_seconds() / 86400)
+                       if expires_at else None)
     return api_schemas.VideoOut(
         id=v.id,
         video_name=v.video_name,
         title=v.title,
         recording_date=v.recording_date,
         camera_location=v.camera_location or "주차장",
-        recording_start_time=v.recording_start_time or "20:30",
         width=v.width,
         height=v.height,
         fps=v.fps,
@@ -94,11 +109,19 @@ def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.
         duration_sec=duration,
         detected_vehicles=v.detected_vehicles,
         created_at=_utc(v.created_at),
+        expires_at=_utc(expires_at),
+        expires_in_days=expires_in_days,
         events=[to_event_out(e) for e in v.crash_events],
         last_task=_last_task_out(v),
         analysis_done=any(t.status == "SUCCESS" for t in v.analysis_tasks),
         analysis_history=analysis_history(v) if with_history else [],
     )
+
+
+def video_expires_at(v: db_models.Video):
+    if settings.VIDEO_RETENTION_DAYS <= 0 or v.created_at is None:
+        return None
+    return v.created_at + timedelta(days=settings.VIDEO_RETENTION_DAYS)
 
 
 def _last_task_out(v: db_models.Video):
@@ -213,16 +236,23 @@ def delete_video(
     """영상 삭제 — 관련 파일(원본·썸네일·CAM 클립)과 DB(이벤트·태스크·영상) 모두 제거."""
     video = _get_owned_video(video_id, db, user)
 
+    purge_video(video, db)
+    db.commit()
+    return {"deleted": video_id}
+
+
+def purge_video(video: db_models.Video, db: Session) -> None:
+    """영상·클립·이력·원본을 제거한다. 보관 기간 정리와 수동 삭제가 함께 쓴다."""
     # 1) 관련 CAM 클립 파일 삭제 + crash_events 행 삭제
     events = db.query(db_models.CrashEvent).filter(
-        db_models.CrashEvent.video_id == video_id).all()
+        db_models.CrashEvent.video_id == video.id).all()
+    _unlink_event_clips(events, db)
     for ev in events:
-        _unlink_event_clips(ev)
         db.delete(ev)
 
     # 2) analysis_tasks 행 삭제
     for task in db.query(db_models.AnalysisTask).filter(
-            db_models.AnalysisTask.video_id == video_id).all():
+            db_models.AnalysisTask.video_id == video.id).all():
         db.delete(task)
 
     # 3) 원본 영상 + 썸네일 파일 삭제
@@ -232,8 +262,6 @@ def delete_video(
 
     # 4) 영상 행 삭제
     db.delete(video)
-    db.commit()
-    return {"deleted": video_id}
 
 
 @router.delete("/{video_id}/events/{event_id}")
@@ -252,7 +280,7 @@ def delete_crash_event(
     if event is None:
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
 
-    _unlink_event_clips(event)
+    _unlink_event_clips([event], db)
 
     db.delete(event)
     db.commit()
@@ -271,8 +299,8 @@ def clear_all_crash_events(
         db_models.CrashEvent.video_id == video.id
     ).all()
     count = len(events)
+    _unlink_event_clips(events, db)
     for ev in events:
-        _unlink_event_clips(ev)
         db.delete(ev)
     db.commit()
     return {"deleted_count": count}
@@ -280,11 +308,8 @@ def clear_all_crash_events(
 
 
 @router.get("/{video_id}/stream")
-def stream_video(video_id: int, db: Session = Depends(get_db)):
-    # <video src> 태그는 커스텀 헤더를 못 보내므로 인증 미적용 (MVP)
-    video = db.get(db_models.Video, video_id)
-    if video is None:
-        raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+def stream_video(video_id: int, db: Session = Depends(get_db), user: db_models.User = Depends(get_media_user)):
+    video = _get_owned_video(video_id, db, user)
     storage = get_storage()
     if not storage.exists(video.video_path):
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
@@ -297,11 +322,8 @@ def stream_video(video_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{video_id}/thumbnail")
-def video_thumbnail(video_id: int, db: Session = Depends(get_db)):
-    # <img src> 태그용 — 인증 미적용 (MVP). 영상 첫 프레임을 jpg로 캐시 생성.
-    video = db.get(db_models.Video, video_id)
-    if video is None:
-        raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+def video_thumbnail(video_id: int, db: Session = Depends(get_db), user: db_models.User = Depends(get_media_user)):
+    video = _get_owned_video(video_id, db, user)
 
     storage = get_storage()
     thumb_key = f"thumbnails/{Path(video.video_path).stem}.jpg"
@@ -392,7 +414,8 @@ def detect_vehicles_in_video(
 
     # [디버그] 서비스가 실제로 탐지한 결과를 이미지로 저장 (outputs/) — 눈으로 확인용.
     #   탐지에 쓴 원본 프레임에 bbox(#번호·클래스·신뢰도)를 그려 저장한다.
-    try:
+    if settings.DETECT_DEBUG_IMAGES:
+      try:
         import cv2
         dbg = frame.copy()
         for item in detected_list:
@@ -407,8 +430,8 @@ def detect_vehicles_in_video(
         out_img = out_dir / f"detect_{base}_f{frame_index}.jpg"
         cv2.imwrite(str(out_img), dbg)
         print(f"[detect] 결과 이미지 저장: {out_img}  (탐지 {len(detected_list)}대, 프레임 {frame.shape[1]}x{frame.shape[0]})")
-    except Exception as _dbg_err:  # 디버그 저장 실패는 탐지 응답에 영향 없음
-        print(f"[detect] 결과 이미지 저장 실패(무시): {_dbg_err}")
+      except Exception as _dbg_err:  # 디버그 저장 실패는 탐지 응답에 영향 없음
+          print(f"[detect] 결과 이미지 저장 실패(무시): {_dbg_err}")
 
     json_str = json.dumps(detected_list, ensure_ascii=False)
     video.detected_vehicles = json_str
