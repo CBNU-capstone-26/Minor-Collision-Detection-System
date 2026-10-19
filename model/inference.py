@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from pathlib import Path
 
 import config
-from device_utils import is_cuda_like, is_channels_last_3d_supported
+from device_utils import is_cuda_like, is_channels_last_3d_supported, predict_batch_size
 from infer_runtime import get_runner
 
 # 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
@@ -177,7 +177,7 @@ def predict_full_video(
     resize=config.RESIZE,
     clip_length=config.CLIP_LENGTH,
     output_dir=config.PREDICT_OUTPUT_DIR,
-    infer_batch_size=config.PREDICT_INFER_BATCH_SIZE,
+    infer_batch_size=None,
     window_stride=config.PREDICT_WINDOW_STRIDE,
     display_offset=config.PREDICT_DISPLAY_OFFSET,
 ):
@@ -195,6 +195,8 @@ def predict_full_video(
 
     print(f"[{os.path.basename(video_path)}] 전체 화면 분석 시작...")
     device = next(model.parameters()).device
+    # 묶음 크기 — 주지 않으면 장치에 맞는 값(CPU 1 · GPU 8, config)
+    infer_batch_size = infer_batch_size or predict_batch_size(device)
     model.eval()
     window_stride = max(1, int(window_stride))
 
@@ -442,7 +444,7 @@ def predict_events_and_clips(
     r_value=config.R_VALUE,
     resize=config.RESIZE,
     clip_length=config.CLIP_LENGTH,
-    infer_batch_size=config.PREDICT_INFER_BATCH_SIZE,
+    infer_batch_size=None,
     window_stride=config.PREDICT_WINDOW_STRIDE,
     display_offset=config.PREDICT_DISPLAY_OFFSET,
     cam_overlay=config.PREDICT_CLIP_CAM_OVERLAY,
@@ -494,6 +496,8 @@ def predict_events_and_clips(
     display_offset = max(0, min(int(display_offset), clip_length - 1))
 
     device = next(model.parameters()).device
+    # 묶음 크기 — 주지 않으면 장치에 맞는 값(CPU 1 · GPU 8, config)
+    infer_batch_size = infer_batch_size or predict_batch_size(device)
     model.eval()
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True

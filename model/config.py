@@ -252,7 +252,14 @@ PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
-PREDICT_INFER_BATCH_SIZE = 2 # batch size 2로 바꾸었음(배기원)
+# 서비스 3D-CNN 에 창을 몇 개씩 묶어 넣을지 — 장치마다 빠른 값이 달라 따로 둔다(device_utils.predict_batch_size).
+# 판정 결과는 같다(소수점 끝자리만 미세하게 다를 수 있음).
+#   CPU(OpenVINO 등): 창 하나만으로 코어를 다 써서 묶을수록 오히려 느리다. 2026-10-19 i5-1135G7 실측:
+#                     1개 초당 4.59창 · 2개 4.26 · 4개 4.00 · 8개 3.79 (메모리 656MB → 2180MB)
+#   GPU: 한 번에 많이 넣을수록 효율이 올라 평가와 같은 8개
+#   (예전엔 둘 다 2 — 배기원)
+PREDICT_INFER_BATCH_SIZE_CPU = 1
+PREDICT_INFER_BATCH_SIZE_GPU = 8
 # 슬라이딩 윈도우 간격(프레임). 서비스는 GPU 추론을 가정하므로 모든 위치를 본다(1).
 # stride 5 는 CPU 추론 시절의 절충값이었다(창 수 1/5 → 속도 5배).
 # ⚠️ 아래 PREDICT_MIN_EVENT_SPAN_FRAMES(35)는 stride 1 기준 값이다. stride 를 바꾸면

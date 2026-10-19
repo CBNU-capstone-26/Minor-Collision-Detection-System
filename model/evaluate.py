@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 
 import config
-from device_utils import is_cuda_like, is_channels_last_3d_supported
+from device_utils import is_cuda_like, is_channels_last_3d_supported, predict_batch_size
 from infer_runtime import get_runner
 from runlog import make_run_dir, write_run_info
 
@@ -204,10 +204,11 @@ def _evaluate_folder_impl(
 
     # 추론 속도: ① 모델만 ② 서비스 경로 전체(위에서 영상별로 잰 시간)
     speed = {'device': f'{_device_name(device)} · 실행 방식 {runner.name}', 'model': benchmark_model(
-        model, clip_length=clip_length, resize=resize), 'service': svc.pop('speed')}
+        model, clip_length=clip_length, resize=resize), 'service': svc.pop('speed'),
+        'service_batch': predict_batch_size(device)}
     _print_speed(speed)
     sb = {b['batch']: b for b in speed['model']}
-    svc_b = sb.get(int(config.PREDICT_INFER_BATCH_SIZE), speed['model'][-1])
+    svc_b = sb.get(speed['service_batch'], speed['model'][-1])
     s = speed['service'] or {}
     return {
         'n_videos': total_videos,
@@ -327,7 +328,7 @@ def benchmark_model(model, clip_length=config.CLIP_LENGTH, resize=config.RESIZE,
     '모델이 초당 분석할 수 있는 영상 프레임 수'다(거친 탐색 없이 전부 볼 때).
     """
     device = next(model.parameters()).device
-    batch_sizes = batch_sizes or sorted({1, int(config.PREDICT_INFER_BATCH_SIZE),
+    batch_sizes = batch_sizes or sorted({1, predict_batch_size(device),
                                          int(config.EVAL_INFER_BATCH_SIZE)})
     sync = (torch.cuda.synchronize if is_cuda_like(device) else (lambda: None))
     out = []
@@ -358,7 +359,7 @@ def _print_speed(speed):
     print("=" * 60)
     print("① 모델만 (3D-CNN, 30프레임 클립 1개 = 창 1개)")
     for b in speed['model']:
-        mark = '  ← 서비스 배치' if b['batch'] == config.PREDICT_INFER_BATCH_SIZE else ''
+        mark = '  ← 서비스 배치' if b['batch'] == speed.get('service_batch') else ''
         print(f"   배치 {b['batch']:>2}: 초당 {b['clips_per_sec']:7.2f}개 창 "
               f"(창 1개 {b['ms_per_clip']:.1f}ms){mark}")
     print("   → 창 간격 1로 빠짐없이 훑을 때 모델이 초당 분석하는 영상 프레임 수와 같다")

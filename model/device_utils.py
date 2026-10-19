@@ -38,6 +38,13 @@ def is_rocm() -> bool:
     return torch.version.hip is not None
 
 
+def predict_batch_size(device) -> int:
+    """서비스 추론 묶음 크기 — GPU 면 config.PREDICT_INFER_BATCH_SIZE_GPU, 그 밖(CPU)은 _CPU."""
+    import config
+    size = config.PREDICT_INFER_BATCH_SIZE_GPU if is_cuda_like(device) else config.PREDICT_INFER_BATCH_SIZE_CPU
+    return max(1, int(size))
+
+
 def is_cuda_like(device) -> bool:
     """AMP·cuDNN·pin_memory 등 CUDA 계열 기능을 사용할 수 있는 디바이스인지 여부.
 
