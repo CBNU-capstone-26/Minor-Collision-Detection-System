@@ -760,9 +760,9 @@ def train_model(
     info['best 에포크'] = (f"{early_stopping.best_epoch} "
                           f"({'조기 종료' if early_stopping.early_stop else '끝까지 학습'})")
     info['후보 가중치'] = ', '.join(c['file'] for c in cand_info if c['rank'] > 1) or '없음'
-    # 평가해 볼 에포크 추천(판단 지표 상위 + 그 에포크 균형손실 상위) — 최종 선택은 평가 영상으로
+    # 평가해 볼 에포크 추천(판단 지표·그 에포크 균형손실·F1 상위) — 최종 선택은 평가 영상으로
     from epoch_suggest import suggest
-    suggest_eps, suggest_lines = suggest(run_dir, k=3)
+    suggest_eps, suggest_lines = suggest(run_dir)
     print()
     for line in suggest_lines:
         print(line)
