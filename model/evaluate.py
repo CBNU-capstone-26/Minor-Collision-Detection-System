@@ -145,7 +145,7 @@ def _evaluate_folder_impl(
                 # 이미 GPU에 있는 텐서 슬라이싱 — .to() 호출 없음
                 clips = torch.stack(
                     [full_video_tensor[:, i:i+clip_length, :, :] for i in batch_window_starts])
-                if is_channels_last_3d_supported(device):
+                if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
                     clips = clips.contiguous(
                         memory_format=torch.channels_last_3d)
 
@@ -336,7 +336,7 @@ def benchmark_model(model, clip_length=config.CLIP_LENGTH, resize=config.RESIZE,
     with torch.inference_mode():
         for bs in batch_sizes:
             x = torch.randn(bs, 3, clip_length, resize[1], resize[0], device=device)
-            if is_channels_last_3d_supported(device):
+            if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
                 x = x.contiguous(memory_format=torch.channels_last_3d)
             for _ in range(2):                       # 첫 호출 오버헤드(cuDNN 탐색 등) 제외
                 runner(x)
@@ -715,6 +715,11 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
         ('평가 폴더', str(folder_path)),
         ('크롭 r', f'{r_value:g}'),
+        # 속도 지표는 이 설정이 같은 평가끼리만 비교한다(2026-10-22 부터 기본 끔 — GPU 추론 약 2.6배 빠름).
+        # 정확도 지표는 켬/끔 차이가 P(A) 1e-6 수준이라 그대로 비교해도 된다.
+        ('GPU 메모리 배치 channels_last',
+         '켬' if (is_channels_last_3d_supported(next(model.parameters()).device)
+                 and config.USE_CHANNELS_LAST) else '끔'),
     ])
 
     tee = _Tee(log_path)

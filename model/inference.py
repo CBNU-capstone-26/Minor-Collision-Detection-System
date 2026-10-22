@@ -309,7 +309,7 @@ def predict_full_video(
 
                 clips = torch.stack(
                     [full_video_tensor[:, i:i + clip_length, :, :] for i in batch_window_starts])
-                if is_channels_last_3d_supported(device):
+                if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
                     clips = clips.contiguous(
                         memory_format=torch.channels_last_3d)
 
@@ -589,7 +589,7 @@ def predict_events_and_clips(
             t_batch = time.time()
             with torch.inference_mode():
                 clips = torch.stack(clips_cpu).to(device)
-                if is_channels_last_3d_supported(device):
+                if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
                     clips = clips.contiguous(memory_format=torch.channels_last_3d)
                 if runner is not None:
                     outputs, feat_maps = runner(clips), None

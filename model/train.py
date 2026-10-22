@@ -318,6 +318,9 @@ def train_model(
         ('최종 가중치', '(학습이 끝나면 기록됨)'),
         ('작업 중 best 가중치', f'{work_best} (학습이 끝나면 최종 가중치로 옮겨짐)'),
         ('에포크별 가중치', f'{epochs_dir} (매 에포크)' if epochs_dir is not None else '저장 안 함'),
+        # 에포크 시간은 이 설정이 같은 학습끼리만 비교한다(끔이 RTX 3080 에서 약 2.3배 빠름, 결과는 같음)
+        ('GPU 메모리 배치 channels_last',
+         '켬' if (use_channels_last and is_channels_last_3d_supported(device)) else '끔'),
         ('데이터 폴더', str(data_dir)),
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
     ]
