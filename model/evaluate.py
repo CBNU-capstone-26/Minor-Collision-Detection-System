@@ -701,6 +701,10 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     # 묶음 구성(--balance)으로 학습한 가중치는 _bal 도 붙인다.
     name_tag = (tag + ('_span' if '_span_' in weights else '')
                 + ('_bal' if '_bal_' in weights else ''))
+    # 크롭 r 을 바꿔 평가하면(main --r) 이름에 _r<값> 을 붙인다 — 요약 표의 run 열로 구분된다
+    r_value = float(kwargs.get('r_value', config.R_VALUE))
+    if abs(r_value - 1.0) > 1e-9:
+        name_tag += f'_r{r_value:g}'
     run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, name_tag)
     log_path = run_dir / f"eval_{config.MODEL_NAME}_{name_tag}_{stamp}.txt"
     write_run_info(run_dir, [
@@ -710,12 +714,13 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('시작', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
         ('평가 폴더', str(folder_path)),
+        ('크롭 r', f'{r_value:g}'),
     ])
 
     tee = _Tee(log_path)
     sys.stdout = tee
     try:
-        print(f"[평가 대상] 모델={config.MODEL_NAME} / 사전학습={tag} / 가중치={weights}")
+        print(f"[평가 대상] 모델={config.MODEL_NAME} / 사전학습={tag} / 가중치={weights} / 크롭 r={r_value:g}")
         print(f"[평가 폴더] {folder_path}")
         m = _evaluate_folder_impl(model, folder_path=folder_path, **kwargs)
     finally:

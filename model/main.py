@@ -18,6 +18,7 @@ python3 -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv
 
 평가 시작 (--weights 를 안 주면 config.EVAL_WEIGHTS_PATH)
 python3 -m model.main --mode eval --weights weights/hitandrun_x3d_..._ptY_span_0.1234.pth
+python3 -m model.main --mode eval --weights weights/....pth --r 1.5   # 크롭 r 만 바꿔 평가(이번 실행만, 결과 이름 _r1.5)
 
 추론 실행 방식 자가 검사 — 서버 설치 직후 한 번 (--weights 를 안 주면 서비스 가중치)
 python3 -m model.main --mode check-backend
@@ -71,8 +72,11 @@ def run_predict():
                   f"end_frame={ev['end_frame']}")
 
 
-def run_detect(video, bbox_arg=None):
-    """영상 하나를 서비스와 똑같이 분석한다 — 사고 의심 구간을 찾고 그 구간 클립을 만든다."""
+def run_detect(video, bbox_arg=None, r=None):
+    """영상 하나를 서비스와 똑같이 분석한다 — 사고 의심 구간을 찾고 그 구간 클립을 만든다.
+
+    r 을 주면 크롭 배율만 그 값으로 바꿔 분석한다(안 주면 config.R_VALUE).
+    """
     from datetime import datetime
     from inference import predict_events_and_clips
     video = Path(video)
@@ -98,9 +102,13 @@ def run_detect(video, bbox_arg=None):
             return
         bbox = boxes[0]
     model, _ = _load_model(config.DETECT_WEIGHTS_PATH)
-    out_dir = Path(config._ROOT) / 'outputs' / 'detect' / f"{datetime.now():%y%m%d_%H%M%S}_{video.stem}"
-    print(f"분석: {video} | 사고 차량 박스 {bbox} | 결과 폴더 {out_dir}")
-    events = predict_events_and_clips(model, video_path=str(video), bbox=tuple(bbox), output_dir=out_dir)
+    r_value = config.R_VALUE if r is None else r
+    r_tag = '' if abs(r_value - 1.0) < 1e-9 else f'_r{r_value:g}'
+    out_dir = (Path(config._ROOT) / 'outputs' / 'detect'
+               / f"{datetime.now():%y%m%d_%H%M%S}_{video.stem}{r_tag}")
+    print(f"분석: {video} | 사고 차량 박스 {bbox} | 크롭 r {r_value:g} | 결과 폴더 {out_dir}")
+    events = predict_events_and_clips(model, video_path=str(video), bbox=tuple(bbox),
+                                      output_dir=out_dir, r_value=r_value)
     print(f"\n[결과] 사고 의심 구간 {len(events)}건")
     for i, e in enumerate(events, 1):
         print(f"  {i}. {e['start_sec']:.2f}초 ~ {e['end_sec']:.2f}초 (프레임 {e['start_frame']}~{e['end_frame']}), "
@@ -119,10 +127,11 @@ def run_check_backend():
     print(f"\n서비스 추론 실행 방식: {runner.name} (장치 {device}) — 저장 위치 {config.INFER_CACHE_DIR}")
 
 
-def run_eval():
+def run_eval(r=None):
+    """r 을 주면 크롭 배율만 그 값으로 바꿔 평가한다(기존·서비스 판정 모두, 이번 실행만)."""
     from evaluate import evaluate_folder_accuracy
     model, _ = _load_model(config.EVAL_WEIGHTS_PATH)
-    evaluate_folder_accuracy(model)
+    evaluate_folder_accuracy(model, **({} if r is None else {'r_value': r}))
 
 
 if __name__ == "__main__":
@@ -162,6 +171,12 @@ if __name__ == "__main__":
         action="store_true",
         help="학습 전용. 데이터 분할·묶음 구성만 출력하고 학습하지 않는다",
     )
+    parser.add_argument(
+        "--r",
+        type=float,
+        help="eval·detect 전용. 크롭 배율 r(정사각형 크롭 한 변 = 차량 박스 긴 변 × r). "
+             "안 주면 config.R_VALUE. 이번 실행에만 적용되고 결과 이름에 _r<값> 이 붙는다(1 이 아닐 때)",
+    )
     parser.add_argument("--video", help="detect 전용. 분석할 영상 파일")
     parser.add_argument("--bbox", help="detect 전용. 사고 차량 박스 x1,y1,x2,y2 (안 주면 같은 이름 .txt 의 0번 차량)")
     parser.add_argument(
@@ -180,6 +195,10 @@ if __name__ == "__main__":
         parser.error("--video·--bbox 는 --mode detect 에만 씁니다.")
     if (args.scratch or args.lr is not None) and args.mode != "train":
         parser.error("--scratch·--lr 은 학습(--mode train)에만 씁니다.")
+    if args.r is not None and args.mode not in ("eval", "detect"):
+        parser.error("--r 은 평가(--mode eval)·영상 분석(--mode detect)에만 씁니다. 학습의 r 은 config 에서 정합니다.")
+    if args.r is not None and args.r <= 0:
+        parser.error("--r 은 0보다 커야 합니다(보통 1~3).")
     if (args.balance or args.dry_run) and args.mode != "train":
         parser.error("--balance·--dry-run 은 학습(--mode train)에만 씁니다.")
     if args.balance:
@@ -204,8 +223,8 @@ if __name__ == "__main__":
     elif args.mode == "predict":
         run_predict()
     elif args.mode == "eval":
-        run_eval()
+        run_eval(args.r)
     elif args.mode == "check-backend":
         run_check_backend()
     elif args.mode == "detect":
-        run_detect(args.video, args.bbox)
+        run_detect(args.video, args.bbox, args.r)
