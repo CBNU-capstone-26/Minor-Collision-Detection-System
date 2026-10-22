@@ -178,7 +178,13 @@ TRAIN_SPREAD_A = os.getenv("TRAIN_SPREAD_A", "0").strip().lower() in ("1", "true
 TRAIN_CLASS_WEIGHTS = None
 TARGET_ID = 0
 USE_AMP = True
-USE_CHANNELS_LAST = True
+# GPU 메모리 배치 channels_last_3d (학습·평가·영상 분석·서비스 워커 공통, GPU 일 때만 — CPU 는 원래 안 씀).
+# 처음(2026-06, I3D 계열 모델) '켜면 빠르다'는 일반 권장으로 켰지만 X3D 로 바꾼 뒤 재 보지 않았다.
+# 2026-10-22 학습 서버 RTX 3080 실측(model/train_speed_check, 묶음 15·AMP·checkpointing):
+#   켬 → 끔: 학습 1단계 1.190 → 0.527초(2.3배), 검증 1단계 0.239 → 0.093초(2.6배), 메모리 5.80 → 5.21GB,
+#   P(A) 차이 1.9e-6(같은 결과). X3D 의 채널별(depthwise) 3D 합성곱이 이 배치에서 느린 것으로 보인다.
+# GPU 나 모델을 바꾸면 python -m model.train_speed_check 로 다시 잰다.
+USE_CHANNELS_LAST = False
 
 # ---------- 사전학습 / 입력 정규화 ----------
 # 백본은 pytorchvideo X3D-M. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
