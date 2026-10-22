@@ -141,6 +141,28 @@ TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 �
 #     평가(data/eval)는 지금처럼 0번 박스만 쓴다.
 TRAIN_S_REAL_USE_CAR1 = True
 
+# ---------- 학습 묶음 구성: 빈 장면 정상 솎기 + 묶음마다 충돌 고르게 (실험용, 기본 끔) ----------
+# 2026-10-22 서버 측정(model/s_motion_check.py, outputs/s_motion/261022_0323): A:S 1:20.5,
+# 묶음 15개 중 49% 에 충돌이 없다. 정상 클립 53% 가 '빈 장면'(움직인 화소 0.25% 미만)이다.
+# 빈 장면도 서비스의 긴 정지 구간을 배우는 데 필요하므로 버리지 않고 일부씩 돌려 쓴다.
+#   · TRAIN_S_MOTION_CSV : s_motion_check 결과 clips.csv. 비우면 솎기 끔.
+#     학습 쪽 정상만 솎고 검증은 그대로다(판단 지표를 이전 학습과 비교할 수 있다).
+#     빈 장면 = 움직임 < TRAIN_S_EMPTY_MOTION_PCT. 매 에포크 TRAIN_S_EMPTY_KEEP 만큼만 쓰고
+#     에포크마다 다음 구간을 써서 1/KEEP 에포크마다 전부 한 번씩 본다.
+#     CSV 에 없는 정상 클립(데이터가 바뀐 경우)은 '움직임 있음'으로 보고 매번 쓴다.
+#   · 기준 0.25 = 충돌 클립이 2개(1%)만 걸리는 상한 — 0.5 부터 미세 충돌 9개(3%)가 걸린다.
+#   · TRAIN_SPREAD_A : 충돌 클립을 묶음마다 고르게 나눠 넣는다(복제 없음). 충돌이 묶음 수
+#     이상이면 모든 묶음에 충돌이 들어가고, 적으면 충돌 없는 묶음이 남는다(무작위 49% → 약 30%).
+#     솎기와 같이 켜면(약 1:13, 에포크 약 2/3) 충돌 없는 묶음이 0이 된다.
+#   · 켜는 법: python -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv
+#     (둘 다 켬. 학습 없이 구성만 보려면 --dry-run. 환경변수 TRAIN_S_MOTION_CSV·TRAIN_SPREAD_A=1 로도 된다)
+#     켜면 회차 폴더·가중치 이름에 _bal 이 붙는다. 상대경로는 프로젝트 루트 기준.
+#   ⚠️ 정상이 줄어 모델의 P(A) 가 전반적으로 조금 오른다 — 학습 후 평가에서 오탐·판정 기준을 다시 본다.
+TRAIN_S_MOTION_CSV = os.getenv("TRAIN_S_MOTION_CSV", "").strip() or None
+TRAIN_S_EMPTY_MOTION_PCT = 0.25
+TRAIN_S_EMPTY_KEEP = 1 / 3
+TRAIN_SPREAD_A = os.getenv("TRAIN_SPREAD_A", "0").strip().lower() in ("1", "true", "yes")
+
 # 클래스 가중치(CrossEntropyLoss weight). S 슬라이싱으로 A:S 불균형이 커지면
 # 모델이 S로 치우쳐 '미검출'이 늘 수 있다. (없음=None, 예: (1.0, 3.0) → A 3배)
 # ※ 검증 없이 켜지 말 것 — 값에 따라 오탐이 급증할 수 있다.

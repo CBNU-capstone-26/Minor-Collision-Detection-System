@@ -13,6 +13,8 @@ python3 -m model.main --mode train                 # A 클립 방식 pre (기본
 python3 -m model.main --mode train --a-mode span   # A 클립 방식 span (config 주석 참고)
 python3 -m model.main --mode train --scratch       # 사전학습 없이 무작위 초기화(scratch)
 python3 -m model.main --mode train --scratch --lr 1e-3   # 학습률 직접 지정
+python3 -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv   # 빈 장면 정상 솎기 + 묶음마다 충돌(이름 _bal)
+python3 -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv --dry-run   # 묶음 구성만 출력(학습 안 함)
 
 평가 시작 (--weights 를 안 주면 config.EVAL_WEIGHTS_PATH)
 python3 -m model.main --mode eval --weights weights/hitandrun_x3d_..._ptY_span_0.1234.pth
@@ -45,13 +47,14 @@ def _load_model(weights_path):
     return model, device
 
 
-def run_train(lr=None):
+def run_train(lr=None, dry_run=False):
     from train import train_model
     if not config.DATA_DIR.exists():
         print(f"에러: 데이터 폴더를 찾을 수 없습니다 -> {config.DATA_DIR}")
         return
-    print(f"데이터 디렉토리 확인 완료: {config.DATA_DIR}. 학습을 시작합니다!")
-    train_model(learning_rate=lr, save_path=config.TRAIN_BEST_MODEL_SAVE_PATH)
+    print(f"데이터 디렉토리 확인 완료: {config.DATA_DIR}. "
+          f"{'묶음 구성만 확인합니다(--dry-run)' if dry_run else '학습을 시작합니다!'}")
+    train_model(learning_rate=lr, save_path=config.TRAIN_BEST_MODEL_SAVE_PATH, dry_run=dry_run)
 
 
 def run_predict():
@@ -148,6 +151,17 @@ if __name__ == "__main__":
         help="학습 전용. 학습률(헤드 기준). 안 주면 사전학습 config.TRAIN_LEARNING_RATE, "
              "scratch config.TRAIN_SCRATCH_LEARNING_RATE",
     )
+    parser.add_argument(
+        "--balance",
+        metavar="CLIPS_CSV",
+        help="학습 전용. model/s_motion_check 의 clips.csv 로 빈 장면 정상을 솎고(에포크마다 1/3 돌려 씀) "
+             "충돌을 묶음마다 고르게 넣는다. 이름에 _bal (config.TRAIN_S_MOTION_CSV·TRAIN_SPREAD_A)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="학습 전용. 데이터 분할·묶음 구성만 출력하고 학습하지 않는다",
+    )
     parser.add_argument("--video", help="detect 전용. 분석할 영상 파일")
     parser.add_argument("--bbox", help="detect 전용. 사고 차량 박스 x1,y1,x2,y2 (안 주면 같은 이름 .txt 의 0번 차량)")
     parser.add_argument(
@@ -166,6 +180,11 @@ if __name__ == "__main__":
         parser.error("--video·--bbox 는 --mode detect 에만 씁니다.")
     if (args.scratch or args.lr is not None) and args.mode != "train":
         parser.error("--scratch·--lr 은 학습(--mode train)에만 씁니다.")
+    if (args.balance or args.dry_run) and args.mode != "train":
+        parser.error("--balance·--dry-run 은 학습(--mode train)에만 씁니다.")
+    if args.balance:
+        config.TRAIN_S_MOTION_CSV = args.balance
+        config.TRAIN_SPREAD_A = True
     if args.lr is not None and args.lr <= 0:
         parser.error("--lr 은 0보다 커야 합니다.")
     if args.scratch:
@@ -181,7 +200,7 @@ if __name__ == "__main__":
         config.CHECK_WEIGHTS_PATH = Path(args.weights)
 
     if args.mode == "train":
-        run_train(args.lr)
+        run_train(args.lr, dry_run=args.dry_run)
     elif args.mode == "predict":
         run_predict()
     elif args.mode == "eval":

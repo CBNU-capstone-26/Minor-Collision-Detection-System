@@ -697,8 +697,10 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     # 사전학습 여부는 평가하는 가중치의 이름(_ptY_/_ptN_)으로 정한다. 이름에 없으면 config 값.
     tag = next((t for t in ('ptY', 'ptN') if f'_{t}_' in weights),
                getattr(config, 'PRETRAIN_TAG', '?'))
-    # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다
-    name_tag = f'{tag}_span' if '_span_' in weights else tag
+    # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다.
+    # 묶음 구성(--balance)으로 학습한 가중치는 _bal 도 붙인다.
+    name_tag = (tag + ('_span' if '_span_' in weights else '')
+                + ('_bal' if '_bal_' in weights else ''))
     run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, name_tag)
     log_path = run_dir / f"eval_{config.MODEL_NAME}_{name_tag}_{stamp}.txt"
     write_run_info(run_dir, [
