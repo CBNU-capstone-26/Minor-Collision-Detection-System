@@ -20,6 +20,9 @@ python3 -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv
 python3 -m model.main --mode eval --weights weights/hitandrun_x3d_..._ptY_span_0.1234.pth
 python3 -m model.main --mode eval --weights weights/....pth --r 1.5   # 크롭 r 만 바꿔 평가(이번 실행만, 결과 이름 _r1.5)
 
+평가해 볼 에포크 추천 — 학습 회차 폴더의 곡선 CSV 로(학습 중·중단 후에도). 에포크별 가중치는 그 폴더 epochs/
+python3 -m model.main --mode suggest --run outputs/trainlogs/<회차 폴더>
+
 추론 실행 방식 자가 검사 — 서버 설치 직후 한 번 (--weights 를 안 주면 서비스 가중치)
 python3 -m model.main --mode check-backend
 
@@ -139,7 +142,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode",
         required=True,
-        choices=["train", "predict", "eval", "check-backend", "detect"],
+        choices=["train", "predict", "eval", "check-backend", "detect", "suggest"],
         help="실행 모드: train(학습) / predict(단일 영상 CAM예측) / eval(정확도 평가)",
     )
     parser.add_argument(
@@ -183,7 +186,15 @@ if __name__ == "__main__":
         "--weights",
         help="eval·predict 전용. 쓸 가중치 파일(안 주면 config 의 EVAL/PREDICT_WEIGHTS_PATH)",
     )
+    parser.add_argument(
+        "--run",
+        help="suggest 전용. 학습 회차 폴더(outputs/trainlogs/<회차>) — 평가해 볼 에포크를 추천",
+    )
     args = parser.parse_args()
+    if args.mode == "suggest" and not args.run:
+        parser.error("--mode suggest 에는 --run 학습 회차 폴더가 필요합니다.")
+    if args.run and args.mode != "suggest":
+        parser.error("--run 은 --mode suggest 에만 씁니다.")
     if args.a_mode and args.mode != "train":
         # 추론(평가·서비스)은 A 방식과 무관하다 — span 으로 학습한 가중치를 --weights 로 고른다
         parser.error("--a-mode 는 학습(--mode train)에만 씁니다. 평가할 가중치는 --weights 로 고르세요.")
@@ -228,3 +239,7 @@ if __name__ == "__main__":
         run_check_backend()
     elif args.mode == "detect":
         run_detect(args.video, args.bbox, args.r)
+    elif args.mode == "suggest":
+        from epoch_suggest import suggest
+        for line in suggest(args.run)[1]:
+            print(line)

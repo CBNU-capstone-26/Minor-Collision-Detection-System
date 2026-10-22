@@ -280,6 +280,15 @@ def train_model(
     # 중간에 멈춘 학습의 best 는 이 폴더의 work_best.pth 에 남는다.
     weights_dir = Path(save_path).parent
     work_best = run_dir / 'work_best.pth'
+    # 에포크별 가중치(config.TRAIN_SAVE_ALL_EPOCHS) — 회차 폴더 안이라 학습끼리 섞이지 않는다
+    epochs_dir = run_dir / 'epochs' if getattr(config, 'TRAIN_SAVE_ALL_EPOCHS', False) else None
+    if epochs_dir is not None:
+        epochs_dir.mkdir(exist_ok=True)
+    # 에포크 파일 이름 = hitandrun_<모델>_<시작 시각>[_n]_<ptY|ptN>[_span][_bal]_ep<번호>.pth
+    #   → 폴더 밖으로 꺼내도 어느 학습(회차 폴더 <시각>[_n]_<모델>_<조건>)의 몇 에포크인지 알 수 있다.
+    #   같은 분에 같은 조건으로 시작해 회차 폴더에 _2 가 붙은 경우 그 번호도 넣는다(이름이 겹치지 않게).
+    run_dup = run_dir.name[len(f"{run_stamp}_{config.MODEL_NAME}_{run_tag}"):]
+    epoch_prefix = f"hitandrun_{config.MODEL_NAME}_{run_stamp}{run_dup}_{run_tag}"
     # 그때의 설정을 그대로 남긴다 — 나중에 config.py 가 바뀌어도 이 회차 조건을 알 수 있다
     shutil.copy2(config.__file__, run_dir / 'config_snapshot.py')
     # 학습/검증에 쓴 영상 목록 — 평가 영상과 겹치지 않았는지 나중에 확인할 수 있다
@@ -308,6 +317,7 @@ def train_model(
         ('종료', '(학습 중이거나 중간에 멈춤)'),
         ('최종 가중치', '(학습이 끝나면 기록됨)'),
         ('작업 중 best 가중치', f'{work_best} (학습이 끝나면 최종 가중치로 옮겨짐)'),
+        ('에포크별 가중치', f'{epochs_dir} (매 에포크)' if epochs_dir is not None else '저장 안 함'),
         ('데이터 폴더', str(data_dir)),
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
     ]
@@ -669,6 +679,9 @@ def train_model(
         saved_best = (early_stopping.best_epoch == epoch + 1
                       and prev_best != epoch + 1)
         saved_cand = _update_candidates(epoch + 1, monitor)
+        # 에포크별 가중치 — 끝난 뒤 로그를 보고 몇 개를 평가 영상으로 비교해 고른다
+        if epochs_dir is not None:
+            torch.save(model.state_dict(), epochs_dir / f"{epoch_prefix}_ep{epoch + 1:03d}.pth")
 
         # 에포크별 곡선을 CSV로 남긴다 — 학습이 중간에 끊겨도 남도록 매번 append.
         # 과적합 판단(train↓ val↑)과 조합 비교에 이 파일이 근거가 된다.
@@ -747,6 +760,13 @@ def train_model(
     info['best 에포크'] = (f"{early_stopping.best_epoch} "
                           f"({'조기 종료' if early_stopping.early_stop else '끝까지 학습'})")
     info['후보 가중치'] = ', '.join(c['file'] for c in cand_info if c['rank'] > 1) or '없음'
+    # 평가해 볼 에포크 추천(판단 지표 상위 + 그 에포크 균형손실 상위) — 최종 선택은 평가 영상으로
+    from epoch_suggest import suggest
+    suggest_eps, suggest_lines = suggest(run_dir, k=3)
+    print()
+    for line in suggest_lines:
+        print(line)
+    info['평가 추천 에포크'] = ', '.join(map(str, suggest_eps)) or '없음'
     write_run_info(run_dir, list(info.items()))
 
     # 결과 요약 — 그래프가 best·후보를 표시할 때도 쓴다
@@ -767,6 +787,8 @@ def train_model(
                          'empty_keep': getattr(config, 'TRAIN_S_EMPTY_KEEP', None),
                          'spread_a': spread_a} if balance_on else None),
             'candidates': cand_info,
+            'epochs_dir': str(epochs_dir) if epochs_dir is not None else None,
+            'eval_suggest': suggest_eps,
         }, _f, ensure_ascii=False, indent=2)
     try:
         from trainplot import plot_trainlog

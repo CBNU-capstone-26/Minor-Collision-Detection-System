@@ -232,6 +232,12 @@ TRAIN_MONITOR_SMOOTH = 3
 # 최종 선택은 학습 후, 학습에 안 쓴 영상으로 서비스 경로 평가를 돌려서 한다.
 TRAIN_TOPK_CANDIDATES = 3
 TRAIN_TOPK_MIN_GAP = 3
+# 매 에포크 가중치를 회차 폴더 epochs/ 에 남긴다(파일 하나 약 12MB — 학습 하나 0.5GB 안팎).
+# 판단 지표는 실제 검증 충돌이 약 12개라 에포크마다 흔들리고, 3에포크 평균이라 저장이 약 1에포크
+# 늦다. 붙어 있는 후보는 서로 밀어내 지워지므로(2026-10-22 학습에서 32·33에포크가 34에 밀림)
+# 전부 남겨 두고, 끝에 '판단 지표 상위 + 그 에포크 균형손실 상위'를 추천해 평가 영상으로 고른다.
+# 학습 중·중단 후에도: python -m model.main --mode suggest --run outputs/trainlogs/<회차 폴더>
+TRAIN_SAVE_ALL_EPOCHS = True
 TRAIN_LEARNING_RATE = 0.00003  # X3D-M 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
 # scratch(무작위 초기화) 학습률 — 모든 파라미터에 같은 값(AdamW). 검증된 값이 아니라 출발점이다.
 #   · 논문(같은 과제·RC 데이터, Adam, batch 15, scratch): 1e-5. 다만 모델이 I3D 계열이다.
