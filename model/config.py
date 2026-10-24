@@ -141,6 +141,28 @@ TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 �
 #     평가(data/eval)는 지금처럼 0번 박스만 쓴다.
 TRAIN_S_REAL_USE_CAR1 = True
 
+# ---------- 학습 묶음 구성: 빈 장면 정상 솎기 + 묶음마다 충돌 고르게 (실험용, 기본 끔) ----------
+# 2026-10-22 서버 측정(model/s_motion_check.py, outputs/s_motion/261022_0323): A:S 1:20.5,
+# 묶음 15개 중 49% 에 충돌이 없다. 정상 클립 53% 가 '빈 장면'(움직인 화소 0.25% 미만)이다.
+# 빈 장면도 서비스의 긴 정지 구간을 배우는 데 필요하므로 버리지 않고 일부씩 돌려 쓴다.
+#   · TRAIN_S_MOTION_CSV : s_motion_check 결과 clips.csv. 비우면 솎기 끔.
+#     학습 쪽 정상만 솎고 검증은 그대로다(판단 지표를 이전 학습과 비교할 수 있다).
+#     빈 장면 = 움직임 < TRAIN_S_EMPTY_MOTION_PCT. 매 에포크 TRAIN_S_EMPTY_KEEP 만큼만 쓰고
+#     에포크마다 다음 구간을 써서 1/KEEP 에포크마다 전부 한 번씩 본다.
+#     CSV 에 없는 정상 클립(데이터가 바뀐 경우)은 '움직임 있음'으로 보고 매번 쓴다.
+#   · 기준 0.25 = 충돌 클립이 2개(1%)만 걸리는 상한 — 0.5 부터 미세 충돌 9개(3%)가 걸린다.
+#   · TRAIN_SPREAD_A : 충돌 클립을 묶음마다 고르게 나눠 넣는다(복제 없음). 충돌이 묶음 수
+#     이상이면 모든 묶음에 충돌이 들어가고, 적으면 충돌 없는 묶음이 남는다(무작위 49% → 약 30%).
+#     솎기와 같이 켜면(약 1:13, 에포크 약 2/3) 충돌 없는 묶음이 0이 된다.
+#   · 켜는 법: python -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv
+#     (둘 다 켬. 학습 없이 구성만 보려면 --dry-run. 환경변수 TRAIN_S_MOTION_CSV·TRAIN_SPREAD_A=1 로도 된다)
+#     켜면 회차 폴더·가중치 이름에 _bal 이 붙는다. 상대경로는 프로젝트 루트 기준.
+#   ⚠️ 정상이 줄어 모델의 P(A) 가 전반적으로 조금 오른다 — 학습 후 평가에서 오탐·판정 기준을 다시 본다.
+TRAIN_S_MOTION_CSV = os.getenv("TRAIN_S_MOTION_CSV", "").strip() or None
+TRAIN_S_EMPTY_MOTION_PCT = 0.25
+TRAIN_S_EMPTY_KEEP = 1 / 3
+TRAIN_SPREAD_A = os.getenv("TRAIN_SPREAD_A", "0").strip().lower() in ("1", "true", "yes")
+
 # 클래스 가중치(CrossEntropyLoss weight). S 슬라이싱으로 A:S 불균형이 커지면
 # 모델이 S로 치우쳐 '미검출'이 늘 수 있다. (없음=None, 예: (1.0, 3.0) → A 3배)
 # ※ 검증 없이 켜지 말 것 — 값에 따라 오탐이 급증할 수 있다.
@@ -156,7 +178,13 @@ TRAIN_S_REAL_USE_CAR1 = True
 TRAIN_CLASS_WEIGHTS = None
 TARGET_ID = 0
 USE_AMP = True
-USE_CHANNELS_LAST = True
+# GPU 메모리 배치 channels_last_3d (학습·평가·영상 분석·서비스 워커 공통, GPU 일 때만 — CPU 는 원래 안 씀).
+# 처음(2026-06, I3D 계열 모델) '켜면 빠르다'는 일반 권장으로 켰지만 X3D 로 바꾼 뒤 재 보지 않았다.
+# 2026-10-22 학습 서버 RTX 3080 실측(model/train_speed_check, 묶음 15·AMP·checkpointing):
+#   켬 → 끔: 학습 1단계 1.190 → 0.527초(2.3배), 검증 1단계 0.239 → 0.093초(2.6배), 메모리 5.80 → 5.21GB,
+#   P(A) 차이 1.9e-6(같은 결과). X3D 의 채널별(depthwise) 3D 합성곱이 이 배치에서 느린 것으로 보인다.
+# GPU 나 모델을 바꾸면 python -m model.train_speed_check 로 다시 잰다.
+USE_CHANNELS_LAST = False
 
 # ---------- 사전학습 / 입력 정규화 ----------
 # 백본은 pytorchvideo X3D-M. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
@@ -210,6 +238,16 @@ TRAIN_MONITOR_SMOOTH = 3
 # 최종 선택은 학습 후, 학습에 안 쓴 영상으로 서비스 경로 평가를 돌려서 한다.
 TRAIN_TOPK_CANDIDATES = 3
 TRAIN_TOPK_MIN_GAP = 3
+# 매 에포크 가중치를 회차 폴더 epochs/ 에 남긴다(파일 하나 약 12MB — 학습 하나 0.5GB 안팎).
+# 판단 지표는 실제 검증 충돌이 약 12개라 에포크마다 흔들리고, 3에포크 평균이라 저장이 약 1에포크
+# 늦다. 붙어 있는 후보는 서로 밀어내 지워지므로(2026-10-22 학습에서 32·33에포크가 34에 밀림)
+# 전부 남겨 두고, 끝에 평가해 볼 에포크를 추천해 평가 영상으로 고른다(model/epoch_suggest.py).
+#   추천 = ① 판단 지표 ② 그 에포크 균형손실 ③ 그 에포크 F1(0.5 판정의 재현율·정밀도) 각각 상위
+#   TRAIN_SUGGEST_TOPK 개, 서로 TRAIN_TOPK_MIN_GAP 에포크 이상 떨어진 것. ③은 손실 기준이 오탐 는
+#   에포크를 고르는 것을 보완한다(2026-10-22 학습: 판단 지표 1위 44에포크 오탐 6 vs 38에포크 오탐 2, 재현율 같음).
+# 학습 중·중단 후에도: python -m model.main --mode suggest --run outputs/trainlogs/<회차 폴더>
+TRAIN_SAVE_ALL_EPOCHS = True
+TRAIN_SUGGEST_TOPK = 2
 TRAIN_LEARNING_RATE = 0.00003  # X3D-M 미세조정 (헤드 기준; 백본은 train.py에서 자동 ×0.1 → 3e-6). 진동 억제 위해 1e-4에서 하향
 # scratch(무작위 초기화) 학습률 — 모든 파라미터에 같은 값(AdamW). 검증된 값이 아니라 출발점이다.
 #   · 논문(같은 과제·RC 데이터, Adam, batch 15, scratch): 1e-5. 다만 모델이 I3D 계열이다.
@@ -252,7 +290,14 @@ PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
-PREDICT_INFER_BATCH_SIZE = 2 # batch size 2로 바꾸었음(배기원)
+# 서비스 3D-CNN 에 창을 몇 개씩 묶어 넣을지 — 장치마다 빠른 값이 달라 따로 둔다(device_utils.predict_batch_size).
+# 판정 결과는 같다(소수점 끝자리만 미세하게 다를 수 있음).
+#   CPU(OpenVINO 등): 창 하나만으로 코어를 다 써서 묶을수록 오히려 느리다. 2026-10-19 i5-1135G7 실측:
+#                     1개 초당 4.59창 · 2개 4.26 · 4개 4.00 · 8개 3.79 (메모리 656MB → 2180MB)
+#   GPU: 한 번에 많이 넣을수록 효율이 올라 평가와 같은 8개
+#   (예전엔 둘 다 2 — 배기원)
+PREDICT_INFER_BATCH_SIZE_CPU = 1
+PREDICT_INFER_BATCH_SIZE_GPU = 8
 # 슬라이딩 윈도우 간격(프레임). 서비스는 GPU 추론을 가정하므로 모든 위치를 본다(1).
 # stride 5 는 CPU 추론 시절의 절충값이었다(창 수 1/5 → 속도 5배).
 # ⚠️ 아래 PREDICT_MIN_EVENT_SPAN_FRAMES(35)는 stride 1 기준 값이다. stride 를 바꾸면

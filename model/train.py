@@ -16,6 +16,7 @@ from dataset import HitAndRunDataset, span_collate
 from device_utils import get_device, is_cuda_like, is_channels_last_3d_supported
 from hitandrun_model import HitAndRun3DCNN
 from runlog import make_run_dir, write_run_info
+from train_balance import build as build_balance, resolve_csv
 
 
 class EarlyStopping:
@@ -64,7 +65,7 @@ def _unique_path(path):
     return out
 
 
-def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None):
+def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sampler=None):
     # CUDA: 멀티워커 + prefetch 활성화 (① Ryzen 7 5700X 16스레드 기준)
     # CPU : Windows 멀티프로세싱 충돌 방지 및 디바이스 컨텍스트 공유 불가 문제로 단일 프로세스 사용
     if is_cuda_like(device):
@@ -72,11 +73,14 @@ def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None):
     else:
         num_workers = 0
     kwargs = {
-        'batch_size': batch_size,
-        'shuffle': shuffle,
         'num_workers': num_workers,
         'pin_memory': is_cuda_like(device),
     }
+    if batch_sampler is not None:
+        # 묶음 구성(train_balance)이 에포크마다 묶음을 직접 짠다 — batch_size·shuffle 대신
+        kwargs['batch_sampler'] = batch_sampler
+    else:
+        kwargs.update({'batch_size': batch_size, 'shuffle': shuffle})
     if collate_fn is not None:
         kwargs['collate_fn'] = collate_fn
     if num_workers > 0:
@@ -99,7 +103,9 @@ def train_model(
     learning_rate=None,
     use_amp=config.USE_AMP,
     use_channels_last=config.USE_CHANNELS_LAST,
+    dry_run=False,
 ):
+    """dry_run=True 면 데이터 분할·묶음 구성만 출력하고 학습하지 않는다(회차 폴더도 안 만듦)."""
     device = get_device(config.TRAIN_DEVICE_TYPE)
     cuda_like = is_cuda_like(device)
     # 학습률: 따로 안 주면 사전학습(미세조정)과 scratch 의 기본값이 다르다(config 주석).
@@ -214,9 +220,46 @@ def train_model(
                   f"영상 {len({s['video_key'] for s in car1})}개)" if car1 else "0번만")
     print(f"[S 클립 차량] {s_car_info}")
 
+    # ── 학습 묶음 구성 (config.TRAIN_S_MOTION_CSV · TRAIN_SPREAD_A, 기본 끔) ──
+    # 학습 쪽만 바꾸고 검증 로더는 그대로다. 켜면 이름에 _bal 을 붙여 기존 학습과 구분한다.
+    motion_csv = getattr(config, 'TRAIN_S_MOTION_CSV', None)
+    spread_a = bool(getattr(config, 'TRAIN_SPREAD_A', False))
+    balance_on = bool(motion_csv) or spread_a
+    batch_sampler, balance_lines = None, []
+    if balance_on:
+        if motion_csv:
+            motion_csv = resolve_csv(motion_csv)
+            if not motion_csv.exists():
+                raise FileNotFoundError(f"TRAIN_S_MOTION_CSV 파일이 없습니다: {motion_csv}")
+        batch_sampler, balance_lines = build_balance(
+            train_dataset.samples, train_idx, batch_size, csv_path=motion_csv,
+            empty_pct=float(getattr(config, 'TRAIN_S_EMPTY_MOTION_PCT', 0.25)),
+            empty_keep=float(getattr(config, 'TRAIN_S_EMPTY_KEEP', 1 / 3)),
+            spread_a=spread_a)
+        run_tag = f"{run_tag}_bal"
+        for line in balance_lines:
+            print(f"[묶음] {line}")
+    else:
+        n_a = sum(train_dataset.samples[i]['label'] == 1 for i in train_idx)
+        n_s = len(train_idx) - n_a
+        nb = math.ceil(len(train_idx) / batch_size)
+        print(f"[묶음] 기본(무작위) — 에포크당 충돌 {n_a} · 정상 {n_s} = 1:{n_s / max(n_a, 1):.1f} · "
+              f"묶음 {nb}개 · 충돌 없는 묶음 기대 {nb * (n_s / len(train_idx)) ** batch_size:.0f}개")
+
+    if dry_run:
+        if batch_sampler is not None:
+            for ep in range(3):
+                bl = batch_sampler.batches(ep)
+                n_a_per = [sum(train_dataset.samples[train_idx[p]]['label'] == 1 for p in b) for b in bl]
+                print(f"[점검] {ep + 1}에포크: 묶음 {len(bl)}개 · 클립 {sum(len(b) for b in bl)}개 · "
+                      f"묶음당 충돌 {dict(sorted((k, n_a_per.count(k)) for k in set(n_a_per)))} · "
+                      f"중복 {sum(len(b) for b in bl) - len({p for b in bl for p in b})}개")
+        print("[점검] --dry-run 이라 학습하지 않고 끝냅니다.")
+        return None
+
     train_loader = _make_loader(
         Subset(train_dataset, train_idx), batch_size=batch_size,
-        shuffle=True, device=device, collate_fn=collate)
+        shuffle=True, device=device, collate_fn=collate, batch_sampler=batch_sampler)
     val_rc_loader = _make_loader(
         Subset(val_dataset, val_rc_idx), batch_size=batch_size,
         shuffle=False, device=device, collate_fn=collate) if val_rc_idx else None
@@ -237,6 +280,15 @@ def train_model(
     # 중간에 멈춘 학습의 best 는 이 폴더의 work_best.pth 에 남는다.
     weights_dir = Path(save_path).parent
     work_best = run_dir / 'work_best.pth'
+    # 에포크별 가중치(config.TRAIN_SAVE_ALL_EPOCHS) — 회차 폴더 안이라 학습끼리 섞이지 않는다
+    epochs_dir = run_dir / 'epochs' if getattr(config, 'TRAIN_SAVE_ALL_EPOCHS', False) else None
+    if epochs_dir is not None:
+        epochs_dir.mkdir(exist_ok=True)
+    # 에포크 파일 이름 = hitandrun_<모델>_<시작 시각>[_n]_<ptY|ptN>[_span][_bal]_ep<번호>.pth
+    #   → 폴더 밖으로 꺼내도 어느 학습(회차 폴더 <시각>[_n]_<모델>_<조건>)의 몇 에포크인지 알 수 있다.
+    #   같은 분에 같은 조건으로 시작해 회차 폴더에 _2 가 붙은 경우 그 번호도 넣는다(이름이 겹치지 않게).
+    run_dup = run_dir.name[len(f"{run_stamp}_{config.MODEL_NAME}_{run_tag}"):]
+    epoch_prefix = f"hitandrun_{config.MODEL_NAME}_{run_stamp}{run_dup}_{run_tag}"
     # 그때의 설정을 그대로 남긴다 — 나중에 config.py 가 바뀌어도 이 회차 조건을 알 수 있다
     shutil.copy2(config.__file__, run_dir / 'config_snapshot.py')
     # 학습/검증에 쓴 영상 목록 — 평가 영상과 겹치지 않았는지 나중에 확인할 수 있다
@@ -256,6 +308,8 @@ def train_model(
                      f"{'Kinetics-400 사전학습' if config.PRETRAINED else 'scratch, 무작위 초기화'})"),
         ('학습률', f"헤드 {learning_rate:g} / 백본 {learning_rate * backbone_lr_mult:g}"),
         ('S 클립 차량', s_car_info),
+        ('묶음 구성', ' / '.join(l.strip() for l in balance_lines) if balance_on
+                     else '기본(무작위 섞기, 정상 전부)'),
         ('A 클립 방식', (f'span (접근~충돌 종료를 창 여러 개로 전부 학습, 첫 창 무게 {first_w:g})'
                        if span else f"pre (충돌 시작 {getattr(config, 'TRAIN_A_PRE_FRAMES', 0)}"
                             "프레임 전부터 창 1개)")),
@@ -263,6 +317,10 @@ def train_model(
         ('종료', '(학습 중이거나 중간에 멈춤)'),
         ('최종 가중치', '(학습이 끝나면 기록됨)'),
         ('작업 중 best 가중치', f'{work_best} (학습이 끝나면 최종 가중치로 옮겨짐)'),
+        ('에포크별 가중치', f'{epochs_dir} (매 에포크)' if epochs_dir is not None else '저장 안 함'),
+        # 에포크 시간은 이 설정이 같은 학습끼리만 비교한다(끔이 RTX 3080 에서 약 2.3배 빠름, 결과는 같음)
+        ('GPU 메모리 배치 channels_last',
+         '켬' if (use_channels_last and is_channels_last_3d_supported(device)) else '끔'),
         ('데이터 폴더', str(data_dir)),
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
     ]
@@ -482,6 +540,7 @@ def train_model(
     for epoch in range(num_epochs):
         model.train()
         train_loss = 0.0
+        n_seen = 0      # 이번 에포크에 실제로 쓴 클립 수(묶음 구성이 빈 장면을 솎으면 전체보다 적다)
         for batch in train_loader:
             non_blocking = cuda_like
             if span:
@@ -489,6 +548,7 @@ def train_model(
                 inputs = inputs.to(device, non_blocking=non_blocking)
                 labels = labels.to(device, non_blocking=non_blocking)
                 train_loss += _span_step(inputs, sizes, labels) * labels.size(0)
+                n_seen += labels.size(0)
                 continue
             inputs, labels = batch
             inputs = inputs.to(device, non_blocking=non_blocking)
@@ -518,8 +578,9 @@ def train_model(
                 optimizer.step()
 
             train_loss += loss.item() * labels.size(0)
+            n_seen += labels.size(0)
 
-        avg_train_loss = train_loss / len(train_loader.dataset)
+        avg_train_loss = train_loss / max(n_seen, 1)
 
         # rc용/real용 val을 각각 분리해서 성능 측정
         def _evaluate(loader):
@@ -621,6 +682,9 @@ def train_model(
         saved_best = (early_stopping.best_epoch == epoch + 1
                       and prev_best != epoch + 1)
         saved_cand = _update_candidates(epoch + 1, monitor)
+        # 에포크별 가중치 — 끝난 뒤 로그를 보고 몇 개를 평가 영상으로 비교해 고른다
+        if epochs_dir is not None:
+            torch.save(model.state_dict(), epochs_dir / f"{epoch_prefix}_ep{epoch + 1:03d}.pth")
 
         # 에포크별 곡선을 CSV로 남긴다 — 학습이 중간에 끊겨도 남도록 매번 append.
         # 과적합 판단(train↓ val↑)과 조합 비교에 이 파일이 근거가 된다.
@@ -699,6 +763,13 @@ def train_model(
     info['best 에포크'] = (f"{early_stopping.best_epoch} "
                           f"({'조기 종료' if early_stopping.early_stop else '끝까지 학습'})")
     info['후보 가중치'] = ', '.join(c['file'] for c in cand_info if c['rank'] > 1) or '없음'
+    # 평가해 볼 에포크 추천(판단 지표·그 에포크 균형손실·F1 상위) — 최종 선택은 평가 영상으로
+    from epoch_suggest import suggest
+    suggest_eps, suggest_lines = suggest(run_dir)
+    print()
+    for line in suggest_lines:
+        print(line)
+    info['평가 추천 에포크'] = ', '.join(map(str, suggest_eps)) or '없음'
     write_run_info(run_dir, list(info.items()))
 
     # 결과 요약 — 그래프가 best·후보를 표시할 때도 쓴다
@@ -714,7 +785,13 @@ def train_model(
             'weights_dir': str(final_path.parent),
             'monitor': f'val_real class-balanced loss, {smooth_n}-epoch avg',
             'a_mode': 'span' if span else 'pre',
+            'balance': ({'motion_csv': str(motion_csv) if motion_csv else None,
+                         'empty_pct': getattr(config, 'TRAIN_S_EMPTY_MOTION_PCT', None),
+                         'empty_keep': getattr(config, 'TRAIN_S_EMPTY_KEEP', None),
+                         'spread_a': spread_a} if balance_on else None),
             'candidates': cand_info,
+            'epochs_dir': str(epochs_dir) if epochs_dir is not None else None,
+            'eval_suggest': suggest_eps,
         }, _f, ensure_ascii=False, indent=2)
     try:
         from trainplot import plot_trainlog

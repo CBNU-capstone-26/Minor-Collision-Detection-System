@@ -1,24 +1,25 @@
-"""FastAPI 진입점 — CORS, 라우터 등록, 시작 시 테이블 생성·보관 기간 정리."""
+"""FastAPI 진입점 — CORS, 라우터 등록, 시작 시 테이블 생성, 보관 기간 지난 영상 정리."""
 import asyncio
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import inspect, text
 
 from app.db_connection import engine, Base
 from app import db_models  # noqa: F401  (테이블 등록을 위해 임포트)
 from app.settings import settings
 from app.routers import auth, videos, analysis
 
+
 async def _retention_loop():
-    """주기적으로 만료 영상을 지운다. 정리 실패가 서버 가동을 막지는 않는다."""
+    """보관 기간(VIDEO_RETENTION_DAYS)이 지난 영상을 서버가 켜질 때 한 번, 그 뒤 1시간마다 지운다."""
     from app.retention import CHECK_INTERVAL_SEC, delete_expired_videos
     while True:
         try:
             deleted = await asyncio.to_thread(delete_expired_videos)
             if deleted:
                 print(f"[보관기간] {settings.VIDEO_RETENTION_DAYS}일 지난 영상 {len(deleted)}개를 지웠습니다: {deleted}", flush=True)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — 정리에 실패해도 서버는 계속 돈다(다음 회차에 다시)
             print(f"[보관기간] 정리 실패(다음에 다시): {exc}", flush=True)
         await asyncio.sleep(CHECK_INTERVAL_SEC)
 
@@ -41,14 +42,15 @@ app.add_middleware(
 )
 
 def _wait_for_db(timeout_sec=60):
-    """DB가 연결을 받을 때까지 기다린다.
+    """DB(MySQL)가 연결을 받을 때까지 기다린다.
 
-    DB 컨테이너나 Supabase 연결이 준비되기 전의 일시적인 연결 오류로
-    백엔드가 시작 직후 종료되지 않도록 짧게 재시도한다.
+    DB 컨테이너를 막 띄운 직후엔 MySQL 이 준비되기 전이라 첫 연결이 끊기고, 예전엔 그때
+    백엔드가 바로 죽어 화면에서 로그인이 502 가 났다. 바로 죽지 않고 잠깐씩 다시 시도한다
+    (어떤 OS·실행 방법으로 띄워도 같다).
     """
     import time
+    from sqlalchemy import text
     from sqlalchemy.exc import OperationalError
-
     deadline = time.monotonic() + timeout_sec
     while True:
         try:
@@ -58,35 +60,46 @@ def _wait_for_db(timeout_sec=60):
         except OperationalError as exc:
             if time.monotonic() > deadline:
                 raise
-            print(
-                f"[backend] DB 연결 대기 중(최대 {timeout_sec}초): "
-                f"{getattr(exc, 'orig', exc)}",
-                flush=True,
-            )
+            print(f"[backend] DB 연결 대기 중(최대 {timeout_sec}초): {getattr(exc, 'orig', exc)}", flush=True)
             time.sleep(2)
 
 
-# 서버 시작 시 테이블이 없으면 자동 생성 — DB가 준비될 때까지 기다린 뒤
+# 서버 시작 시 테이블이 없으면 자동 생성 — DB 가 준비될 때까지 기다린 뒤
 _wait_for_db()
 Base.metadata.create_all(bind=engine)
 
-# create_all()은 이미 존재하는 테이블에 새 컬럼을 추가하지 않으므로,
-# MySQL과 PostgreSQL(Supabase) 모두에서 필요한 최소 컬럼을 보정한다.
-def ensure_column(table_name: str, column_name: str, column_ddl: str):
-    columns = {column["name"] for column in inspect(engine).get_columns(table_name)}
-    if column_name in columns:
-        return
-    with engine.begin() as conn:
-        conn.execute(text(
-            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_ddl}"
-        ))
+def _ensure_column(table, column_ddl):
+    """나중에 추가한 컬럼을 기존 테이블에도 넣는다 (create_all 은 이미 있는 테이블을 고치지 않는다).
+    이미 있으면 MySQL 이 오류를 내므로 그냥 넘어간다."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_ddl};"))
+            conn.commit()
+        except Exception:
+            pass
 
 
-ensure_column("videos", "detected_vehicles", "TEXT NULL")
-ensure_column("videos", "title", "VARCHAR(100) NULL")
-ensure_column("users", "phone", "VARCHAR(50) NULL")
-ensure_column("analysis_tasks", "finished_at", "TIMESTAMP NULL")
-ensure_column("analysis_tasks", "event_count", "INTEGER NULL")
+_ensure_column("videos", "detected_vehicles TEXT NULL")
+_ensure_column("videos", "title VARCHAR(100) NULL")             # 업로드할 때 넣은 제목
+_ensure_column("analysis_tasks", "finished_at DATETIME NULL")   # 분석 이력: 끝난 시각
+_ensure_column("analysis_tasks", "event_count INT NULL")        # 분석 이력: 찾은 클립 수
+
+
+def _drop_column(table, column):
+    """더 이상 쓰지 않는 컬럼을 기존 테이블에서 지운다.
+    이미 없으면 MySQL 이 오류를 내므로 그냥 넘어간다."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column};"))
+            conn.commit()
+        except Exception:
+            pass
+
+
+# 녹화 시작 시각 — 입력받지 않아 늘 기본값(20:30)이었다. 시간대별 통계와 함께 삭제(2026-10-18)
+_drop_column("videos", "recording_start_time")
 
 app.include_router(auth.router)
 app.include_router(videos.router)

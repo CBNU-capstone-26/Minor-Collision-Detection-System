@@ -38,6 +38,7 @@ import torch
 import torch.nn.functional as F
 
 import config
+from device_utils import predict_batch_size
 
 # 검사·변환 방식이 바뀌면 올린다 → 저장된 결과·변환 파일을 새로 만든다
 RUNTIME_VERSION = 1
@@ -397,8 +398,8 @@ def get_runner(model, clip_shape=None, force_check=False):
     if cached is not None and cached[0] == key and not force_check:
         return cached[1]
     model.eval()
-    batch = max(1, int(getattr(config, 'PREDICT_INFER_BATCH_SIZE', 2)))
     dev = next(model.parameters()).device
+    batch = predict_batch_size(dev)     # 서비스가 실제로 쓰는 묶음 크기로 고른다(CPU 1 · GPU 8)
     if dev.type == 'cpu':
         runner = _select_cpu(model, clip_shape, batch, force=force_check)
     else:

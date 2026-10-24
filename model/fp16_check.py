@@ -110,7 +110,7 @@ def _run(args):
 
     # ── ① 속도 ──
     print('\n[속도] 초당 처리 창 수 (서비스 배치 = '
-          f'{config.PREDICT_INFER_BATCH_SIZE}, 평가 배치 = {config.EVAL_INFER_BATCH_SIZE})')
+          f'{config.PREDICT_INFER_BATCH_SIZE_GPU}, 평가 배치 = {config.EVAL_INFER_BATCH_SIZE})')
     print(f"{'배치':>4} {'FP32':>9} {'FP16':>9} {'FP16/FP32':>10}")
     for bs in (1, 2, 4, 8, 16):
         x = torch.randn((bs, *shape), device=device)

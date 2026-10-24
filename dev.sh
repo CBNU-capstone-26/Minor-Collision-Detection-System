@@ -108,12 +108,15 @@ start() {
   ensure_redis
 
   log "tmux 세션 '$SESSION' 에 백엔드·워커·UI 를 띄웁니다"
-  tmux new-session -d -s "$SESSION" -n services -c "$ROOT/backend" \
-    "exec \"$PY/python\" -m uvicorn app.main:app --port $BACKEND_PORT --reload --reload-dir app"
+  # 먼저 빈 세션을 만든다. 백엔드가 즉시 종료돼도 세션을 남겨 오류 로그를 볼 수 있도록
+  # 실행 명령보다 remain-on-exit을 먼저 설정한다.
+  tmux new-session -d -s "$SESSION" -n services -c "$ROOT/backend"
   # 프로그램이 죽어도 칸을 닫지 않아 오류 로그를 볼 수 있게
   tmux set-option -t "$SESSION:services" remain-on-exit on
   tmux set-option -t "$SESSION:services" pane-border-status top
   tmux set-option -t "$SESSION" mouse on
+  tmux respawn-pane -k -t "$SESSION:services.0" -c "$ROOT/backend" \
+    "exec \"$PY/python\" -m uvicorn app.main:app --port $BACKEND_PORT --reload --reload-dir app"
   tmux select-pane -t "$SESSION:services.0" -T "백엔드 :$BACKEND_PORT (자동 재시작)"
 
   # 백엔드가 준비되기 전에 UI가 /api/auth/me 를 호출하면 Vite 프록시가

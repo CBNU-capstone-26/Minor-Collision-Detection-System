@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 
 import config
-from device_utils import is_cuda_like, is_channels_last_3d_supported
+from device_utils import is_cuda_like, is_channels_last_3d_supported, predict_batch_size
 from infer_runtime import get_runner
 from runlog import make_run_dir, write_run_info
 
@@ -145,7 +145,7 @@ def _evaluate_folder_impl(
                 # 이미 GPU에 있는 텐서 슬라이싱 — .to() 호출 없음
                 clips = torch.stack(
                     [full_video_tensor[:, i:i+clip_length, :, :] for i in batch_window_starts])
-                if is_channels_last_3d_supported(device):
+                if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
                     clips = clips.contiguous(
                         memory_format=torch.channels_last_3d)
 
@@ -204,10 +204,11 @@ def _evaluate_folder_impl(
 
     # 추론 속도: ① 모델만 ② 서비스 경로 전체(위에서 영상별로 잰 시간)
     speed = {'device': f'{_device_name(device)} · 실행 방식 {runner.name}', 'model': benchmark_model(
-        model, clip_length=clip_length, resize=resize), 'service': svc.pop('speed')}
+        model, clip_length=clip_length, resize=resize), 'service': svc.pop('speed'),
+        'service_batch': predict_batch_size(device)}
     _print_speed(speed)
     sb = {b['batch']: b for b in speed['model']}
-    svc_b = sb.get(int(config.PREDICT_INFER_BATCH_SIZE), speed['model'][-1])
+    svc_b = sb.get(speed['service_batch'], speed['model'][-1])
     s = speed['service'] or {}
     return {
         'n_videos': total_videos,
@@ -327,7 +328,7 @@ def benchmark_model(model, clip_length=config.CLIP_LENGTH, resize=config.RESIZE,
     '모델이 초당 분석할 수 있는 영상 프레임 수'다(거친 탐색 없이 전부 볼 때).
     """
     device = next(model.parameters()).device
-    batch_sizes = batch_sizes or sorted({1, int(config.PREDICT_INFER_BATCH_SIZE),
+    batch_sizes = batch_sizes or sorted({1, predict_batch_size(device),
                                          int(config.EVAL_INFER_BATCH_SIZE)})
     sync = (torch.cuda.synchronize if is_cuda_like(device) else (lambda: None))
     out = []
@@ -335,7 +336,7 @@ def benchmark_model(model, clip_length=config.CLIP_LENGTH, resize=config.RESIZE,
     with torch.inference_mode():
         for bs in batch_sizes:
             x = torch.randn(bs, 3, clip_length, resize[1], resize[0], device=device)
-            if is_channels_last_3d_supported(device):
+            if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
                 x = x.contiguous(memory_format=torch.channels_last_3d)
             for _ in range(2):                       # 첫 호출 오버헤드(cuDNN 탐색 등) 제외
                 runner(x)
@@ -358,7 +359,7 @@ def _print_speed(speed):
     print("=" * 60)
     print("① 모델만 (3D-CNN, 30프레임 클립 1개 = 창 1개)")
     for b in speed['model']:
-        mark = '  ← 서비스 배치' if b['batch'] == config.PREDICT_INFER_BATCH_SIZE else ''
+        mark = '  ← 서비스 배치' if b['batch'] == speed.get('service_batch') else ''
         print(f"   배치 {b['batch']:>2}: 초당 {b['clips_per_sec']:7.2f}개 창 "
               f"(창 1개 {b['ms_per_clip']:.1f}ms){mark}")
     print("   → 창 간격 1로 빠짐없이 훑을 때 모델이 초당 분석하는 영상 프레임 수와 같다")
@@ -696,8 +697,14 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     # 사전학습 여부는 평가하는 가중치의 이름(_ptY_/_ptN_)으로 정한다. 이름에 없으면 config 값.
     tag = next((t for t in ('ptY', 'ptN') if f'_{t}_' in weights),
                getattr(config, 'PRETRAIN_TAG', '?'))
-    # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다
-    name_tag = f'{tag}_span' if '_span_' in weights else tag
+    # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다.
+    # 묶음 구성(--balance)으로 학습한 가중치는 _bal 도 붙인다.
+    name_tag = (tag + ('_span' if '_span_' in weights else '')
+                + ('_bal' if '_bal_' in weights else ''))
+    # 크롭 r 을 바꿔 평가하면(main --r) 이름에 _r<값> 을 붙인다 — 요약 표의 run 열로 구분된다
+    r_value = float(kwargs.get('r_value', config.R_VALUE))
+    if abs(r_value - 1.0) > 1e-9:
+        name_tag += f'_r{r_value:g}'
     run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, name_tag)
     log_path = run_dir / f"eval_{config.MODEL_NAME}_{name_tag}_{stamp}.txt"
     write_run_info(run_dir, [
@@ -707,12 +714,18 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('시작', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
         ('평가 폴더', str(folder_path)),
+        ('크롭 r', f'{r_value:g}'),
+        # 속도 지표는 이 설정이 같은 평가끼리만 비교한다(2026-10-22 부터 기본 끔 — GPU 추론 약 2.6배 빠름).
+        # 정확도 지표는 켬/끔 차이가 P(A) 1e-6 수준이라 그대로 비교해도 된다.
+        ('GPU 메모리 배치 channels_last',
+         '켬' if (is_channels_last_3d_supported(next(model.parameters()).device)
+                 and config.USE_CHANNELS_LAST) else '끔'),
     ])
 
     tee = _Tee(log_path)
     sys.stdout = tee
     try:
-        print(f"[평가 대상] 모델={config.MODEL_NAME} / 사전학습={tag} / 가중치={weights}")
+        print(f"[평가 대상] 모델={config.MODEL_NAME} / 사전학습={tag} / 가중치={weights} / 크롭 r={r_value:g}")
         print(f"[평가 폴더] {folder_path}")
         m = _evaluate_folder_impl(model, folder_path=folder_path, **kwargs)
     finally:

@@ -38,7 +38,6 @@ class Video(Base):
     video_path = Column(String(500), nullable=False)   # storage 기준 상대경로
     recording_date = Column(Date, nullable=True)       # 업로드 시 지정한 녹화일자
     camera_location = Column(String(255), nullable=False, default="주차장")   # 녹화 CCTV 위치
-    recording_start_time = Column(String(5), nullable=False, default="20:30")  # 녹화 시작 시각 "HH:MM"(24h) — 기본값 20:30
 
     width = Column(Integer, nullable=False)
     height = Column(Integer, nullable=False)
