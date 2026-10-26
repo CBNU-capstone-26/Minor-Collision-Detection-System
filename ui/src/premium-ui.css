@@ -323,7 +323,7 @@ body.dark-mode .dashboard-layout .event-item.analysis-highlight { border-color: 
 @media (min-width: 1025px) {
   .dashboard-layout .watch-side { height: min(var(--watch-avail-h), var(--watch-side-max-h)); }
   .dashboard-layout .watch-side > .event-sidebar { flex: 1 1 0; min-height: 0; }
-  .dashboard-layout .event-sidebar:not(.collapsed) { overflow-y: auto; }
+  .dashboard-layout .event-sidebar { overflow-y: auto; }
   .dashboard-layout .event-list { flex: 1 1 auto; height: auto; min-height: 120px; }
 }
 .dashboard-layout .event-empty-hint { padding: 20px 10px; font-size: 12px; }
