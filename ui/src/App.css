@@ -1002,12 +1002,28 @@ body.dark-mode .video-info-list dt {
 /* ---------------- 영상 시청 뷰 ---------------- */
 .watch-view {
   padding: 10px 12px;
-  max-width: 1920px;
+  /* 고정 폭 상한 없음 — 브라우저를 축소하거나 큰 모니터면 영상이 넓어진 화면만큼 커진다(예전 1920px 에서 멈춤).
+     영상 칸 폭은 --player-max-w 까지라, 넓은 화면은 아래 fit-content 로 세 칸을 가운데에 모은다 */
+  max-width: none;
   margin: 0 auto;
   /* 영상 화면이 쓸 수 있는 높이 = 화면 높이 - 상단 바(55px) - 위아래 여백(10px × 2) */
   --watch-avail-h: calc(100vh - 75px);
+  /* 영상 칸 폭 상한 — 16:9 영상이 그 높이에 꽉 찰 때까지만(양옆 검은 여백 없음) */
+  --player-max-w: calc((var(--watch-avail-h) - var(--player-controls-h)) * 16 / 9);
+  /* 왼쪽(클립·달력)·오른쪽(진행 단계·분석 이력) 칸 높이 상한 — 세로로 긴 화면에서 칸이 끝없이 늘지 않게.
+     1080p 100%(칸 높이 약 928px)보다 커서 보통 화면은 그대로다 */
+  --watch-side-max-h: 960px;
   /* 영상 아래 재생바 + 컨트롤 줄 높이 */
   --player-controls-h: 68px;
+}
+
+/* 넓은 화면(1025px 이상): 영상은 높이에 막혀 --player-max-w 보다 넓어지지 않으므로, 화면 폭이 남으면
+   (울트라와이드·1440p·브라우저 축소) 페이지 폭을 내용(칸들 + 영상 최대 폭)에 맞추고 가운데에 둔다.
+   그대로 두면 영상과 오른쪽 칸 사이가 비고, 머리줄(제목·패널 버튼)도 같은 폭이라 칸들과 줄이 맞는다 */
+@media (min-width: 1025px) {
+  .watch-view:not(.theater-view) {
+    width: fit-content;
+  }
 }
 
 .watch-view.theater-view {
@@ -1057,7 +1073,7 @@ body.dark-mode .video-info-list dt {
 
 .watch-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, var(--player-max-w));
   gap: 10px;
   align-items: flex-start;
 }
@@ -1067,32 +1083,32 @@ body.dark-mode .video-info-list dt {
 }
 
 .watch-layout.sidebar-collapsed {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, var(--player-max-w));
 }
 
 /* 넓은 화면(1280px 이상): 왼쪽 사고 클립 · 가운데 영상 · 오른쪽 분석 이력 세 칸 */
 @media (min-width: 1280px) {
   .watch-layout {
-    grid-template-columns: 280px minmax(0, 1fr) 260px;
+    grid-template-columns: 280px minmax(0, var(--player-max-w)) 260px;
   }
 
   .watch-layout.sidebar-collapsed {
-    grid-template-columns: auto minmax(0, 1fr) 260px;
+    grid-template-columns: auto minmax(0, var(--player-max-w)) 260px;
   }
 
   /* 오른쪽 칸: 진행 단계(위, 세로) + 분석 이력(아래, 남은 높이를 채움).
      분석 이력을 숨겨도 진행 단계가 있어 칸 폭은 그대로 두고, 이력 자리엔 '분석 이력' 버튼만 남는다 */
   .watch-right {
-    height: var(--watch-avail-h);
+    height: min(var(--watch-avail-h), var(--watch-side-max-h));
   }
 
   /* 오른쪽 패널을 닫으면 그 칸이 빠지고 영상 칸이 넓어진다 (영상은 화면 높이에 꽉 찰 때까지 커짐) */
   .watch-layout.history-collapsed {
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 280px minmax(0, var(--player-max-w));
   }
 
   .watch-layout.sidebar-collapsed.history-collapsed {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, var(--player-max-w));
   }
 
   .watch-right > .analysis-history {
@@ -1763,7 +1779,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  max-width: calc((var(--watch-avail-h) - var(--player-controls-h)) * 16 / 9);
+  max-width: var(--player-max-w);
   max-height: var(--watch-avail-h);
 }
 

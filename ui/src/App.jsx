@@ -166,6 +166,23 @@ function PlayerIcon({ name, size = 18 }) {
   );
 }
 
+// 그리드의 지금 열 수 — CSS(auto-fill)가 화면 폭·배율에 맞춰 정한 값을 읽는다. el 이 바뀌거나 크기가 바뀌면 다시 읽는다
+function useGridColumns(el, fallback = 3) {
+  const [cols, setCols] = useState(fallback);
+  useEffect(() => {
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const read = () => {
+      const n = getComputedStyle(el).gridTemplateColumns.split(" ").filter(Boolean).length;
+      if (n > 0) setCols(n);
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return cols;
+}
+
 let toastSeq = 0; // 하단 알림 번호 (showToast)
 let bboxSeq = 0; // 고른 차량 박스 번호
 
@@ -1032,11 +1049,23 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     });
   }, [periodVideos, searchQuery, videos]);
 
-  // 메인화면 영상 목록 페이지네이션 (6개 초과 시 페이지 분할)
-  const VIDEOS_PER_PAGE = 6;
+  // 메인화면 영상 목록 페이지네이션 — 한 페이지 = 지금 열 수 × 줄 수(두 줄 이상, 최소 6개).
+  // 3열 이하(보통 화면)는 예전처럼 6개, 화면이 넓거나 축소해 열이 늘면 줄을 꽉 채운다(예: 6열 → 12개)
+  const [videoGridEl, setVideoGridEl] = useState(null);
+  const gridCols = useGridColumns(videoGridEl);
+  const VIDEOS_PER_PAGE = gridCols * Math.max(2, Math.ceil(6 / gridCols));
   const [currentPage, setCurrentPage] = useState(1);
 
   const totalPages = Math.max(1, Math.ceil(filteredVideos.length / VIDEOS_PER_PAGE));
+
+  // 한 페이지 개수가 바뀌면(창 크기·배율 변경) 보던 첫 영상이 들어 있는 페이지로 옮긴다
+  const prevPerPage = useRef(VIDEOS_PER_PAGE);
+  useEffect(() => {
+    if (prevPerPage.current === VIDEOS_PER_PAGE) return;
+    const firstIndex = (currentPage - 1) * prevPerPage.current;
+    prevPerPage.current = VIDEOS_PER_PAGE;
+    setCurrentPage(Math.floor(firstIndex / VIDEOS_PER_PAGE) + 1);
+  }, [VIDEOS_PER_PAGE, currentPage]);
 
   // 필터 조건(기간, 검색어) 변경 시 1페이지로 리셋
   useEffect(() => {
@@ -1053,7 +1082,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const paginatedVideos = useMemo(() => {
     const startIndex = (currentPage - 1) * VIDEOS_PER_PAGE;
     return filteredVideos.slice(startIndex, startIndex + VIDEOS_PER_PAGE);
-  }, [filteredVideos, currentPage]);
+  }, [filteredVideos, currentPage, VIDEOS_PER_PAGE]);
 
   const handlePageChange = (newPage) => {
     setCurrentPage(newPage);
@@ -2206,8 +2235,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           </div>
 
 
-          {/* 영상 썸네일 그리드 */}
-          <div className="video-grid">
+          {/* 영상 썸네일 그리드 — 열 수는 CSS 가 화면 폭에 맞춰 정하고, 한 페이지 개수가 그 열 수를 따른다 */}
+          <div className="video-grid" ref={setVideoGridEl}>
             {filteredVideos.length === 0 ? (
               <div className="empty-state">선택한 기간에 해당하는 영상이 없습니다.</div>
             ) : (
