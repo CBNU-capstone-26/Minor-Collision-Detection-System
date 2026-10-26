@@ -10,7 +10,7 @@ from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, UploadFile, Query,
 )
 from fastapi.responses import FileResponse, RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db_connection import get_db
 from app import db_models, api_schemas
@@ -124,6 +124,19 @@ def video_expires_at(v: db_models.Video):
     return v.created_at + timedelta(days=settings.VIDEO_RETENTION_DAYS)
 
 
+def video_list_query(db: Session, user_id: int):
+    """Build the list query with relationships used by ``to_video_out`` loaded up front."""
+    return (
+        db.query(db_models.Video)
+        .options(
+            selectinload(db_models.Video.crash_events),
+            selectinload(db_models.Video.analysis_tasks),
+        )
+        .filter(db_models.Video.user_id == user_id)
+        .order_by(db_models.Video.created_at.desc())
+    )
+
+
 def _last_task_out(v: db_models.Video):
     """가장 최근 분석 작업(없으면 None)."""
     if not v.analysis_tasks:
@@ -203,11 +216,11 @@ def list_videos(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
-    q = db.query(db_models.Video).filter(db_models.Video.user_id == user.id)
+    q = video_list_query(db, user.id)
     if days and days < 9999:
         cutoff = date.today() - timedelta(days=days)
         q = q.filter(db_models.Video.recording_date >= cutoff)
-    videos = q.order_by(db_models.Video.created_at.desc()).all()
+    videos = q.all()
     return [to_video_out(v) for v in videos]
 
 

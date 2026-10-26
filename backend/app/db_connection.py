@@ -14,7 +14,24 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
-engine = create_engine(normalize_database_url(settings.DATABASE_URL), pool_pre_ping=True)
+def create_database_engine(url: str):
+    """Create an engine that does not keep unusable cloud DB connections."""
+    database_url = normalize_database_url(url)
+    connect_args = {"connect_timeout": 5}
+    if database_url.startswith("postgresql+"):
+        # A simple list query must not occupy a worker forever when the
+        # managed PostgreSQL connection is unhealthy.
+        connect_args["options"] = "-c statement_timeout=5000"
+    return create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_timeout=5,
+        connect_args=connect_args,
+    )
+
+
+engine = create_database_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
