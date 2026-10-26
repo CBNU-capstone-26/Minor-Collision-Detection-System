@@ -68,6 +68,7 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         has_raw_clip=bool(ev.clip_path) and raw_clip_path(ev).exists(),
         analyzed_at=_utc(ev.created_at),
         analysis_no=analysis_no(ev),
+        clip_start_sec=ev.clip_start_sec,
     )
 
 

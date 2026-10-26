@@ -1572,7 +1572,6 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 }
 
 
-
 .event-delete-item-btn {
   width: 24px;
   height: 24px;
@@ -1730,6 +1729,51 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   height: 100%;
   object-fit: contain;
   display: block;
+}
+
+/* 빨간 구간에서 원본 위에 겹치는 CAM 클립 — 칸은 영상 그림 영역과 같은 크기, 클립은 폭에 맞추고 위에 붙여
+   아래 S/A 상태 띠(클립 높이의 약 6%)가 칸 밖으로 넘쳐 가려지게 한다.
+   숨길 땐 visibility 대신 투명하게만 둔다 — 숨긴 동안에도 클립 화면을 계속 그려 두어 나타날 때 늦지 않게.
+   동기화가 .shown 을 붙이면 0.25초 동안 서서히 나타난다(원본에서 박스·히트맵이 한 프레임 만에 튀어나오지 않게) */
+.cam-clip-layer {
+  position: absolute;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.cam-clip-layer.shown {
+  opacity: 1;
+}
+
+/* '애니메이션 줄이기'(prefers-reduced-motion, Windows '애니메이션 효과' 끔)에서도 이 페이드는 남긴다 —
+   incident-ui.css 가 그때 모든 전환을 끄는데, 이건 움직임이 아니라 같은 장면에 박스·색이 서서히 입혀지는 것이고
+   없으면 한 프레임 만에 튀어나온다(이 개발 PC 가 그 설정이라 실측으로 확인, 2026-10-27) */
+.dashboard-layout .mock-video-player .cam-clip-layer {
+  transition: opacity 0.25s ease !important;
+}
+
+.cam-clip-layer video {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 컨트롤 줄의 '분석 #N 충돌 표시' — 겹친 클립이 보이는 동안만 */
+.cam-now-chip {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cam-now-chip[hidden] {
+  display: none;
 }
 
 .video-state-label {
@@ -1999,6 +2043,44 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* 빨간 구간 화면 고르기(원본 / CAM) — 재생 속도 옆 두 칸 버튼 */
+.clip-view-toggle {
+  display: inline-flex;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.clip-view-toggle button {
+  padding: 0 9px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.clip-view-toggle button + button {
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.clip-view-toggle button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.clip-view-toggle button.active {
+  background: var(--player-accent);
+  color: #ffffff;
+}
+
+.clip-view-toggle button:focus-visible {
+  outline: 2px solid var(--player-accent);
+  outline-offset: -2px;
 }
 
 .speed-select {

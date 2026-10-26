@@ -68,6 +68,8 @@ function normalizeEvent(e) {
     prob: e.crash_prob,
     hasClip: !!e.has_clip,
     hasRawClip: !!e.has_raw_clip, // 합성 없는 원본 사고 클립을 내려받을 수 있는지
+    // 클립이 원본 영상의 몇 초부터인지 — 재생 화면이 빨간 구간에 CAM 클립을 원본 시각에 맞춰 겹칠 때 쓴다(예전 분석은 null)
+    clipStartSec: e.clip_start_sec ?? null,
     title: "사고 의심 구간",
     status:
       e.crash_prob != null && e.crash_prob >= 0.5 ? "확인 필요" : "분석 완료",

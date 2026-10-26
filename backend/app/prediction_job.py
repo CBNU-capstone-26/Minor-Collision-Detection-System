@@ -131,6 +131,7 @@ def run_prediction_task(self, task_id: int):
                 end_frame_number=r["end_frame"],
                 crash_prob=r["crash_prob"],
                 clip_path=settings.rel_path(r["clip_path"]),
+                clip_start_sec=r.get("clip_start_sec"),
             ))
 
         task.status = "SUCCESS"

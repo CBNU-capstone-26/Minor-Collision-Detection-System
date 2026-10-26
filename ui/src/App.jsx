@@ -183,6 +183,40 @@ function useGridColumns(el, fallback = 3) {
   return cols;
 }
 
+// 재생 위치 t 에 원본 위로 겹쳐 볼 사고 클립 — t 가 빨간 구간 안이면 그 구간, 아니면 lead 초 안에 시작할 구간(미리 불러 둔다).
+// 한 영상을 여러 번 분석해 같은 시각에 클립이 여럿이면 목록·재생바에서 고른 클립(selectedId) → 없으면 가장 최근 분석의 클립.
+// 클립이 원본의 몇 초부터인지(clipStartSec) 저장된 분석만 — 예전 분석은 클립 앞뒤 여유가 시기마다 달라(15·30프레임)
+// 역산하면 0.5초까지 어긋나 원본 시각과 다른 장면이 겹친다(2026-10-27 18번 영상 실측) → 원본을 그대로 보여 준다
+function clipEventAt(events, t, selectedId) {
+  const inSeg = events.filter((e) => e.hasClip && e.clipStartSec != null
+    && t >= e.startSec && t <= Math.max(e.startSec, e.endSec ?? e.startSec));
+  return inSeg.find((e) => e.id === selectedId)
+    || inSeg.reduce((best, e) => (!best || (e.analysisNo ?? 0) > (best.analysisNo ?? 0)
+      || ((e.analysisNo ?? 0) === (best.analysisNo ?? 0) && e.id > best.id) ? e : best), null);
+}
+
+// 빨간 구간·목록의 클립을 누르면 구간 이만큼 앞부터 재생한다 — 사고 장면부터 바로 틀면 갑작스러워서(사용자 요청 2026-10-27).
+// 그동안 CAM 클립을 미리 불러 맞춰 두어 구간에 들어서는 순간 바로 바뀐다
+const EVENT_PREROLL_SEC = 2;
+
+// 재생 위치 t 부터 lead 초 안에 화면에 나올 클립들 — 지금 나올 클립과, 구간 경계에서 바뀌어 나올 클립.
+// 미리 불러 재생 위치를 맞춰 두면 경계에서 바로 바뀐다(그때 불러오면 0.1~0.6초 원본이 비쳤다, 2026-10-27 실측)
+function clipEventsAhead(events, t, selectedId, lead) {
+  const times = [t];
+  events.forEach((e) => {
+    if (!e.hasClip || e.clipStartSec == null) return;
+    [e.startSec, Math.max(e.startSec, e.endSec ?? e.startSec) + 0.001].forEach((b) => {
+      if (b > t && b <= t + lead) times.push(b);
+    });
+  });
+  const out = [];
+  times.forEach((x) => {
+    const ev = clipEventAt(events, x, selectedId);
+    if (ev && !out.includes(ev)) out.push(ev);
+  });
+  return out;
+}
+
 let toastSeq = 0; // 하단 알림 번호 (showToast)
 let bboxSeq = 0; // 고른 차량 박스 번호
 
@@ -858,6 +892,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 간다
   const pollingRef = useRef(new Set()); // 이미 상태를 확인 중인 작업(중복 폴링 방지)
   const [clipEvent, setClipEvent] = useState(null); // 사고 클립 팝업 대상 이벤트
+  // 재생 화면의 빨간 구간에서 보일 화면: "cam"(충돌 부위 히트맵이 합성된 사고 클립) | "orig"(원본 그대로)
+  const [clipView, setClipView] = useState("cam");
+  const camChipRef = useRef(null); // 컨트롤 줄의 '분석 #N 충돌 표시' — 겹친 클립이 보이는 동안만 보인다(동기화가 직접 바꾼다)
   const [pendingDeleteEvent, setPendingDeleteEvent] = useState(null); // 삭제 확인 창 대상 이벤트
   const [pendingClearAll, setPendingClearAll] = useState(false); // 전체 삭제 확인 창
   const [infoVideo, setInfoVideo] = useState(null); // 영상 목록 카드의 ⋮ → 영상 정보 팝업 대상
@@ -1588,13 +1625,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setIsSeeking(false);
   };
 
-  // 이벤트 구간 클릭 → 해당 시점으로 이동 후 재생
+  // 재생바의 빨간 구간·왼쪽 클립 목록 클릭 → 그 구간 2초 앞(EVENT_PREROLL_SEC)부터 재생. 그 클립을 고른 것으로 두어,
+  // 같은 시각에 여러 분석의 클립이 겹치면 이 클립이 메인 화면에 나온다(clipEventAt)
   const seekToEvent = (event) => {
     if (isDetectingVehicles) return;
     setCurrentEventId(event.id);
     const v = videoElRef.current;
     if (v) {
-      v.currentTime = event.startSec ?? event.timestamp;
+      v.currentTime = Math.max(0, (event.startSec ?? event.timestamp) - EVENT_PREROLL_SEC);
       v.play().catch(() => {});
     }
   };
@@ -1825,6 +1863,82 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 차량 탐지·직접 지정 중 — 영상 크기·비율이 바뀌면 그리던 박스·탐지 박스 위치가 흔들리므로
   // 이 동안엔 영상 크기를 바꾸는 기능(영화관 모드·전체화면·오른쪽 패널 열기/닫기)을 쓰지 못하게 한다
   const isChoosingVehicle = selectionMode !== "none" || isDetectingVehicles;
+  // ── 빨간 구간에서 CAM 클립 겹쳐 보기 ─────────────────────────────
+  // 원본 영상·재생바는 그대로 두고, 재생 위치가 빨간 구간 안이면 그 구간의 CAM 클립을 원본과 같은 시각에 맞춰
+  // 영상 그림 위에 겹친다. 지금 나올 클립과 3초 안에 바뀌어 나올 클립을 미리 불러 같은 시각에 맞춰 둔다.
+  // 차량을 고르는 동안엔 원본 화면에서 골라야 하므로 겹치지 않는다
+  const camEnabled = clipView === "cam" && !isChoosingVehicle;
+  const camShown = camEnabled && selectedVideo
+    ? clipEventsAhead(selectedVideo.events, currentTime, currentEventId, 3) : [];
+  const camKey = camShown.map((e) => e.id).join(",");
+
+  // 원본 재생에 맞춰 CAM 클립들의 위치·재생/멈춤·속도를 맞추고, 지금 나올 클립 하나만 보이게 한다.
+  // 재생 중엔 화면을 그릴 때마다 확인해 구간 경계에서 바로 바뀐다(timeupdate 는 약 0.25초 간격이라 늦다)
+  useEffect(() => {
+    const main = videoElRef.current;
+    const overlay = bboxOverlayRef.current;
+    if (!main || !overlay || !camKey) return undefined;
+    const events = selectedVideo?.events || [];
+    const layers = [...overlay.querySelectorAll(".cam-clip-layer")]
+      .map((layer) => ({
+        layer,
+        cam: layer.querySelector("video"),
+        ev: events.find((e) => e.id === Number(layer.dataset.eventId)),
+      }))
+      .filter((x) => x.cam && x.ev);
+    const chip = camChipRef.current;
+    const sync = () => {
+      const now = clipEventAt(events, main.currentTime, currentEventId);
+      let shown = null;
+      layers.forEach(({ layer, cam, ev }) => {
+        const local = main.currentTime - ev.clipStartSec;   // 클립 안 재생 위치
+        const inClip = local >= 0 && local < (cam.duration || 0);
+        if (inClip) {
+          // 재생 중엔 조금(0.12초) 어긋날 때만 맞춘다 — 자꾸 맞추면 오히려 끊긴다. 멈춰 있으면 정확히
+          if (Math.abs(cam.currentTime - local) > (main.paused ? 0.01 : 0.12)) cam.currentTime = local;
+          if (cam.playbackRate !== main.playbackRate) cam.playbackRate = main.playbackRate;
+          if (!main.paused && cam.paused) cam.play().catch(() => {});
+          if (main.paused && !cam.paused) cam.pause();
+        } else if (!cam.paused) {
+          cam.pause();
+        }
+        const show = now?.id === ev.id && inClip && cam.readyState >= 2;
+        layer.classList.toggle("shown", show);   // 0.25초 동안 서서히 나타나고 사라진다(App.css)
+        if (show) shown = ev;
+      });
+      // 어느 분석의 클립이 보이는지는 영상 밖(컨트롤 줄)에 — 영상 위에 쓰면 CCTV 날짜·시각 글자를 가린다
+      if (chip) {
+        chip.hidden = !shown;
+        if (shown) chip.textContent = shown.analysisNo != null ? `분석 #${shown.analysisNo} 충돌 표시` : "충돌 표시";
+      }
+    };
+    let raf = 0;
+    const loop = () => {
+      sync();
+      raf = requestAnimationFrame(loop);
+    };
+    const onPlay = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(loop);
+    };
+    const onPause = () => {
+      cancelAnimationFrame(raf);
+      sync();
+    };
+    const mainEvents = { play: onPlay, pause: onPause, seeking: sync, seeked: sync, ratechange: sync };
+    const camEvents = { loadedmetadata: sync, loadeddata: sync, seeked: sync };
+    Object.entries(mainEvents).forEach(([k, fn]) => main.addEventListener(k, fn));
+    layers.forEach(({ cam }) => Object.entries(camEvents).forEach(([k, fn]) => cam.addEventListener(k, fn)));
+    if (main.paused) sync();
+    else onPlay();
+    return () => {
+      cancelAnimationFrame(raf);
+      Object.entries(mainEvents).forEach(([k, fn]) => main.removeEventListener(k, fn));
+      layers.forEach(({ cam }) => Object.entries(camEvents).forEach(([k, fn]) => cam.removeEventListener(k, fn)));
+      if (chip) chip.hidden = true;
+    };
+  }, [camKey, selectedVideo, currentEventId]);
+
   // 분석 이력에서 고른 분석의 클립이 아직 남아 있으면 '강조 중' (클립을 다 지우면 저절로 풀림)
   const isHighlighting = !!selectedVideo && highlightAnalysisNo != null
     && selectedVideo.events.some((e) => e.analysisNo === highlightAnalysisNo);
@@ -2416,7 +2530,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                             ? ""
                             : event.analysisNo === highlightAnalysisNo ? "analysis-highlight" : "analysis-dim"
                         }`}
-                        onClick={() => setCurrentEventId(event.id)}
+                        /* 누르면 그 구간으로 이동해 재생 — 같은 시각에 여러 분석의 클립이 겹치면 이 클립이 메인 화면에 나온다 */
+                        onClick={() => seekToEvent(event)}
                       >
                         <div className="event-item-top">
                           <span className="event-time-pill">{formatTime(event.timestamp)}</span>
@@ -2693,6 +2808,25 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     }}
                   />
 
+                  {/* 빨간 구간의 CAM 클립 — 영상 그림 영역에 딱 맞춰 겹친다(보이기는 위 동기화가 재생 시각마다 정한다).
+                      클립 아래의 S/A 상태 띠는 칸 밖으로 넘쳐 가려지고, 상태는 박스 색(사고 빨강·정상 초록)으로 보인다 */}
+                  {camShown.map((ev) => (
+                    <div
+                      key={ev.id}
+                      data-event-id={ev.id}
+                      className="cam-clip-layer"
+                      style={renderGeom ? {
+                        left: renderGeom.offsetX,
+                        top: renderGeom.offsetY,
+                        width: renderGeom.vw * renderGeom.scale,
+                        height: renderGeom.vh * renderGeom.scale,
+                      } : { inset: 0 }}
+                      aria-hidden="true"
+                    >
+                      <video src={api.clipUrl(ev.id)} muted playsInline preload="auto" />
+                    </div>
+                  ))}
+
                   {/* 차량 자동 탐지 중: 영상 화면 위에 로딩 표시 */}
                   {isDetectingVehicles && (
                     <div className="vehicle-detect-loading" role="status" aria-live="polite">
@@ -2893,8 +3027,34 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       <span className="time-sep">/</span>
                       {formatTime(Math.floor(playerDuration))}
                     </span>
+                    {/* 지금 화면에 겹쳐 보이는 클립이 어느 분석의 것인지 */}
+                    <span className="cam-now-chip" ref={camChipRef} hidden />
 
                     <div className="right-controls">
+                      {/* 빨간 구간에서 보일 화면 — 원본 / 충돌 표시(CAM 클립: AI 가 충돌로 본 부위를 색으로 칠함).
+                          일반 사용자에게 '히트맵'·'CAM' 은 와닿지 않아 화면에는 '충돌 표시'라고 쓴다 */}
+                      {selectedVideo.events.some((e) => e.hasClip && e.clipStartSec != null) && (
+                        <div className="clip-view-toggle" role="group" aria-label="사고 구간 화면">
+                          <button
+                            type="button"
+                            className={clipView === "orig" ? "active" : ""}
+                            aria-pressed={clipView === "orig"}
+                            onClick={() => setClipView("orig")}
+                            title="빨간 구간에서도 원본 영상을 봅니다"
+                          >
+                            원본
+                          </button>
+                          <button
+                            type="button"
+                            className={clipView === "cam" ? "active" : ""}
+                            aria-pressed={clipView === "cam"}
+                            onClick={() => setClipView("cam")}
+                            title="빨간 구간에서 AI가 충돌로 본 부위를 색으로 칠한 화면을 봅니다(목록에서 고른 클립, 없으면 가장 최근 분석)"
+                          >
+                            충돌 표시
+                          </button>
+                        </div>
+                      )}
                       <select
                         className="speed-select"
                         value={playbackSpeed}

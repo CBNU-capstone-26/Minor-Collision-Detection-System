@@ -57,6 +57,7 @@ class EventOut(BaseModel):
     has_raw_clip: bool = False   # 합성 없는 원본 사고 클립을 내려받을 수 있는지
     analyzed_at: Optional[datetime] = None   # 분석이 끝나 이 클립이 만들어진 시각(UTC, 시간대 포함)
     analysis_no: Optional[int] = None        # 이 클립을 만든 분석이 그 영상의 몇 번째 분석인지(실패·취소 포함, 1부터)
+    clip_start_sec: Optional[float] = None   # 클립이 원본 영상의 몇 초부터인지(이 값을 저장하기 전 분석은 None)
 
 
 class ActiveTaskOut(BaseModel):

@@ -1001,6 +1001,9 @@ def predict_events_and_clips(
                 'crash_prob': crash_prob,
                 'clip_path': clip_path,
                 'raw_clip_path': raw_clip_path,   # 합성 없는 원본 사고 클립(이름 = 클립 + '_raw')
+                # 클립 첫 프레임 = 원본의 이 프레임 — 재생 화면이 원본 시간에 맞춰 CAM 클립을 겹쳐 보여 줄 때 쓴다
+                'clip_start_frame': clip_start,
+                'clip_start_sec': clip_start / fps,
             })
     finally:
         if render_cap is not None:

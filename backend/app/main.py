@@ -84,6 +84,7 @@ _ensure_column("videos", "detected_vehicles TEXT NULL")
 _ensure_column("videos", "title VARCHAR(100) NULL")             # 업로드할 때 넣은 제목
 _ensure_column("analysis_tasks", "finished_at DATETIME NULL")   # 분석 이력: 끝난 시각
 _ensure_column("analysis_tasks", "event_count INT NULL")        # 분석 이력: 찾은 클립 수
+_ensure_column("crash_events", "clip_start_sec FLOAT NULL")     # 클립이 원본의 몇 초부터인지(재생 화면 CAM 겹쳐 보기)
 
 
 def _drop_column(table, column):
