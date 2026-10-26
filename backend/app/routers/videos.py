@@ -60,7 +60,10 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
         has_clip=bool(ev.clip_path),
-        has_raw_clip=bool(raw_clip_key(ev)) and get_storage().exists(raw_clip_key(ev)),
+        # 목록을 만드는 동안 원격 객체 저장소에 HEAD 요청을 보내면, R2 지연 하나가
+        # 영상 목록 전체를 멈춘다. 원본 클립은 분석 결과의 이름 규칙으로 생성되므로
+        # 여기서는 DB 메타데이터만으로 노출 여부를 판단한다.
+        has_raw_clip=bool(raw_clip_key(ev)),
         analyzed_at=_utc(ev.created_at),
         analysis_no=analysis_no(ev),
     )

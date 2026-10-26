@@ -63,6 +63,7 @@ class S3ObjectStorage:
         region: str,
     ):
         import boto3
+        from botocore.config import Config
 
         self.bucket = bucket
         self.client = boto3.client(
@@ -71,6 +72,12 @@ class S3ObjectStorage:
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             region_name=region,
+            # R2 연결이 멈춰도 개별 미디어 요청이 웹 워커를 무기한 점유하지 않게 한다.
+            config=Config(
+                connect_timeout=3,
+                read_timeout=5,
+                retries={"max_attempts": 2, "mode": "standard"},
+            ),
         )
 
     def upload_fileobj(self, fileobj: BinaryIO, key: str, content_type: str | None = None):
