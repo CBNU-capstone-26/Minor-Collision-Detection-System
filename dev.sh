@@ -31,11 +31,25 @@ port_in_use() { ss -ltn "sport = :$1" 2>/dev/null | grep -q LISTEN; }
 # 워커 감싸개: watchfiles 가 재시작하려고 보내는 SIGINT 를 Celery 의 즉시 종료(SIGQUIT)로
 # 바꿔 전달한다. SIGINT 를 그대로 받으면 Celery 는 진행 중 분석이 끝날 때까지 기다리는
 # '정상 종료'를 해서, 코드를 고쳐도 반영이 늦고 강제 종료 시 하위 프로세스가 남을 수 있다.
+#
+# 저장을 연달아 하면(2초 안) 두 번째 SIGINT 가 감싸개가 막 뜬 사이에 와서 15초 뒤 감싸개만 SIGKILL 로 죽고
+# Celery 는 고아로 남았다 — 예전 코드의 워커가 분석을 나눠 받아 새 기능이 빠진 결과가 저장됐다(2026-10-27).
+# 그래서 신호 처리를 Celery 를 띄우기 '전에' 걸고, 띄울 때 남아 있는 이 프로젝트의 워커를 먼저 정리한다.
 run_worker() {
   cd "$ROOT/backend"
+  local pid=""
+  local pattern="$PY/celery -A app.worker worker"
+  # Celery 를 띄우기 전이면 그냥 끝내고, 띄운 뒤면 즉시 종료(QUIT)를 전하고 끝날 때까지 기다린다.
+  # Celery 는 막 뜨는 중엔 QUIT 를 무시해(실측) 5초 안에 안 끝나면 강제 종료한다(하위 프로세스 포함)
+  trap 'if [ -n "$pid" ]; then kill -QUIT "$pid" 2>/dev/null || true; ( sleep 5; pkill -KILL -P "$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null ) & else exit 0; fi' INT TERM
+  if pgrep -f "$pattern" >/dev/null; then
+    echo "[dev] 남아 있던 워커를 정리합니다: $(pgrep -f "$pattern" | tr '\n' ' ')"
+    pkill -QUIT -f "$pattern" || true
+    sleep 2
+    pkill -KILL -f "$pattern" || true
+  fi
   "$PY/celery" -A app.worker worker --concurrency=1 --loglevel=info &
-  local pid=$!
-  trap 'kill -QUIT "$pid" 2>/dev/null || true' INT TERM
+  pid=$!
   while kill -0 "$pid" 2>/dev/null; do
     wait "$pid" || true
   done
