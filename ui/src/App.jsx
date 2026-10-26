@@ -2553,7 +2553,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                               aria-label={`${formatTime(event.timestamp)} 사고구간 클립 재생`}
                               title="사고 구간 클립을 봅니다"
                             >
-                              ▶
+                              {/* 글자 ▶ 는 글꼴마다 모양이 다르고 macOS·iOS 에선 이모지(▶️)로 바뀌어 SVG 로 그린다 */}
+                              <PlayerIcon name="play" size={14} />
                             </button>
                             <button
                               className="event-delete-item-btn"
@@ -2561,7 +2562,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                               title="이 클립을 삭제합니다"
                               aria-label={`${formatTime(event.timestamp)} 사고구간 클립 삭제`}
                             >
-                              <TrashIcon size={14} />
+                              <TrashIcon size={15} />
                             </button>
                           </div>
                         </div>

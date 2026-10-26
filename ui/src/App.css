@@ -1600,50 +1600,74 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 .event-item-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin-left: auto;
 }
 
-
+/* 클립 보기(재생)·삭제 — 같은 28px 칸으로 맞추고 무게를 나눈다: 재생은 채운 원(주 동작), 삭제는 옅은 테두리 칸(보조 동작).
+   예전엔 재생 24px 원 옆에 14px 옅은 회색 휴지통만 있어 삭제가 잘 안 보이고 누르기도 어려웠다 */
 .event-delete-item-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 12px;
-  display: flex;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #64748b;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .event-delete-item-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
 }
 
-
 .event-play-icon-btn {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
   border-radius: 50%;
   background: #3b82f6;
   color: #ffffff;
-  font-size: 10px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   cursor: pointer;
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .event-play-icon-btn:hover {
   background: #1d4ed8;
-  transform: scale(1.1);
+  transform: scale(1.08);
+}
+
+.event-play-icon-btn svg,
+.event-delete-item-btn svg {
+  display: block;
+}
+
+.event-play-icon-btn:focus-visible,
+.event-delete-item-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* 손가락으로 누르는 기기(폰·태블릿)에선 조금 더 크게 */
+@media (pointer: coarse) {
+  .event-play-icon-btn,
+  .event-delete-item-btn {
+    width: 32px;
+    height: 32px;
+  }
 }
 
 .event-item.active .event-play-icon-btn {
@@ -3365,6 +3389,18 @@ body.dark-mode .event-play-icon-btn:hover {
 body.dark-mode .event-item.active .event-play-icon-btn {
   background: #42d7c3;
   color: #10151b;
+}
+
+body.dark-mode .event-delete-item-btn {
+  background: #19232d;
+  border-color: #2a3641;
+  color: #9aa5b1;
+}
+
+body.dark-mode .event-delete-item-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #f87171;
 }
 
 /* 이벤트 상태 태그 (Status Tag) */
