@@ -787,6 +787,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 상태 관리
   const [videos, setVideos] = useState([]); // API에서 로드한 영상 목록
+  const [isLoadingVideos, setIsLoadingVideos] = useState(false);
+  const [videoLoadError, setVideoLoadError] = useState(null);
   const [filterDays, setFilterDays] = useState(9999); // 기본 전체
   const [searchQuery, setSearchQuery] = useState(""); // 상단 검색어
 
@@ -934,13 +936,19 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // API에서 영상 목록 로드
   const loadVideos = async () => {
+    setIsLoadingVideos(true);
+    setVideoLoadError(null);
     try {
       const list = await api.listVideos(9999);
       setVideos(list);
       return list;
     } catch (e) {
-      showToast(`영상 목록을 불러오지 못했습니다: ${e.message}`, "error");
+      const message = `영상 목록을 불러오지 못했습니다: ${e.message}`;
+      setVideoLoadError(message);
+      showToast(message, "error");
       return [];
+    } finally {
+      setIsLoadingVideos(false);
     }
   };
 
@@ -2209,7 +2217,18 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           {/* 영상 썸네일 그리드 */}
           <div className="video-grid">
             {filteredVideos.length === 0 ? (
-              <div className="empty-state">선택한 기간에 해당하는 영상이 없습니다.</div>
+              <div className="empty-state">
+                {videoLoadError ? (
+                  <>
+                    <p>{videoLoadError}</p>
+                    <button type="button" onClick={loadVideos} disabled={isLoadingVideos}>
+                      {isLoadingVideos ? "영상 목록을 불러오는 중…" : "다시 시도"}
+                    </button>
+                  </>
+                ) : (
+                  "선택한 기간에 해당하는 영상이 없습니다."
+                )}
+              </div>
             ) : (
               paginatedVideos.map((video) => {
                 const isSelected = selectedForDelete.includes(video.id);

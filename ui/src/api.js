@@ -20,6 +20,31 @@ export function clearAuth() {
   localStorage.removeItem(USER_KEY);
 }
 
+export async function retryRequest(operation, { attempts = 3, delayMs = 500 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
+export async function withRequestTimeout(operation, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await operation(controller.signal);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function request(path, { method = "GET", body, isForm = false, signal } = {}) {
   const headers = {};
   const token = getToken();
@@ -121,7 +146,8 @@ export const api = {
   // ---------- 영상 ----------
   listVideos: async (days) => {
     const q = days ? `?days=${days}` : "";
-    const list = await request(`/videos${q}`);
+    const list = await retryRequest(() =>
+      withRequestTimeout((signal) => request(`/videos${q}`, { signal }), 7000));
     return list.map(normalizeVideo);
   },
   getVideo: async (id) => normalizeVideo(await request(`/videos/${id}`)),
