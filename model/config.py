@@ -316,10 +316,19 @@ PREDICT_WINDOW_STRIDE = 1
 # 모델이 충돌 뒤 흔들림이 담긴 창도 A로 보기 때문이라 이 값으로는 고칠 수 없다.
 # 이벤트 구간·DB 기록·충격 시점(광학흐름 피크) 계산에는 영향이 없다.
 PREDICT_DISPLAY_OFFSET = 25
-# 서비스 사고 클립에 CAM 히트맵을 합성할지. 사용자 요청(2026-10-10)으로 기본은 끔 —
-# 클립에는 차량 박스와 아래 상태 띠(S/A)만 그린다. 끄면 CAM 계산 자체를 건너뛴다.
-# (CLI 전체 영상 출력 predict_full_video 은 이 설정과 무관하게 CAM 을 그린다)
-PREDICT_CLIP_CAM_OVERLAY = False
+# 서비스 사고 클립에 CAM 히트맵을 합성할지. 2026-10-10 에 껐다가 2026-10-26 사용자 요청으로 다시 켠다 —
+# 다만 bbox 전체를 덮지 않고 사고 판정 근거가 강한 곳(충돌 부위)에만 칠한다(inference._draw_collision_cam).
+# 차량 박스(사고 빨강·정상 초록)와 아래 상태 띠(S/A)는 그대로 그린다.
+# 히트맵 재료는 판정과 같은 추론에서 함께 나와(infer_runtime 의 with_cam) 켜도 분석 속도는 거의 같다.
+# (CLI 전체 영상 출력 predict_full_video 은 이 설정과 무관하게 예전 방식 CAM 을 그린다)
+PREDICT_CLIP_CAM_OVERLAY = True
+# 히트맵을 칠하는 곳: bbox 안 칸별 'A − S' 로짓이 가장 강한 값의 이 비율 이상인 곳(그 아래는 원본 그대로).
+# 낮추면 넓게, 높이면 가장 강한 곳만 좁게 칠한다.
+PREDICT_CLIP_CAM_MIN = 0.5
+# 가장 강한 곳의 히트맵 불투명도(0~1). 기준선에서 0 으로 시작해 안쪽으로 갈수록 진해진다.
+# 0.6 은 옅어 사용자 요청(2026-10-27)으로 올림 — 0.9 는 가운데 차량 모습이 거의 가려진다.
+# 칠하는 넓이는 PREDICT_CLIP_CAM_MIN 이 정하고 이 값은 진하기만 바꾼다
+PREDICT_CLIP_CAM_ALPHA = 0.85
 # 사고 클립 앞뒤로 붙이는 여유(프레임). 사고 판정 구간 앞뒤로 이만큼 더 잘라 보여 준다.
 # (30fps 기준 1초. 프레임 단위라 fps 에 따라 실제 시간은 달라진다)
 PREDICT_CLIP_PAD_FRAMES = 30
@@ -379,7 +388,7 @@ PREDICT_MIN_EVENT_SPAN_FRAMES = 35
 #   · 검사 결과·변환 파일은 INFER_CACHE_DIR 에 저장되고, 가중치·패키지 버전·CPU/GPU·OS 가 같으면
 #     다음부터는 속도를 다시 재지 않고 서버를 띄울 때마다 창 1개로 결과만 빠르게 확인한다(수 초).
 #     처음 한 번의 전체 검사(수십 초)를 미리 해 두기: python -m model.main --mode check-backend
-#   · CAM 히트맵 합성(PREDICT_CLIP_CAM_OVERLAY, 개발용)을 켜면 그 경로는 PyTorch 로 돈다.
+#   · 변환 모델은 판정(logits)과 함께 칸별 클래스 지도(CAM)도 내보내, 사고 클립 히트맵을 켜도 같은 방식으로 돈다.
 INFER_BACKEND = os.getenv("INFER_BACKEND", "auto").strip().lower()
 # GPU FP16(autocast). Tensor Core 가 있는 NVIDIA GPU(연산능력 7.0 이상)에서만 켜지고 자가 검사도 거친다.
 # 학습 서버에서 python -m model.fp16_check 로 속도·평가 결과를 확인한 뒤 켠다(환경변수 INFER_FP16=1).
