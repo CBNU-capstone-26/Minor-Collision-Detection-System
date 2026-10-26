@@ -140,6 +140,10 @@ body.dark-mode .dashboard-layout {
 }
 @media (prefers-reduced-motion: reduce) {
   .dashboard-layout *, .dashboard-layout *::before, .dashboard-layout *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  /* 로딩 표시(차량 탐지 원·분석 준비 막대)는 남긴다 — 멈춰 있으면 고장 난 것처럼 보인다. 진행 중임을 알리는 꼭 필요한 움직임이다
+     (Windows '애니메이션 효과'를 끈 개발 PC 에서 탐지 원이 멈춰 보여 확인, 2026-10-27) */
+  .dashboard-layout .vehicle-detect-spinner { animation: spinner-spin 0.85s infinite linear !important; }
+  .dashboard-layout .analysis-progress-fill.is-indeterminate { animation: analysis-progress-indeterminate 1.2s ease-in-out infinite !important; }
 }
 .dashboard-layout .auto-detect-btn:not(.active), .dashboard-layout .bbox-designate-btn:not(.active) {
   color: var(--incident-accent); border-color: var(--incident-accent); background: var(--incident-surface);
