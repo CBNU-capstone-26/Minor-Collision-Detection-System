@@ -1084,19 +1084,52 @@ body.dark-mode .video-info-list dt {
 
 /* 넓은 화면(1280px 이상): 왼쪽 사고 클립 · 가운데 영상 · 오른쪽 분석 이력 세 칸 */
 @media (min-width: 1280px) {
+  /* 오른쪽 패널 열기·닫기를 부드럽게: 칸 수는 그대로 두고 오른쪽 칸 폭만 270 → 0 으로 줄인다
+     (칸 수가 바뀌면 애니메이션이 걸리지 않는다). 그래서 칸 사이 10px 는 grid gap 대신 각 칸의 바깥 여백으로 둔다 —
+     gap 으로 두면 0 이 된 칸 앞에 10px 가 남는다 */
   .watch-layout {
-    grid-template-columns: 280px minmax(0, var(--player-max-w)) 260px;
+    grid-template-columns: 290px minmax(0, var(--player-max-w)) 270px;
+    column-gap: 0;
+    transition: grid-template-columns 0.3s ease;
+  }
+
+  .watch-layout > .watch-side {
+    margin-right: 10px;
   }
 
   /* 오른쪽 칸: 진행 단계(위, 세로) + 분석 이력(아래, 남은 높이를 채움).
      분석 이력을 숨겨도 진행 단계가 있어 칸 폭은 그대로 두고, 이력 자리엔 '분석 이력' 버튼만 남는다 */
   .watch-right {
     height: min(var(--watch-avail-h), var(--watch-side-max-h));
+    margin-left: 10px;
+    overflow: hidden;
+    transition: margin-left 0.3s ease, opacity 0.2s ease;
   }
 
-  /* 오른쪽 패널을 닫으면 그 칸이 빠지고 영상 칸이 넓어진다 (영상은 화면 높이에 꽉 찰 때까지 커짐) */
+  /* 줄어드는 동안 속 내용은 폭을 그대로 두고 잘리게 — 글자가 좁은 폭에 맞춰 다시 접히며 흔들리지 않게 */
+  .watch-right > * {
+    min-width: 260px;
+  }
+
+  /* 오른쪽 패널을 닫으면 그 칸이 0 으로 줄고(서서히 투명해지며) 영상 칸이 넓어진다
+     (영상은 화면 높이에 꽉 찰 때까지 커지고, 남는 폭은 양옆 여백으로 — 페이지 가운데 맞춤도 함께 움직인다) */
   .watch-layout.history-collapsed {
-    grid-template-columns: 280px minmax(0, var(--player-max-w));
+    grid-template-columns: 290px minmax(0, var(--player-max-w)) 0px;
+  }
+
+  .watch-layout.history-collapsed > .watch-right {
+    margin-left: 0;
+    opacity: 0;
+  }
+
+  /* '애니메이션 줄이기'(Windows '애니메이션 효과' 끔)면 incident-ui.css 가 모든 전환을 끄는데, 이 열기·닫기는
+     사용자 요청(2026-10-27)으로 남긴다 — 이 개발 PC 가 그 설정이라 끄면 효과가 아예 안 보인다 */
+  .dashboard-layout .watch-layout {
+    transition: grid-template-columns 0.3s ease !important;
+  }
+
+  .dashboard-layout .watch-layout > .watch-right {
+    transition: margin-left 0.3s ease, opacity 0.2s ease !important;
   }
 
   .watch-right > .analysis-history {

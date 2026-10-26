@@ -3097,26 +3097,25 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               </div>
             </section>
 
-            {/* 오른쪽 패널: (1280px 이상) 진행 단계 + 이 영상의 분석 이력. 넓은 화면에서 닫으면 칸째 빠진다(헤더의 '패널 닫기').
-                좁은 화면에선 영상 아래에 늘 보인다(영상 크기와 상관없음) */}
-            {(isHistoryOpen || !isXLScreen) && (
-              <div className="watch-right">
-                {isXLScreen && workflowSteps}
-                <AnalysisHistoryPanel
-                  history={selectedVideo.analysisHistory || []}
-                  events={selectedVideo.events}
-                  progressText={(taskId) => {
-                    const job = analyzingJobs.find((j) => j.taskId === taskId);
-                    return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
-                  }}
-                  activeNo={highlightAnalysisNo}
-                  onSelect={(history) => {
-                    // 그 분석의 클립을 왼쪽 목록에서 강조(나머지는 흐리게). 같은 이력을 다시 누르면 해제
-                    setHighlightAnalysisNo((cur) => (cur === history.no ? null : history.no));
-                  }}
-                />
-              </div>
-            )}
+            {/* 오른쪽 패널: (1280px 이상) 진행 단계 + 이 영상의 분석 이력. 넓은 화면에서 닫으면(헤더의 '패널 닫기') 칸 폭이
+                0.3초 동안 0 으로 줄며 사라진다(App.css) — 그동안 보이도록 닫혀도 화면에서 빼지 않고, 대신 inert 로
+                보이지 않는 버튼에 Tab·클릭이 가지 않게 한다. 좁은 화면에선 영상 아래에 늘 보인다(영상 크기와 상관없음) */}
+            <div className="watch-right" inert={isXLScreen && !isHistoryOpen} aria-hidden={isXLScreen && !isHistoryOpen ? true : undefined}>
+              {isXLScreen && workflowSteps}
+              <AnalysisHistoryPanel
+                history={selectedVideo.analysisHistory || []}
+                events={selectedVideo.events}
+                progressText={(taskId) => {
+                  const job = analyzingJobs.find((j) => j.taskId === taskId);
+                  return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
+                }}
+                activeNo={highlightAnalysisNo}
+                onSelect={(history) => {
+                  // 그 분석의 클립을 왼쪽 목록에서 강조(나머지는 흐리게). 같은 이력을 다시 누르면 해제
+                  setHighlightAnalysisNo((cur) => (cur === history.no ? null : history.no));
+                }}
+              />
+            </div>
           </div>
         </main>
       )}
