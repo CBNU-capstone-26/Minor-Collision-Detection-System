@@ -1002,12 +1002,28 @@ body.dark-mode .video-info-list dt {
 /* ---------------- 영상 시청 뷰 ---------------- */
 .watch-view {
   padding: 10px 12px;
-  max-width: 1920px;
+  /* 고정 폭 상한 없음 — 브라우저를 축소하거나 큰 모니터면 영상이 넓어진 화면만큼 커진다(예전 1920px 에서 멈춤).
+     영상 칸 폭은 --player-max-w 까지라, 넓은 화면은 아래 fit-content 로 세 칸을 가운데에 모은다 */
+  max-width: none;
   margin: 0 auto;
   /* 영상 화면이 쓸 수 있는 높이 = 화면 높이 - 상단 바(55px) - 위아래 여백(10px × 2) */
   --watch-avail-h: calc(100vh - 75px);
+  /* 영상 칸 폭 상한 — 16:9 영상이 그 높이에 꽉 찰 때까지만(양옆 검은 여백 없음) */
+  --player-max-w: calc((var(--watch-avail-h) - var(--player-controls-h)) * 16 / 9);
+  /* 왼쪽(클립·달력)·오른쪽(진행 단계·분석 이력) 칸 높이 상한 — 세로로 긴 화면에서 칸이 끝없이 늘지 않게.
+     1080p 100%(칸 높이 약 928px)보다 커서 보통 화면은 그대로다 */
+  --watch-side-max-h: 960px;
   /* 영상 아래 재생바 + 컨트롤 줄 높이 */
   --player-controls-h: 68px;
+}
+
+/* 넓은 화면(1025px 이상): 영상은 높이에 막혀 --player-max-w 보다 넓어지지 않으므로, 화면 폭이 남으면
+   (울트라와이드·1440p·브라우저 축소) 페이지 폭을 내용(칸들 + 영상 최대 폭)에 맞추고 가운데에 둔다.
+   그대로 두면 영상과 오른쪽 칸 사이가 비고, 머리줄(제목·패널 버튼)도 같은 폭이라 칸들과 줄이 맞는다 */
+@media (min-width: 1025px) {
+  .watch-view:not(.theater-view) {
+    width: fit-content;
+  }
 }
 
 .watch-view.theater-view {
@@ -1057,7 +1073,7 @@ body.dark-mode .video-info-list dt {
 
 .watch-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, var(--player-max-w));
   gap: 10px;
   align-items: flex-start;
 }
@@ -1066,33 +1082,54 @@ body.dark-mode .video-info-list dt {
   max-width: none;
 }
 
-.watch-layout.sidebar-collapsed {
-  grid-template-columns: auto minmax(0, 1fr);
-}
-
 /* 넓은 화면(1280px 이상): 왼쪽 사고 클립 · 가운데 영상 · 오른쪽 분석 이력 세 칸 */
 @media (min-width: 1280px) {
+  /* 오른쪽 패널 열기·닫기를 부드럽게: 칸 수는 그대로 두고 오른쪽 칸 폭만 270 → 0 으로 줄인다
+     (칸 수가 바뀌면 애니메이션이 걸리지 않는다). 그래서 칸 사이 10px 는 grid gap 대신 각 칸의 바깥 여백으로 둔다 —
+     gap 으로 두면 0 이 된 칸 앞에 10px 가 남는다 */
   .watch-layout {
-    grid-template-columns: 280px minmax(0, 1fr) 260px;
+    grid-template-columns: 290px minmax(0, var(--player-max-w)) 270px;
+    column-gap: 0;
+    transition: grid-template-columns 0.3s ease;
   }
 
-  .watch-layout.sidebar-collapsed {
-    grid-template-columns: auto minmax(0, 1fr) 260px;
+  .watch-layout > .watch-side {
+    margin-right: 10px;
   }
 
   /* 오른쪽 칸: 진행 단계(위, 세로) + 분석 이력(아래, 남은 높이를 채움).
      분석 이력을 숨겨도 진행 단계가 있어 칸 폭은 그대로 두고, 이력 자리엔 '분석 이력' 버튼만 남는다 */
   .watch-right {
-    height: var(--watch-avail-h);
+    height: min(var(--watch-avail-h), var(--watch-side-max-h));
+    margin-left: 10px;
+    overflow: hidden;
+    transition: margin-left 0.3s ease, opacity 0.2s ease;
   }
 
-  /* 오른쪽 패널을 닫으면 그 칸이 빠지고 영상 칸이 넓어진다 (영상은 화면 높이에 꽉 찰 때까지 커짐) */
+  /* 줄어드는 동안 속 내용은 폭을 그대로 두고 잘리게 — 글자가 좁은 폭에 맞춰 다시 접히며 흔들리지 않게 */
+  .watch-right > * {
+    min-width: 260px;
+  }
+
+  /* 오른쪽 패널을 닫으면 그 칸이 0 으로 줄고(서서히 투명해지며) 영상 칸이 넓어진다
+     (영상은 화면 높이에 꽉 찰 때까지 커지고, 남는 폭은 양옆 여백으로 — 페이지 가운데 맞춤도 함께 움직인다) */
   .watch-layout.history-collapsed {
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 290px minmax(0, var(--player-max-w)) 0px;
   }
 
-  .watch-layout.sidebar-collapsed.history-collapsed {
-    grid-template-columns: auto minmax(0, 1fr);
+  .watch-layout.history-collapsed > .watch-right {
+    margin-left: 0;
+    opacity: 0;
+  }
+
+  /* '애니메이션 줄이기'(Windows '애니메이션 효과' 끔)면 incident-ui.css 가 모든 전환을 끄는데, 이 열기·닫기는
+     사용자 요청(2026-10-27)으로 남긴다 — 이 개발 PC 가 그 설정이라 끄면 효과가 아예 안 보인다 */
+  .dashboard-layout .watch-layout {
+    transition: grid-template-columns 0.3s ease !important;
+  }
+
+  .dashboard-layout .watch-layout > .watch-right {
+    transition: margin-left 0.3s ease, opacity 0.2s ease !important;
   }
 
   .watch-right > .analysis-history {
@@ -1397,19 +1434,15 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   overflow-y: auto;
 }
 
-.event-sidebar.collapsed {
-  overflow-y: auto;
-}
-
-/* 열린 사이드바: 머리말 · 이벤트 목록 · 달력을 위아래로 나눈다.
+/* 사이드바: 머리말 · 이벤트 목록 · 달력을 위아래로 나눈다.
    이벤트가 많아지면 목록 안에서만 스크롤되고 달력은 아래에 고정된다 */
-.event-sidebar:not(.collapsed) {
+.event-sidebar {
   display: flex;
   flex-direction: column;
 }
 
-.event-sidebar:not(.collapsed) > .event-sidebar-header,
-.event-sidebar:not(.collapsed) > .sidebar-calendar-container {
+.event-sidebar > .event-sidebar-header,
+.event-sidebar > .sidebar-calendar-container {
   flex-shrink: 0;
 }
 
@@ -1454,9 +1487,8 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   flex-shrink: 0;
 }
 
-/* 전체 삭제 · × 를 같은 높이(28px)로 맞춘다 */
-.event-header-actions .event-clear-all-btn,
-.event-header-actions .sidebar-icon-btn {
+/* 전체 삭제 버튼 높이 28px */
+.event-header-actions .event-clear-all-btn {
   height: 28px;
   box-sizing: border-box;
 }
@@ -1465,15 +1497,6 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   display: inline-flex;
   align-items: center;
   padding: 0 10px;
-}
-
-.event-header-actions .sidebar-icon-btn {
-  width: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  font-size: 20px;
 }
 
 .event-clear-all-btn {
@@ -1493,35 +1516,6 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   background: #ef4444;
   border-color: #ef4444;
   color: #ffffff;
-}
-
-.sidebar-icon-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 4px;
-  background: #f8fafc;
-  color: #1e3a8a;
-  font-size: 22px;
-  line-height: 1;
-  font-weight: 700;
-}
-
-.sidebar-icon-btn:hover,
-.sidebar-open-btn:hover {
-  background: #e2e8f0;
-}
-
-.sidebar-open-btn {
-  width: 100%;
-  margin-bottom: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 5px;
-  background: #ffffff;
-  color: #1e3a8a;
-  font-size: 14px;
-  font-weight: 700;
-  padding: 10px 14px;
 }
 
 .calendar-side-panel {
@@ -1606,51 +1600,74 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 .event-item-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin-left: auto;
 }
 
-
-
+/* 클립 보기(재생)·삭제 — 같은 28px 칸으로 맞추고 무게를 나눈다: 재생은 채운 원(주 동작), 삭제는 옅은 테두리 칸(보조 동작).
+   예전엔 재생 24px 원 옆에 14px 옅은 회색 휴지통만 있어 삭제가 잘 안 보이고 누르기도 어려웠다 */
 .event-delete-item-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 12px;
-  display: flex;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #64748b;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .event-delete-item-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
 }
 
-
 .event-play-icon-btn {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
   border-radius: 50%;
   background: #3b82f6;
   color: #ffffff;
-  font-size: 10px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   cursor: pointer;
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .event-play-icon-btn:hover {
   background: #1d4ed8;
-  transform: scale(1.1);
+  transform: scale(1.08);
+}
+
+.event-play-icon-btn svg,
+.event-delete-item-btn svg {
+  display: block;
+}
+
+.event-play-icon-btn:focus-visible,
+.event-delete-item-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* 손가락으로 누르는 기기(폰·태블릿)에선 조금 더 크게 */
+@media (pointer: coarse) {
+  .event-play-icon-btn,
+  .event-delete-item-btn {
+    width: 32px;
+    height: 32px;
+  }
 }
 
 .event-item.active .event-play-icon-btn {
@@ -1681,64 +1698,6 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   font-weight: 600;
 }
 
-.next-video-section {
-  margin-top: 12px;
-}
-
-.next-video-section h3 {
-  margin: 0 0 8px;
-  color: #1f2937;
-  font-size: 14px;
-  font-weight: 900;
-}
-
-.next-video-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.next-video-card {
-  width: 100%;
-  border: 1px solid #d1d5db;
-  border-radius: 5px;
-  background: #eff6ff;
-  color: #1e3a8a;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  text-align: left;
-}
-
-.next-video-card:hover {
-  background: #d1d5db;
-  border-color: #3b82f6;
-}
-
-.next-video-label {
-  color: #1d4ed8;
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.next-video-card strong {
-  color: #1f2937;
-  font-size: 13px;
-}
-
-.next-video-card span:not(.next-video-label) {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.next-video-card small {
-  color: #1d4ed8;
-  font-size: 11px;
-  font-weight: 700;
-}
-
 .status-tag.확인\ 필요 {
   background: #fee2e2;
   color: #b91c1c;
@@ -1763,7 +1722,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  max-width: calc((var(--watch-avail-h) - var(--player-controls-h)) * 16 / 9);
+  max-width: var(--player-max-w);
   max-height: var(--watch-avail-h);
 }
 
@@ -2018,13 +1977,6 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   color: var(--player-accent);
 }
 
-/* 쓸 수 없는 컨트롤(차량을 고르는 중의 영화관·전체화면·왼쪽 클립 칸 닫기/열기) */
-.sidebar-icon-btn:disabled,
-.sidebar-open-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
 .control-btn:disabled,
 .control-btn:disabled:hover {
   opacity: 0.35;
@@ -2168,10 +2120,6 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
     flex: 0 1 auto;
     min-height: 0;
     max-height: 280px;
-  }
-
-  .sidebar-open-btn {
-    width: 100%;
   }
 
   .calendar-side-panel {
@@ -3304,28 +3252,6 @@ body.dark-mode .event-summary {
   color: #42d7c3;
 }
 
-body.dark-mode .sidebar-icon-btn {
-  background: #19232d;
-  border: 1px solid #2a3641;
-  color: #42d7c3;
-}
-
-body.dark-mode .sidebar-icon-btn:hover {
-  background: rgba(66, 215, 195, 0.16);
-  border-color: #42d7c3;
-}
-
-body.dark-mode .sidebar-open-btn {
-  background: #19232d;
-  border-color: #2a3641;
-  color: #42d7c3;
-}
-
-body.dark-mode .sidebar-open-btn:hover {
-  background: #1f2b36;
-  border-color: #42d7c3;
-}
-
 /* 이벤트 사이드바 내부 달력 구분선 */
 body.dark-mode .sidebar-calendar-container {
   border-top-color: #2a3641;
@@ -3382,6 +3308,18 @@ body.dark-mode .event-item.active .event-play-icon-btn {
   color: #10151b;
 }
 
+body.dark-mode .event-delete-item-btn {
+  background: #19232d;
+  border-color: #2a3641;
+  color: #9aa5b1;
+}
+
+body.dark-mode .event-delete-item-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #f87171;
+}
+
 /* 이벤트 상태 태그 (Status Tag) */
 body.dark-mode .status-tag.확인\ 필요 {
   background: rgba(239, 68, 68, 0.18);
@@ -3399,39 +3337,6 @@ body.dark-mode .status-tag.오탐\ 가능 {
   background: rgba(245, 158, 11, 0.18);
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, 0.35);
-}
-
-/* 다음 영상 추천 섹션 (Next Video Section) */
-body.dark-mode .next-video-section h3 {
-  color: #f8fafc;
-}
-
-body.dark-mode .next-video-card {
-  background: #19232d;
-  border: 1px solid #2a3641;
-  color: #cbd5e1;
-}
-
-body.dark-mode .next-video-card:hover {
-  background: #1f2b36;
-  border-color: #42d7c3;
-  box-shadow: 0 4px 14px rgba(66, 215, 195, 0.15);
-}
-
-body.dark-mode .next-video-label {
-  color: #42d7c3;
-}
-
-body.dark-mode .next-video-card strong {
-  color: #f8fafc;
-}
-
-body.dark-mode .next-video-card span:not(.next-video-label) {
-  color: #cbd5e1;
-}
-
-body.dark-mode .next-video-card small {
-  color: #38bdf8;
 }
 
 /* 비디오 재생바 & 커스텀 컨트롤러 */

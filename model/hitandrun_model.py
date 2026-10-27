@@ -56,6 +56,7 @@ class HitAndRun3DCNN(nn.Module):
       - 입력 (B, 3, T, 224, 224) → 출력 (B, num_classes) logits
       - `head_conv`   : 1×1×1 Conv3d 분류 헤드 (CAM 가중치로 사용)
       - `cam_layer`   : CAM forward hook 대상 (2048채널 공간 특징맵)
+      - `forward_with_cam` : logits + 칸별 클래스 지도(CAM) — 서비스 사고 클립 히트맵용
 
     Args:
         num_classes: 분류 클래스 수 (기본 2: S/A)
@@ -107,3 +108,17 @@ class HitAndRun3DCNN(nn.Module):
         x = self.dropout(x)
         x = self.head_conv(x)
         return x.squeeze(-1).squeeze(-1).squeeze(-1)
+
+    def forward_with_cam(self, x):
+        """forward 와 같은 logits (B, C) + 칸별 클래스 지도(CAM) (B, C, 7, 7) — 추론 전용.
+
+        CAM 은 분류 헤드(1×1×1 Conv)를 공간 평균 '전에' 7×7 칸마다 적용한 것이다. 평균과 1×1 Conv 는
+        순서를 바꿔도 같아서 칸 평균이 곧 logits 이고, 칸마다 'A − S' 를 보면 그 칸이 사고 쪽으로 얼마나
+        기울였는지가 된다. 판정에 이미 계산하는 특징맵을 쓰므로 추가 비용은 칸 49개의 1×1 곱셈뿐이라,
+        빠른 실행기(ONNX·OpenVINO)도 이 두 출력을 함께 내보내 CAM 을 거의 공짜로 얻는다(infer_runtime.py).
+        logits 는 forward 와 같은 경로(평균 → Conv)로 계산해 판정 결과가 바뀌지 않게 한다.
+        """
+        x = self.head_pool(self.features(x))            # (B, 2048, 1, 7, 7)
+        cam = self.head_conv(x)[:, :, 0]                # (B, C, 7, 7)
+        x = self.head_conv(self.dropout(self.avg_pool(x)))
+        return x.squeeze(-1).squeeze(-1).squeeze(-1), cam

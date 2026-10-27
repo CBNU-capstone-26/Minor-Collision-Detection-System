@@ -168,6 +168,38 @@ def _add_state_bar(frame, state):
     return np.vstack([frame, bar])
 
 
+def _draw_collision_cam(frame, cam, square, box, min_rel=config.PREDICT_CLIP_CAM_MIN,
+                        alpha=config.PREDICT_CLIP_CAM_ALPHA, gamma=config.PREDICT_CLIP_CAM_GAMMA):
+    """사고 판정 근거가 강한 곳(충돌 부위)에만 CAM 히트맵을 칠한다(frame 을 바로 고침).
+
+    cam   : 정사각 크롭의 7×7 칸별 'A − S' 로짓. 칸 평균이 곧 판정 로짓 차라, 클수록 그 칸이 사고 쪽 근거다.
+    square: 정사각 크롭의 원본 좌표 (x1, y1, x2, y2) — 영상 밖으로 나간 부분 포함
+    box   : 칠할 bbox 의 원본 좌표 (x1, y1, x2, y2) — 영상 안으로 자른 것
+    bbox 안에서 가장 강한 값의 min_rel 배 이상인 곳만, 강할수록 진하게(최대 alpha, 빠르기 gamma) 칠하고 나머지는 원본 그대로 둔다.
+    색은 바깥 하늘색 → 초록 → 노랑 → 가운데 빨강의 고리 — 사용자가 보여 준 참고 모양(충돌 지점에 작은 무지개 고리, 2026-10-27).
+    JET 의 아주 파란 끝(0~0.2)은 쓰지 않는다 — 가장자리가 짙은 파랑이면 칠한 곳이 멍처럼 보인다.
+    (예전엔 bbox 전체에 JET 를 40% 덮어 근거가 약한 곳까지 파랗게 칠해졌다)
+    """
+    sx1, sy1, sx2, sy2 = square
+    bx1, by1, bx2, by2 = box
+    if bx2 <= bx1 or by2 <= by1:
+        return
+    big = cv2.resize(np.asarray(cam, dtype=np.float32), (sx2 - sx1, sy2 - sy1), interpolation=cv2.INTER_CUBIC)
+    # bbox 부분만 — 반올림으로 정사각보다 1px 넘칠 수 있어 자른 뒤 bbox 크기에 맞춘다
+    part = big[max(0, by1 - sy1):max(0, by2 - sy1), max(0, bx1 - sx1):max(0, bx2 - sx1)]
+    if part.size == 0:
+        return
+    part = cv2.resize(part, (bx2 - bx1, by2 - by1))
+    peak = float(part.max())
+    if peak <= 0:
+        return                      # bbox 안에 사고 쪽 근거가 없으면 칠하지 않는다
+    t = np.clip((part / peak - min_rel) / (1 - min_rel), 0, 1)     # 기준선 0 ~ 가장 강한 곳 1
+    a = (t ** gamma * alpha)[..., None]
+    color = cv2.applyColorMap(((0.2 + 0.8 * t) * 255).astype(np.uint8), cv2.COLORMAP_JET)
+    roi = frame[by1:by2, bx1:bx2]
+    frame[by1:by2, bx1:bx2] = (roi * (1 - a) + color * a).astype(np.uint8)
+
+
 def predict_full_video(
     model,
     video_path=config.PREDICT_VIDEO_PATH,
@@ -505,507 +537,487 @@ def predict_events_and_clips(
     target_bbox = [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])]
 
     # 3D-CNN 실행기 — 서버 컴퓨터에 맞는 가장 빠른 방식(infer_runtime.py, 처음 한 번만 고름).
-    # CAM 히트맵 합성(개발용, 기본 꺼짐)을 켰을 때만 예전처럼 PyTorch + hook 으로 특징맵을 받는다.
-    runner = None if cam_overlay else get_runner(model)
-    handle = (model.cam_layer.register_forward_hook(make_activation_hook('cam_layer'))
-              if cam_overlay else None)
-    try:
-        # ── 영상을 처음부터 끝까지 한 번 읽으며 바로 판정한다(스트리밍) ──────────────
-        # 예전엔 224 크롭 프레임을 영상 전체만큼 메모리에 쌓은 뒤 float 텐서로 바꿔 판정해
-        # 프레임당 약 2MB(1시간 영상 ≈ 200GB)가 들었다. 이제 최근 프레임 몇십 장만 두고,
-        #  · 거친 탐색 창(coarse_step 간격)은 프레임이 다 들어오는 대로 판정하고
-        #  · 의심 창 주변(±coarse_pad)의 창은 그 프레임이 버퍼에 남아 있을 때 판정한다.
-        # 판정하는 창의 집합과 두 개씩 묶는 순서(배치)는 예전과 같다 → 결과가 같다.
-        #   거친 창: 영상 순서대로 묶고, 끝 창이 격자에 없으면 맨 뒤에 붙인다(예전과 동일).
-        #   촘촘한 창: 전체를 정렬한 순서로 묶는다. 앞으로 나올 의심 창은 '아직 판정 안 한
-        #   거친 창 - coarse_pad' 이후에만 생기므로, 그보다 앞선 창은 순서가 확정된다.
-        cap = cv2.VideoCapture(video_path)
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    # CAM 히트맵도 같은 실행기가 판정과 함께 내준다(runner.with_cam). 클립을 안 만들면(평가) 받지 않는다.
+    runner = get_runner(model)
+    cam_overlay = cam_overlay and render_clips
+    # ── 영상을 처음부터 끝까지 한 번 읽으며 바로 판정한다(스트리밍) ──────────────
+    # 예전엔 224 크롭 프레임을 영상 전체만큼 메모리에 쌓은 뒤 float 텐서로 바꿔 판정해
+    # 프레임당 약 2MB(1시간 영상 ≈ 200GB)가 들었다. 이제 최근 프레임 몇십 장만 두고,
+    #  · 거친 탐색 창(coarse_step 간격)은 프레임이 다 들어오는 대로 판정하고
+    #  · 의심 창 주변(±coarse_pad)의 창은 그 프레임이 버퍼에 남아 있을 때 판정한다.
+    # 판정하는 창의 집합과 두 개씩 묶는 순서(배치)는 예전과 같다 → 결과가 같다.
+    #   거친 창: 영상 순서대로 묶고, 끝 창이 격자에 없으면 맨 뒤에 붙인다(예전과 동일).
+    #   촘촘한 창: 전체를 정렬한 순서로 묶는다. 앞으로 나올 의심 창은 '아직 판정 안 한
+    #   거친 창 - coarse_pad' 이후에만 생기므로, 그보다 앞선 창은 순서가 확정된다.
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
-        ret, first_frame = cap.read()
-        if not ret:
-            cap.release()
-            return []
-        orig_h, orig_w = first_frame.shape[:2]
-        _, (rx1, ry1, rx2, ry2) = _crop_square_and_pad(
-            first_frame, target_bbox, r_value, resize)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    ret, first_frame = cap.read()
+    if not ret:
+        cap.release()
+        return []
+    orig_h, orig_w = first_frame.shape[:2]
+    _, (rx1, ry1, rx2, ry2) = _crop_square_and_pad(
+        first_frame, target_bbox, r_value, resize)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-        # 원본 bbox 영역(프레임 경계로 클램프) — CAM 오버레이·박스를 사용자가 지정한
-        # 실제 bbox 크기로 그리기 위해 사용한다(정사각 크롭 크기가 아님).
-        bx1, by1 = max(0, target_bbox[0]), max(0, target_bbox[1])
-        bx2, by2 = min(orig_w, target_bbox[2]), min(orig_h, target_bbox[3])
+    # 원본 bbox 영역(프레임 경계로 클램프) — CAM 오버레이·박스를 사용자가 지정한
+    # 실제 bbox 크기로 그리기 위해 사용한다(정사각 크롭 크기가 아님).
+    bx1, by1 = max(0, target_bbox[0]), max(0, target_bbox[1])
+    bx2, by2 = min(orig_w, target_bbox[2]), min(orig_h, target_bbox[3])
 
-        # 피해차 bbox를 224 크롭 좌표계로 환산 → 충격 '시점' 판정 전용 ROI.
-        # (정사각 크롭 여백을 지나는 가해차량 모션에 시점이 끌려가지 않게 한다)
-        _cw = max(1, rx2 - rx1)
-        _ch = max(1, ry2 - ry1)
-        _sx, _sy = resize[0] / _cw, resize[1] / _ch
-        _roi = (
-            max(0, min(resize[0] - 1, int((bx1 - rx1) * _sx))),
-            max(0, min(resize[1] - 1, int((by1 - ry1) * _sy))),
-            max(1, min(resize[0], int((bx2 - rx1) * _sx))),
-            max(1, min(resize[1], int((by2 - ry1) * _sy))),
-        )
+    # 피해차 bbox를 224 크롭 좌표계로 환산 → 충격 '시점' 판정 전용 ROI.
+    # (정사각 크롭 여백을 지나는 가해차량 모션에 시점이 끌려가지 않게 한다)
+    _cw = max(1, rx2 - rx1)
+    _ch = max(1, ry2 - ry1)
+    _sx, _sy = resize[0] / _cw, resize[1] / _ch
+    _roi = (
+        max(0, min(resize[0] - 1, int((bx1 - rx1) * _sx))),
+        max(0, min(resize[1] - 1, int((by1 - ry1) * _sy))),
+        max(1, min(resize[0], int((bx2 - rx1) * _sx))),
+        max(1, min(resize[1], int((by2 - ry1) * _sy))),
+    )
 
-        def _report(frac=None, eta=None, eta_min=False, stage=None, count=None, index=None):
-            """진행률(0~1)·지금 단계·(단계의 남은 시간)을 보고한다. 화면은 진행률과 단계 이름을 보여 준다.
+    def _report(frac=None, eta=None, eta_min=False, stage=None, count=None, index=None):
+        """진행률(0~1)·지금 단계·(단계의 남은 시간)을 보고한다. 화면은 진행률과 단계 이름을 보여 준다.
 
-            stage: decode(영상 불러오기) · motion(차량 움직임 계산) · coarse(영상 전체 훑어보기,
-                   count=지금까지 찾은 의심 지점 수) · refine(의심 구간 자세히 보기, index/count)
-                   · scan(거친 탐색 없이 전부 보기) · events(사고 구간 정리) · render(사고 클립
-                   만들기, index/count)
-            진행률은 뒤로 가지 않는다(아래 _run_windows 주석). 100%는 작업 완료(SUCCESS)로만
-            표시되게 0.99에서 멈춘다. eta 는 '지금 단계'의 남은 시간(초, 모르면 None)."""
-            if progress_callback is None:
-                return
-            if eta is not None:
-                eta = max(0.0, float(eta))
-            progress_callback(min(0.99, frac or 0.0), eta, eta_min, stage, count, index)
+        stage: decode(영상 불러오기) · motion(차량 움직임 계산) · coarse(영상 전체 훑어보기,
+               count=지금까지 찾은 의심 지점 수) · refine(의심 구간 자세히 보기, index/count)
+               · scan(거친 탐색 없이 전부 보기) · events(사고 구간 정리) · render(사고 클립
+               만들기, index/count)
+        진행률은 뒤로 가지 않는다(아래 _run_windows 주석). 100%는 작업 완료(SUCCESS)로만
+        표시되게 0.99에서 멈춘다. eta 는 '지금 단계'의 남은 시간(초, 모르면 None)."""
+        if progress_callback is None:
+            return
+        if eta is not None:
+            eta = max(0.0, float(eta))
+        progress_callback(min(0.99, frac or 0.0), eta, eta_min, stage, count, index)
 
-        events = []          # [{'start_frame','end_frame'}, ...]
-        # 표시 프레임(창 시작 + display_offset) → (heatmap_bbox, prob) (사고로 예측된 창만)
-        accident_overlays = {}
-        # window_idx → pred_class / P(A) (3D-CNN을 실제로 실행한 윈도우만)
-        window_pred = {}
-        window_prob_a = {}
+    events = []          # [{'start_frame','end_frame'}, ...]
+    # 표시 프레임(창 시작 + display_offset) → (칸별 'A − S' 로짓 7×7 또는 None, prob) (사고로 예측된 창만)
+    accident_overlays = {}
+    # window_idx → pred_class / P(A) (3D-CNN을 실제로 실행한 윈도우만)
+    window_pred = {}
+    window_prob_a = {}
 
-        _mean = torch.tensor(config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
-        _std = torch.tensor(config.NORM_STD, dtype=torch.float32).view(3, 1, 1, 1)
-        buf = {}             # 프레임 번호 → 224 크롭(uint8 RGB). 아직 필요한 최근 프레임만 둔다
+    _mean = torch.tensor(config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
+    _std = torch.tensor(config.NORM_STD, dtype=torch.float32).view(3, 1, 1, 1)
+    buf = {}             # 프레임 번호 → 224 크롭(uint8 RGB). 아직 필요한 최근 프레임만 둔다
 
-        def _clip(w):
-            """창 w 의 입력 텐서 (3, T, H, W) — 예전 '전체 텐서를 자른 것'과 같은 값."""
-            arr = np.stack([buf[i] for i in range(w, w + clip_length)], axis=0).astype(np.float32) / 255.0
-            t = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()
-            return (t - _mean) / _std
+    def _clip(w):
+        """창 w 의 입력 텐서 (3, T, H, W) — 예전 '전체 텐서를 자른 것'과 같은 값."""
+        arr = np.stack([buf[i] for i in range(w, w + clip_length)], axis=0).astype(np.float32) / 255.0
+        t = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()
+        return (t - _mean) / _std
 
-        speed = {"n": 0, "sec": 0.0, "first": True}
-        infer_sec = [0.0]       # 속도 측정용: 첫 묶음까지 포함한 3D-CNN 추론 총시간
-        infer_prog = [PROG_FLOW_END]
+    speed = {"n": 0, "sec": 0.0, "first": True}
+    infer_sec = [0.0]       # 속도 측정용: 첫 묶음까지 포함한 3D-CNN 추론 총시간
+    infer_prog = [PROG_FLOW_END]
 
-        def _run_batch(batch_window_starts, clips_cpu):
-            """창 묶음을 3D-CNN 에 넣어 예측·P(A)·CAM 을 채운다(예전 _run_windows 의 한 묶음)."""
-            t_batch = time.time()
-            with torch.inference_mode():
-                clips = torch.stack(clips_cpu).to(device)
-                if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
-                    clips = clips.contiguous(memory_format=torch.channels_last_3d)
-                if runner is not None:
-                    outputs, feat_maps = runner(clips), None
-                else:
-                    outputs = model(clips)
-                    feat_maps = activation['cam_layer']
-                probs = F.softmax(outputs, dim=1)
-                pred_classes = outputs.argmax(dim=1)
-                for offset, window_idx in enumerate(batch_window_starts):
-                    # 판정·CAM 은 창 끝이 아니라 '창 시작 + display_offset' 프레임에
-                    # 그린다 — 창 끝에 붙이면 A 표시가 실제 충돌보다 늦다(config 주석).
-                    disp_idx = window_idx + display_offset
-                    pred_class = int(pred_classes[offset].item())
-                    prob = probs[offset, pred_class].item()
-                    window_pred[window_idx] = pred_class
-                    window_prob_a[window_idx] = probs[offset, 1].item()
-                    if pred_class == 1 and not cam_overlay:
-                        # 클립에 히트맵을 안 그리면 CAM 계산을 건너뛰고 확률만 남긴다
-                        accident_overlays[disp_idx] = (None, prob)
-                    elif pred_class == 1:
-                        feat_map = feat_maps[offset]
-                        weight = model.head_conv.weight[pred_class]
-                        cam = F.relu(torch.sum(weight * feat_map, dim=0))
-                        cam_2d = torch.mean(cam, dim=0)
-                        cam_min, cam_max = cam_2d.min(), cam_2d.max()
-                        cam_2d = (cam_2d - cam_min) / (cam_max - cam_min + 1e-8)
-                        cam_np = (cam_2d * 255).byte().cpu().numpy()
-                        heatmap = cv2.applyColorMap(cam_np, cv2.COLORMAP_JET)
-                        heatmap = cv2.resize(heatmap, (rx2 - rx1, ry2 - ry1))
-                        # 정사각 히트맵에서 '원본 bbox'에 해당하는 부분만 잘라 저장
-                        heatmap_bbox = heatmap[
-                            max(0, by1 - ry1):(by2 - ry1),
-                            max(0, bx1 - rx1):(bx2 - rx1),
-                        ]
-                        accident_overlays[disp_idx] = (heatmap_bbox, prob)
-            dt = time.time() - t_batch
-            infer_sec[0] += dt
-            if speed["first"]:
-                speed["first"] = False
+    def _run_batch(batch_window_starts, clips_cpu):
+        """창 묶음을 3D-CNN 에 넣어 예측·P(A)·CAM 을 채운다(예전 _run_windows 의 한 묶음)."""
+        t_batch = time.time()
+        with torch.inference_mode():
+            clips = torch.stack(clips_cpu).to(device)
+            if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
+                clips = clips.contiguous(memory_format=torch.channels_last_3d)
+            if cam_overlay:
+                outputs, cams = runner.with_cam(clips)
             else:
-                speed["n"] += len(batch_window_starts)
-                speed["sec"] += dt
+                outputs, cams = runner(clips), None
+            probs = F.softmax(outputs, dim=1)
+            pred_classes = outputs.argmax(dim=1)
+            for offset, window_idx in enumerate(batch_window_starts):
+                # 판정·CAM 은 창 끝이 아니라 '창 시작 + display_offset' 프레임에
+                # 그린다 — 창 끝에 붙이면 A 표시가 실제 충돌보다 늦다(config 주석).
+                disp_idx = window_idx + display_offset
+                pred_class = int(pred_classes[offset].item())
+                prob = probs[offset, pred_class].item()
+                window_pred[window_idx] = pred_class
+                window_prob_a[window_idx] = probs[offset, 1].item()
+                if pred_class == 1:
+                    # 히트맵은 클립을 만들 때 그린다(_draw_collision_cam). 여기선 칸별 'A − S' 로짓
+                    # 49개만 남겨, 사고 구간이 길어도 bbox 크기 그림을 쌓지 않는다
+                    cam_as = (None if cams is None
+                              else (cams[offset, 1] - cams[offset, 0]).float().cpu().numpy())
+                    accident_overlays[disp_idx] = (cam_as, prob)
+        dt = time.time() - t_batch
+        infer_sec[0] += dt
+        if speed["first"]:
+            speed["first"] = False
+        else:
+            speed["n"] += len(batch_window_starts)
+            speed["sec"] += dt
 
-        k = max(1, int(round(coarse_step / window_stride))) if use_coarse_scan else 1
-        grid = k * window_stride                 # 거친 창 간격(프레임)
-        refine_on = k > 1
-        coarse_q = []        # 프레임이 다 들어와 판정을 기다리는 거친 창(영상 순서)
-        next_grid = 0        # 다음에 들어올 거친 창 시작
-        coarse_list = []     # 판정한 거친 창(출력용)
-        hot = []             # P(A) > coarse_prob 인 거친 창
-        refine_pending = set()   # 촘촘히 볼 창 중 아직 판정 안 한 것
-        refine_held = []     # 정렬 순서가 확정돼 묶음 짝을 기다리는 창 (창 시작, 입력 텐서)
-        refine_done = []     # 판정한 촘촘한 창(출력용)
+    k = max(1, int(round(coarse_step / window_stride))) if use_coarse_scan else 1
+    grid = k * window_stride                 # 거친 창 간격(프레임)
+    refine_on = k > 1
+    coarse_q = []        # 프레임이 다 들어와 판정을 기다리는 거친 창(영상 순서)
+    next_grid = 0        # 다음에 들어올 거친 창 시작
+    coarse_list = []     # 판정한 거친 창(출력용)
+    hot = []             # P(A) > coarse_prob 인 거친 창
+    refine_pending = set()   # 촘촘히 볼 창 중 아직 판정 안 한 것
+    refine_held = []     # 정렬 순서가 확정돼 묶음 짝을 기다리는 창 (창 시작, 입력 텐서)
+    refine_done = []     # 판정한 촘촘한 창(출력용)
 
-        def _hot_regions():
-            """의심 구간 수 — 서로 이어진 '촘촘히 볼 범위' 덩어리(화면의 '의심 지점 N곳')."""
-            n, end = 0, None
-            for h in hot:
-                lo = max(0, h - coarse_pad)
-                if end is None or lo > end:
-                    n += 1
-                end = h + coarse_pad
-            return n
+    def _hot_regions():
+        """의심 구간 수 — 서로 이어진 '촘촘히 볼 범위' 덩어리(화면의 '의심 지점 N곳')."""
+        n, end = 0, None
+        for h in hot:
+            lo = max(0, h - coarse_pad)
+            if end is None or lo > end:
+                n += 1
+            end = h + coarse_pad
+        return n
 
-        def _flush_coarse(final=False):
-            while coarse_q and (len(coarse_q) >= infer_batch_size or final):
-                ws = coarse_q[:infer_batch_size]
-                del coarse_q[:len(ws)]
-                _run_batch(ws, [_clip(w) for w in ws])
-                coarse_list.extend(ws)
-                for w in ws:
-                    if refine_on and window_prob_a[w] > coarse_prob:
-                        hot.append(w)
-                        lo = max(0, w - coarse_pad)
-                        lo += (-lo) % window_stride        # 창 시작 격자에 맞춘다
-                        for r in range(lo, w + coarse_pad + 1, window_stride):
-                            if r % grid != 0 and r not in window_pred:
-                                refine_pending.add(r)
+    def _flush_coarse(final=False):
+        while coarse_q and (len(coarse_q) >= infer_batch_size or final):
+            ws = coarse_q[:infer_batch_size]
+            del coarse_q[:len(ws)]
+            _run_batch(ws, [_clip(w) for w in ws])
+            coarse_list.extend(ws)
+            for w in ws:
+                if refine_on and window_prob_a[w] > coarse_prob:
+                    hot.append(w)
+                    lo = max(0, w - coarse_pad)
+                    lo += (-lo) % window_stride        # 창 시작 격자에 맞춘다
+                    for r in range(lo, w + coarse_pad + 1, window_stride):
+                        if r % grid != 0 and r not in window_pred:
+                            refine_pending.add(r)
 
-        def _future_coarse(cur_frame):
-            """앞으로 판정할 거친 창의 하한 — 대기열 첫 창, 다음 격자 창, 그리고 아직 모르는
-            '영상 끝 창'(지금 들어온 마지막 창 이후)이 될 수 있는 가장 이른 위치."""
-            return min(coarse_q[0] if coarse_q else next_grid, next_grid,
-                       max(0, cur_frame - clip_length + 1))
+    def _future_coarse(cur_frame):
+        """앞으로 판정할 거친 창의 하한 — 대기열 첫 창, 다음 격자 창, 그리고 아직 모르는
+        '영상 끝 창'(지금 들어온 마지막 창 이후)이 될 수 있는 가장 이른 위치."""
+        return min(coarse_q[0] if coarse_q else next_grid, next_grid,
+                   max(0, cur_frame - clip_length + 1))
 
-        def _flush_refine(cur_frame, final=False, last_start=None):
-            """순서가 확정되고 프레임이 준비된 촘촘한 창을 정렬 순서대로 두 개씩 판정한다."""
-            if final:
-                ready_limit = last_start
-                order_limit = float("inf")
-            else:
-                ready_limit = cur_frame - clip_length + 1          # 이 창까지 프레임이 다 들어옴
-                order_limit = _future_coarse(cur_frame) - coarse_pad   # 이보다 앞선 창은 순서 확정
-            for w in sorted(refine_pending):
-                if w > ready_limit or w >= order_limit:
-                    break
-                refine_pending.discard(w)
-                refine_held.append((w, _clip(w)))
-                if len(refine_held) == infer_batch_size:
-                    ws = [x[0] for x in refine_held]
-                    _run_batch(ws, [x[1] for x in refine_held])
-                    refine_done.extend(ws)
-                    refine_held.clear()
-            if final and refine_held:
+    def _flush_refine(cur_frame, final=False, last_start=None):
+        """순서가 확정되고 프레임이 준비된 촘촘한 창을 정렬 순서대로 두 개씩 판정한다."""
+        if final:
+            ready_limit = last_start
+            order_limit = float("inf")
+        else:
+            ready_limit = cur_frame - clip_length + 1          # 이 창까지 프레임이 다 들어옴
+            order_limit = _future_coarse(cur_frame) - coarse_pad   # 이보다 앞선 창은 순서 확정
+        for w in sorted(refine_pending):
+            if w > ready_limit or w >= order_limit:
+                break
+            refine_pending.discard(w)
+            refine_held.append((w, _clip(w)))
+            if len(refine_held) == infer_batch_size:
                 ws = [x[0] for x in refine_held]
                 _run_batch(ws, [x[1] for x in refine_held])
                 refine_done.extend(ws)
                 refine_held.clear()
+        if final and refine_held:
+            ws = [x[0] for x in refine_held]
+            _run_batch(ws, [x[1] for x in refine_held])
+            refine_done.extend(ws)
+            refine_held.clear()
 
-        # 충격 시점용 광학흐름 — 읽는 대로 같은 간격(flow_step)으로 계산하고 숫자만 남긴다
-        flow_step = max(1, int(config.PREDICT_FLOW_SAMPLE_STEP))
-        flow_mag_l, flow_roi_l = [], []
-        flow_ok = True
-        prev_gray = None
-        qx1, qy1, qx2, qy2 = _roi
+    # 충격 시점용 광학흐름 — 읽는 대로 같은 간격(flow_step)으로 계산하고 숫자만 남긴다
+    flow_step = max(1, int(config.PREDICT_FLOW_SAMPLE_STEP))
+    flow_mag_l, flow_roi_l = [], []
+    flow_ok = True
+    prev_gray = None
+    qx1, qy1, qx2, qy2 = _roi
 
-        total_frames_hint = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-        decode_sec = flow_sec = 0.0
-        t_stream = time.time()
-        n_read = 0
-        last_frame = None
-        max_buf = [0]
-        stage_name = 'coarse' if k > 1 else 'scan'
-        _report(0.0, stage='decode')
-        while True:
-            t0 = time.time()
-            ret, frame = cap.read()
-            if not ret:
-                break
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            processed, _ = _crop_square_and_pad(frame_rgb, target_bbox, r_value, resize)
-            i = n_read
-            buf[i] = processed
-            last_frame = processed
-            n_read += 1
-            decode_sec += time.time() - t0
+    total_frames_hint = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    decode_sec = flow_sec = 0.0
+    t_stream = time.time()
+    n_read = 0
+    last_frame = None
+    max_buf = [0]
+    stage_name = 'coarse' if k > 1 else 'scan'
+    _report(0.0, stage='decode')
+    while True:
+        t0 = time.time()
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        processed, _ = _crop_square_and_pad(frame_rgb, target_bbox, r_value, resize)
+        i = n_read
+        buf[i] = processed
+        last_frame = processed
+        n_read += 1
+        decode_sec += time.time() - t0
 
-            # 광학흐름(flow_step 간격 프레임 쌍) — 이벤트 안에서 '충격 시점'(움직임이 가장 큰
-            # 프레임)을 고르는 데만 쓴다(사전선별은 미세 충돌을 걸러 모델 거친 탐색으로 바꿨다).
-            # 크롭 전체(mag)와 피해차 bbox 영역(mag_roi) 두 줄을 만들고 시점은 bbox 쪽으로 본다 —
-            # 정사각 크롭 여백을 지나는 가해차량 모션이 피해차의 미세 흔들림을 압도해서
-            # 크롭 전체로 잡으면 '접촉'이 아니라 '가해차 진입'을 가리켰다(실측 -52/+105프레임).
-            t0 = time.time()
-            flow_mag_l.append(0.0)
-            flow_roi_l.append(0.0)
-            if flow_ok and i % flow_step == 0:
-                try:
-                    gray = cv2.cvtColor(processed, cv2.COLOR_RGB2GRAY)
-                    if prev_gray is not None:
-                        flow = cv2.calcOpticalFlowFarneback(
-                            prev_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-                        fmag = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
-                        m = float(fmag.mean())
-                        sub = fmag[qy1:qy2, qx1:qx2]
-                        mr = float(sub.mean()) if sub.size else m
-                        for j in range(i - flow_step + 1, i + 1):
-                            flow_mag_l[j] = m
-                            flow_roi_l[j] = mr
-                    prev_gray = gray
-                except Exception:
-                    flow_ok = False   # 실패하면 충격 시점은 이벤트 시작으로 대신한다
-            flow_sec += time.time() - t0
+        # 광학흐름(flow_step 간격 프레임 쌍) — 이벤트 안에서 '충격 시점'(움직임이 가장 큰
+        # 프레임)을 고르는 데만 쓴다(사전선별은 미세 충돌을 걸러 모델 거친 탐색으로 바꿨다).
+        # 크롭 전체(mag)와 피해차 bbox 영역(mag_roi) 두 줄을 만들고 시점은 bbox 쪽으로 본다 —
+        # 정사각 크롭 여백을 지나는 가해차량 모션이 피해차의 미세 흔들림을 압도해서
+        # 크롭 전체로 잡으면 '접촉'이 아니라 '가해차 진입'을 가리켰다(실측 -52/+105프레임).
+        t0 = time.time()
+        flow_mag_l.append(0.0)
+        flow_roi_l.append(0.0)
+        if flow_ok and i % flow_step == 0:
+            try:
+                gray = cv2.cvtColor(processed, cv2.COLOR_RGB2GRAY)
+                if prev_gray is not None:
+                    flow = cv2.calcOpticalFlowFarneback(
+                        prev_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+                    fmag = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
+                    m = float(fmag.mean())
+                    sub = fmag[qy1:qy2, qx1:qx2]
+                    mr = float(sub.mean()) if sub.size else m
+                    for j in range(i - flow_step + 1, i + 1):
+                        flow_mag_l[j] = m
+                        flow_roi_l[j] = mr
+                prev_gray = gray
+            except Exception:
+                flow_ok = False   # 실패하면 충격 시점은 이벤트 시작으로 대신한다
+        flow_sec += time.time() - t0
 
-            # 프레임이 다 들어온 거친 창을 대기열에 넣고, 묶음이 차면 판정
-            while next_grid + clip_length - 1 <= i:
-                coarse_q.append(next_grid)
-                next_grid += grid
-            _flush_coarse()
-            if refine_on:
-                _flush_refine(i)
-
-            # 더 이상 필요 없는 오래된 프레임은 버린다 — 앞으로 판정할 거친 창과 그 주변(±pad)의
-            # 촘촘한 창, 아직 판정 안 한 촘촘한 창에 필요한 프레임만 남긴다
-            need = _future_coarse(i)
-            if refine_on:
-                need = max(0, need - coarse_pad)
-                if refine_pending:
-                    need = min(need, min(refine_pending))
-            for old in [f for f in buf if f < need]:
-                del buf[old]
-            max_buf[0] = max(max_buf[0], len(buf))
-
-            # 진행률: 영상을 읽은 비율(남은 시간 = 남은 프레임 × 지금까지 프레임당 시간).
-            # 10프레임마다 알린다 — 긴 영상에서 1%가 수십 초라 1%마다면 막대가 멈춰 보인다
-            # (실제 기록 빈도는 prediction_job 이 0.4초 단위로 조절한다)
-            if total_frames_hint > 0 and n_read % 10 == 0:
-                frac = min(1.0, n_read / total_frames_hint)
-                infer_prog[0] = PROG_FLOW_END + (PROG_INFER_END - PROG_FLOW_END) * frac
-                per = (time.time() - t_stream) / n_read
-                _report(infer_prog[0], eta=(total_frames_hint - n_read) * per,
-                        stage=stage_name, count=_hot_regions() if k > 1 else None)
-        cap.release()
-
-        if n_read == 0:
-            return []
-        real_frame_count = n_read
-        # 창 길이보다 짧은 영상은 마지막 프레임을 반복해 창 하나를 채운다(예전과 동일)
-        n_total = n_read
-        while n_total < clip_length:
-            buf[n_total] = last_frame
-            n_total += 1
-            while next_grid + clip_length - 1 <= n_total - 1:
-                coarse_q.append(next_grid)
-                next_grid += grid
-        decode_sec_per_frame = decode_sec / max(1, n_read)
-
-        num_windows = n_total - (clip_length - 1)
-        window_starts = list(range(0, max(0, num_windows), window_stride))
-        last_start = window_starts[-1]
-        # 영상 끝 창이 거친 격자에 없으면 거친 창으로 맨 뒤에 붙인다(예전과 동일)
-        if last_start % grid != 0:
-            refine_pending.discard(last_start)
-            coarse_q.append(last_start)
-        _flush_coarse(final=True)
+        # 프레임이 다 들어온 거친 창을 대기열에 넣고, 묶음이 차면 판정
+        while next_grid + clip_length - 1 <= i:
+            coarse_q.append(next_grid)
+            next_grid += grid
+        _flush_coarse()
         if refine_on:
-            _report(infer_prog[0], stage='refine', count=_hot_regions())
-            _flush_refine(None, final=True, last_start=last_start)
-        infer_prog[0] = PROG_INFER_END
-        buf.clear()
+            _flush_refine(i)
 
-        flow_mag = flow_mag_roi = None
-        if flow_ok and n_total >= clip_length + 2:
-            flow_mag = np.asarray(flow_mag_l, dtype=np.float32)
-            flow_mag_roi = np.asarray(flow_roi_l, dtype=np.float32)
+        # 더 이상 필요 없는 오래된 프레임은 버린다 — 앞으로 판정할 거친 창과 그 주변(±pad)의
+        # 촘촘한 창, 아직 판정 안 한 촘촘한 창에 필요한 프레임만 남긴다
+        need = _future_coarse(i)
+        if refine_on:
+            need = max(0, need - coarse_pad)
+            if refine_pending:
+                need = min(need, min(refine_pending))
+        for old in [f for f in buf if f < need]:
+            del buf[old]
+        max_buf[0] = max(max_buf[0], len(buf))
 
-        _report(infer_prog[0], stage='events')
-        print(f"[2단계] 거친 탐색 {len(coarse_list)}개(간격 {grid}) → "
-              f"의심 {len(hot)}개 주변 {len(refine_done)}개 추가 | 전체 "
-              f"{len(window_starts)} 윈도우 중 3D-CNN 평가 {len(window_pred)}개 "
-              f"({100.0 * len(window_pred) / max(1, len(window_starts)):.0f}%) "
-              f"| 영상 {real_frame_count}프레임, 버퍼 최대 {max_buf[0]}장")
+        # 진행률: 영상을 읽은 비율(남은 시간 = 남은 프레임 × 지금까지 프레임당 시간).
+        # 10프레임마다 알린다 — 긴 영상에서 1%가 수십 초라 1%마다면 막대가 멈춰 보인다
+        # (실제 기록 빈도는 prediction_job 이 0.4초 단위로 조절한다)
+        if total_frames_hint > 0 and n_read % 10 == 0:
+            frac = min(1.0, n_read / total_frames_hint)
+            infer_prog[0] = PROG_FLOW_END + (PROG_INFER_END - PROG_FLOW_END) * frac
+            per = (time.time() - t_stream) / n_read
+            _report(infer_prog[0], eta=(total_frames_hint - n_read) * per,
+                    stage=stage_name, count=_hot_regions() if k > 1 else None)
+    cap.release()
 
-        # Phase B: 전체 윈도우 순서대로 상태머신(S→A→S)으로 이벤트 구간 확정.
-        # 평가 안 한 윈도우는 비사고(0)로 간주한다.
-        prev_state = 0
-        event_start = None
-        for window_idx in window_starts:
-            frame_idx = window_idx + clip_length - 1
-            pred_class = window_pred.get(window_idx, 0)
-            if prev_state == 0 and pred_class == 1:
-                event_start = window_idx
-            elif prev_state == 1 and pred_class == 0:
-                if event_start is not None:
-                    events.append({'start_frame': event_start,
-                                   'end_frame': frame_idx - 1})
-                    event_start = None
-            prev_state = pred_class
+    if n_read == 0:
+        return []
+    real_frame_count = n_read
+    # 창 길이보다 짧은 영상은 마지막 프레임을 반복해 창 하나를 채운다(예전과 동일)
+    n_total = n_read
+    while n_total < clip_length:
+        buf[n_total] = last_frame
+        n_total += 1
+        while next_grid + clip_length - 1 <= n_total - 1:
+            coarse_q.append(next_grid)
+            next_grid += grid
+    decode_sec_per_frame = decode_sec / max(1, n_read)
 
-        # 영상 끝까지 A 상태가 유지된 경우 이벤트 닫기
-        if prev_state == 1 and event_start is not None:
-            events.append({'start_frame': event_start,
-                           'end_frame': real_frame_count - 1})
+    num_windows = n_total - (clip_length - 1)
+    window_starts = list(range(0, max(0, num_windows), window_stride))
+    last_start = window_starts[-1]
+    # 영상 끝 창이 거친 격자에 없으면 거친 창으로 맨 뒤에 붙인다(예전과 동일)
+    if last_start % grid != 0:
+        refine_pending.discard(last_start)
+        coarse_q.append(last_start)
+    _flush_coarse(final=True)
+    if refine_on:
+        _report(infer_prog[0], stage='refine', count=_hot_regions())
+        _flush_refine(None, final=True, last_start=last_start)
+    infer_prog[0] = PROG_INFER_END
+    buf.clear()
 
-        # ── 이벤트 후처리: 병합 → 길이필터 (한 충돌이 여러 개로 쪼개지는 것 방지) ──
-        # 순서가 중요하다: 먼저 병합해야 '한 충돌의 조각들'이 하나로 합쳐져 길이를
-        # 회복하고, 그 뒤 남은 고립된 단발 깜빡임만 길이필터로 제거된다.
-        _n_raw = len(events)
-        # 병합 간격은 초 단위 설정을 이 영상의 fps로 환산한다(fps 10~60 이 섞여 있음)
-        merge_gap_frames = int(round(fps * config.PREDICT_EVENT_MERGE_GAP_SEC))
-        if events:
-            events.sort(key=lambda e: e['start_frame'])
-            merged = [events[0]]
-            for ev in events[1:]:
-                gap = ev['start_frame'] - merged[-1]['end_frame']
-                if gap <= merge_gap_frames:
-                    merged[-1]['end_frame'] = max(
-                        merged[-1]['end_frame'], ev['end_frame'])
-                else:
-                    merged.append(ev)
-            events = [e for e in merged
-                      if (e['end_frame'] - e['start_frame'])
-                      >= config.PREDICT_MIN_EVENT_SPAN_FRAMES]
-        if _n_raw != len(events):
-            print(f"[이벤트 후처리] {_n_raw}개 → 병합·길이필터 후 {len(events)}개")
+    flow_mag = flow_mag_roi = None
+    if flow_ok and n_total >= clip_length + 2:
+        flow_mag = np.asarray(flow_mag_l, dtype=np.float32)
+        flow_mag_roi = np.asarray(flow_roi_l, dtype=np.float32)
 
-        # ── 2패스: 이벤트 구간 프레임만 영상에서 다시 읽어 CAM 클립 렌더링 ──────
-        # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
-        results = []
-        base_name = clip_name or os.path.splitext(os.path.basename(video_path))[0]
-        render_cap = (cv2.VideoCapture(video_path)
-                      if (events and render_clips) else None)
-        # 클립 렌더링 남은 시간 = 남은 프레임 × 프레임당 시간(재기 전엔 디코딩 기준 추정)
-        render_total = sum(
-            min(real_frame_count - 1, e['end_frame'] + clip_pad_frames)
-            - max(0, e['start_frame'] - clip_pad_frames) + 1
-            for e in events) if render_clips else 0
-        render_done = [0]
-        render_idx = [0]        # 지금 만드는 클립 번호(1부터)
-        render_start = infer_prog[0]   # 클립 만들기는 지금 진행률에서 99% 까지
-        t_render = time.time()
+    _report(infer_prog[0], stage='events')
+    print(f"[2단계] 거친 탐색 {len(coarse_list)}개(간격 {grid}) → "
+          f"의심 {len(hot)}개 주변 {len(refine_done)}개 추가 | 전체 "
+          f"{len(window_starts)} 윈도우 중 3D-CNN 평가 {len(window_pred)}개 "
+          f"({100.0 * len(window_pred) / max(1, len(window_starts)):.0f}%) "
+          f"| 영상 {real_frame_count}프레임, 버퍼 최대 {max_buf[0]}장")
 
-        def _report_render():
-            if render_done[0] >= 15:
-                per = (time.time() - t_render) / render_done[0]
+    # Phase B: 전체 윈도우 순서대로 상태머신(S→A→S)으로 이벤트 구간 확정.
+    # 평가 안 한 윈도우는 비사고(0)로 간주한다.
+    prev_state = 0
+    event_start = None
+    for window_idx in window_starts:
+        frame_idx = window_idx + clip_length - 1
+        pred_class = window_pred.get(window_idx, 0)
+        if prev_state == 0 and pred_class == 1:
+            event_start = window_idx
+        elif prev_state == 1 and pred_class == 0:
+            if event_start is not None:
+                events.append({'start_frame': event_start,
+                               'end_frame': frame_idx - 1})
+                event_start = None
+        prev_state = pred_class
+
+    # 영상 끝까지 A 상태가 유지된 경우 이벤트 닫기
+    if prev_state == 1 and event_start is not None:
+        events.append({'start_frame': event_start,
+                       'end_frame': real_frame_count - 1})
+
+    # ── 이벤트 후처리: 병합 → 길이필터 (한 충돌이 여러 개로 쪼개지는 것 방지) ──
+    # 순서가 중요하다: 먼저 병합해야 '한 충돌의 조각들'이 하나로 합쳐져 길이를
+    # 회복하고, 그 뒤 남은 고립된 단발 깜빡임만 길이필터로 제거된다.
+    _n_raw = len(events)
+    # 병합 간격은 초 단위 설정을 이 영상의 fps로 환산한다(fps 10~60 이 섞여 있음)
+    merge_gap_frames = int(round(fps * config.PREDICT_EVENT_MERGE_GAP_SEC))
+    if events:
+        events.sort(key=lambda e: e['start_frame'])
+        merged = [events[0]]
+        for ev in events[1:]:
+            gap = ev['start_frame'] - merged[-1]['end_frame']
+            if gap <= merge_gap_frames:
+                merged[-1]['end_frame'] = max(
+                    merged[-1]['end_frame'], ev['end_frame'])
             else:
-                per = decode_sec_per_frame * RENDER_COST_PER_DECODE
-            frac = render_start + (0.99 - render_start) * render_done[0] / max(1, render_total)
-            _report(frac, eta=(render_total - render_done[0]) * per, stage='render',
-                    count=len(events), index=render_idx[0])
+                merged.append(ev)
+        events = [e for e in merged
+                  if (e['end_frame'] - e['start_frame'])
+                  >= config.PREDICT_MIN_EVENT_SPAN_FRAMES]
+    if _n_raw != len(events):
+        print(f"[이벤트 후처리] {_n_raw}개 → 병합·길이필터 후 {len(events)}개")
 
-        try:
-            for ev_idx, ev in enumerate(events, 1):
-                render_idx[0] = ev_idx
-                _report_render()
-                start_f = ev['start_frame']
-                end_f = ev['end_frame']
-                clip_start = max(0, start_f - clip_pad_frames)
-                clip_end = min(real_frame_count - 1, end_f + clip_pad_frames)
+    # ── 2패스: 이벤트 구간 프레임만 영상에서 다시 읽어 CAM 클립 렌더링 ──────
+    # 원본 프레임을 RAM에 안 들고, 각 사고 구간만 cap.set으로 탐색해 읽는다.
+    results = []
+    base_name = clip_name or os.path.splitext(os.path.basename(video_path))[0]
+    render_cap = (cv2.VideoCapture(video_path)
+                  if (events and render_clips) else None)
+    # 클립 렌더링 남은 시간 = 남은 프레임 × 프레임당 시간(재기 전엔 디코딩 기준 추정)
+    render_total = sum(
+        min(real_frame_count - 1, e['end_frame'] + clip_pad_frames)
+        - max(0, e['start_frame'] - clip_pad_frames) + 1
+        for e in events) if render_clips else 0
+    render_done = [0]
+    render_idx = [0]        # 지금 만드는 클립 번호(1부터)
+    render_start = infer_prog[0]   # 클립 만들기는 지금 진행률에서 99% 까지
+    t_render = time.time()
 
-                # 구간 대표 확률 = 구간 내 사고 프레임 확률의 최댓값
-                probs_in_event = [p for f, (_, p) in accident_overlays.items()
-                                  if start_f <= f <= end_f]
-                crash_prob = max(probs_in_event) if probs_in_event else None
+    def _report_render():
+        if render_done[0] >= 15:
+            per = (time.time() - t_render) / render_done[0]
+        else:
+            per = decode_sec_per_frame * RENDER_COST_PER_DECODE
+        frac = render_start + (0.99 - render_start) * render_done[0] / max(1, render_total)
+        _report(frac, eta=(render_total - render_done[0]) * per, stage='render',
+                count=len(events), index=render_idx[0])
 
-                clip_path = None
-                raw_clip_path = None
-                if render_clips:
-                    clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
-                    writer, rendered_path = _open_clip_writer(
-                        clip_stem, fps, (orig_w, orig_h + _state_bar_height(orig_h)))
-                    # 원본 사고 클립: 같은 프레임 구간을 아무것도 합성하지 않고 그대로 저장한다
-                    # (사용자가 박스·상태 표시 없는 원본을 따로 내려받을 수 있게)
-                    raw_stem = f'{clip_stem}_raw'
-                    raw_writer, raw_rendered = _open_clip_writer(raw_stem, fps, (orig_w, orig_h))
+    try:
+        for ev_idx, ev in enumerate(events, 1):
+            render_idx[0] = ev_idx
+            _report_render()
+            start_f = ev['start_frame']
+            end_f = ev['end_frame']
+            clip_start = max(0, start_f - clip_pad_frames)
+            clip_end = min(real_frame_count - 1, end_f + clip_pad_frames)
+
+            # 구간 대표 확률 = 구간 내 사고 프레임 확률의 최댓값
+            probs_in_event = [p for f, (_, p) in accident_overlays.items()
+                              if start_f <= f <= end_f]
+            crash_prob = max(probs_in_event) if probs_in_event else None
+
+            clip_path = None
+            raw_clip_path = None
+            if render_clips:
+                clip_stem = str(output_dir / f'{base_name}_event{ev_idx}')
+                writer, rendered_path = _open_clip_writer(
+                    clip_stem, fps, (orig_w, orig_h + _state_bar_height(orig_h)))
+                # 원본 사고 클립: 같은 프레임 구간을 아무것도 합성하지 않고 그대로 저장한다
+                # (사용자가 박스·상태 표시 없는 원본을 따로 내려받을 수 있게)
+                raw_stem = f'{clip_stem}_raw'
+                raw_writer, raw_rendered = _open_clip_writer(raw_stem, fps, (orig_w, orig_h))
 
 
-                    # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
-                    # A 로 그리는 구간 = 이 이벤트에서 판정이 그려진 첫 프레임 ~ 마지막 프레임.
-                    # (이벤트 시작 start_f 는 첫 A 창의 '시작'이라, 여기서부터 A 로 그리면
-                    #  판정이 아직 없는 앞부분이 S 로 그려지거나 너무 이르게 된다)
-                    a_keys = sorted(k for k in accident_overlays if start_f <= k <= end_f)
-                    a_first = a_keys[0] if a_keys else None
-                    a_last = a_keys[-1] + window_stride - 1 if a_keys else None
-                    render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
-                    last_heatmap = None
-                    # 박스 선 굵기는 해상도에 맞춘다(1080p 이하 2px · 1440p 3px · 4K 4px).
-                    # 예전엔 사고 3px / 정상 2px 고정이라 작은 영상에서 차량을 두껍게 덮었다.
-                    # 1px 는 H.264(yuv420p, 색 정보 절반 해상도)로 압축하면 빨간 선이 흐려져 최소 2px.
-                    box_thick = max(2, int(round(orig_h / 540)))
-                    for f in range(clip_start, clip_end + 1):
-                        ret, frame = render_cap.read()  # 이미 BGR
-                        if not ret:
-                            break
-                        raw_writer.write(frame)   # 그리기 전에 원본부터 저장
-                        if f in accident_overlays and accident_overlays[f][0] is not None:
-                            last_heatmap = accident_overlays[f][0]
-                        in_event = a_first is not None and a_first <= f <= a_last
-                        if in_event:
-                            if cam_overlay and last_heatmap is not None:
-                                roi = frame[by1:by2, bx1:bx2]
-                                # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 정확히 맞춤
-                                hm = cv2.resize(last_heatmap, (roi.shape[1], roi.shape[0]))
-                                frame[by1:by2, bx1:bx2] = cv2.addWeighted(
-                                    roi, 0.6, hm, 0.4, 0)
-                            cv2.rectangle(frame, (bx1, by1),
-                                          (bx2, by2), (0, 0, 255), box_thick, cv2.LINE_AA)
-                            state = 1
-                        else:
-                            cv2.rectangle(frame, (bx1, by1),
-                                          (bx2, by2), (0, 255, 0), box_thick, cv2.LINE_AA)
-                            state = 0
-                        # S/A 는 영상 밖(아래 띠)에 표시 — 차량을 가리지 않게
-                        writer.write(_add_state_bar(frame, state))
-                        render_done[0] += 1
-                        if render_done[0] % 15 == 0:
-                            _report_render()
-                    writer.release()
-                    raw_writer.release()
-                    # 브라우저 호환 최종본(H.264/mp4)으로 변환
-                    clip_path = _finalize_clip(rendered_path, clip_stem)
-                    raw_clip_path = _finalize_clip(raw_rendered, raw_stem)
+                # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
+                # A 로 그리는 구간 = 이 이벤트에서 판정이 그려진 첫 프레임 ~ 마지막 프레임.
+                # (이벤트 시작 start_f 는 첫 A 창의 '시작'이라, 여기서부터 A 로 그리면
+                #  판정이 아직 없는 앞부분이 S 로 그려지거나 너무 이르게 된다)
+                a_keys = sorted(k for k in accident_overlays if start_f <= k <= end_f)
+                a_first = a_keys[0] if a_keys else None
+                a_last = a_keys[-1] + window_stride - 1 if a_keys else None
+                render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
+                last_cam = None
+                # 박스 선 굵기는 해상도에 맞춘다(1080p 이하 2px · 1440p 3px · 4K 4px).
+                # 예전엔 사고 3px / 정상 2px 고정이라 작은 영상에서 차량을 두껍게 덮었다.
+                # 1px 는 H.264(yuv420p, 색 정보 절반 해상도)로 압축하면 빨간 선이 흐려져 최소 2px.
+                box_thick = max(2, int(round(orig_h / 540)))
+                for f in range(clip_start, clip_end + 1):
+                    ret, frame = render_cap.read()  # 이미 BGR
+                    if not ret:
+                        break
+                    raw_writer.write(frame)   # 그리기 전에 원본부터 저장
+                    if f in accident_overlays and accident_overlays[f][0] is not None:
+                        last_cam = accident_overlays[f][0]
+                    in_event = a_first is not None and a_first <= f <= a_last
+                    if in_event:
+                        if last_cam is not None:
+                            # 충돌 부위에만 히트맵 — 박스 테두리(사고 빨강·정상 초록)는 그 위에 그린다
+                            _draw_collision_cam(frame, last_cam, (rx1, ry1, rx2, ry2), (bx1, by1, bx2, by2))
+                        cv2.rectangle(frame, (bx1, by1),
+                                      (bx2, by2), (0, 0, 255), box_thick, cv2.LINE_AA)
+                        state = 1
+                    else:
+                        cv2.rectangle(frame, (bx1, by1),
+                                      (bx2, by2), (0, 255, 0), box_thick, cv2.LINE_AA)
+                        state = 0
+                    # S/A 는 영상 밖(아래 띠)에 표시 — 차량을 가리지 않게
+                    writer.write(_add_state_bar(frame, state))
+                    render_done[0] += 1
+                    if render_done[0] % 15 == 0:
+                        _report_render()
+                writer.release()
+                raw_writer.release()
+                # 브라우저 호환 최종본(H.264/mp4)으로 변환
+                clip_path = _finalize_clip(rendered_path, clip_stem)
+                raw_clip_path = _finalize_clip(raw_rendered, raw_stem)
 
-                # ── 사고 '시점' 확정: 이벤트 구간 내 플로우 최대점(=충격 순간) ──
-                # 모델은 '윈도우 마지막 프레임=충돌 종료'로 학습돼 윈도우 시작
-                # (start_f = F-29)은 체계적으로 이르다. 라벨 검증 결과 플로우
-                # 피크가 충돌구간에 5/5 적중(라벨 시작 +3~4프레임)해 가장 정확했다.
-                # (naive 상승엣지는 '접근 차량' 모션을 먼저 잡아 최대 -56프레임
-                #  빗나가 채택하지 않음)
-                # 시점 판정은 '피해차 bbox 한정' 플로우로 한다(없으면 크롭 전체로 폴백)
-                _mag_for_impact = (flow_mag_roi if flow_mag_roi is not None
-                                   else flow_mag)
-                impact_f = start_f
-                if _mag_for_impact is not None and end_f >= start_f:
-                    seg = _mag_for_impact[
-                        start_f:min(end_f + 1, len(_mag_for_impact))]
-                    if seg.size:
-                        impact_f = start_f + int(np.argmax(seg))
+            # ── 사고 '시점' 확정: 이벤트 구간 내 플로우 최대점(=충격 순간) ──
+            # 모델은 '윈도우 마지막 프레임=충돌 종료'로 학습돼 윈도우 시작
+            # (start_f = F-29)은 체계적으로 이르다. 라벨 검증 결과 플로우
+            # 피크가 충돌구간에 5/5 적중(라벨 시작 +3~4프레임)해 가장 정확했다.
+            # (naive 상승엣지는 '접근 차량' 모션을 먼저 잡아 최대 -56프레임
+            #  빗나가 채택하지 않음)
+            # 시점 판정은 '피해차 bbox 한정' 플로우로 한다(없으면 크롭 전체로 폴백)
+            _mag_for_impact = (flow_mag_roi if flow_mag_roi is not None
+                               else flow_mag)
+            impact_f = start_f
+            if _mag_for_impact is not None and end_f >= start_f:
+                seg = _mag_for_impact[
+                    start_f:min(end_f + 1, len(_mag_for_impact))]
+                if seg.size:
+                    impact_f = start_f + int(np.argmax(seg))
 
-                results.append({
-                    # start_* = 사고 발생(충격) 시점 — UI 타임라인/DB 기록용
-                    'start_frame': impact_f,
-                    'start_sec': impact_f / fps,
-                    'end_frame': end_f,
-                    'end_sec': end_f / fps,
-                    # 참고용: 모델이 A로 판정한 구간 전체(클립 렌더 범위 기준)
-                    'event_start_frame': start_f,
-                    'event_end_frame': end_f,
-                    'crash_prob': crash_prob,
-                    'clip_path': clip_path,
-                    'raw_clip_path': raw_clip_path,   # 합성 없는 원본 사고 클립(이름 = 클립 + '_raw')
-                })
-        finally:
-            if render_cap is not None:
-                render_cap.release()
-
-        _report(0.99, eta=0.0, stage='render' if events and render_clips else 'events',
-                count=len(events) if events and render_clips else None,
-                index=len(events) if events and render_clips else None)
-        if stats is not None:
-            stats.update(frames=real_frame_count, decode_sec=decode_sec, flow_sec=flow_sec,
-                         infer_sec=infer_sec[0], render_sec=time.time() - t_render,
-                         windows_total=len(window_starts), windows_eval=len(window_pred),
-                         backend=runner.name if runner is not None else 'torch(CAM)')
-        print(f"[predict_events_and_clips] {len(results)}건 사고구간 클립 생성")
-        return results
-
+            results.append({
+                # start_* = 사고 발생(충격) 시점 — UI 타임라인/DB 기록용
+                'start_frame': impact_f,
+                'start_sec': impact_f / fps,
+                'end_frame': end_f,
+                'end_sec': end_f / fps,
+                # 참고용: 모델이 A로 판정한 구간 전체(클립 렌더 범위 기준)
+                'event_start_frame': start_f,
+                'event_end_frame': end_f,
+                'crash_prob': crash_prob,
+                'clip_path': clip_path,
+                'raw_clip_path': raw_clip_path,   # 합성 없는 원본 사고 클립(이름 = 클립 + '_raw')
+                # 클립 첫 프레임 = 원본의 이 프레임 — 재생 화면이 원본 시간에 맞춰 CAM 클립을 겹쳐 보여 줄 때 쓴다
+                'clip_start_frame': clip_start,
+                'clip_start_sec': clip_start / fps,
+            })
     finally:
-        if handle is not None:
-            handle.remove()
+        if render_cap is not None:
+            render_cap.release()
+
+    _report(0.99, eta=0.0, stage='render' if events and render_clips else 'events',
+            count=len(events) if events and render_clips else None,
+            index=len(events) if events and render_clips else None)
+    if stats is not None:
+        stats.update(frames=real_frame_count, decode_sec=decode_sec, flow_sec=flow_sec,
+                     infer_sec=infer_sec[0], render_sec=time.time() - t_render,
+                     windows_total=len(window_starts), windows_eval=len(window_pred),
+                     backend=runner.name)
+    print(f"[predict_events_and_clips] {len(results)}건 사고구간 클립 생성")
+    return results

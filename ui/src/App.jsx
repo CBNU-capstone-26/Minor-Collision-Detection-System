@@ -166,6 +166,23 @@ function PlayerIcon({ name, size = 18 }) {
   );
 }
 
+// 그리드의 지금 열 수 — CSS(auto-fill)가 화면 폭·배율에 맞춰 정한 값을 읽는다. el 이 바뀌거나 크기가 바뀌면 다시 읽는다
+function useGridColumns(el, fallback = 3) {
+  const [cols, setCols] = useState(fallback);
+  useEffect(() => {
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const read = () => {
+      const n = getComputedStyle(el).gridTemplateColumns.split(" ").filter(Boolean).length;
+      if (n > 0) setCols(n);
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return cols;
+}
+
 let toastSeq = 0; // 하단 알림 번호 (showToast)
 let bboxSeq = 0; // 고른 차량 박스 번호
 
@@ -805,7 +822,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [isSeeking, setIsSeeking] = useState(false); // 재생바를 누른 채 끌어서 탐색 중
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true); // 오른쪽 패널(진행 단계 + 분석 이력) — 기본은 열림(영상을 열 때마다)
   const [highlightAnalysisNo, setHighlightAnalysisNo] = useState(null); // 분석 이력에서 고른 분석 — 그 클립을 왼쪽 목록에서 강조
   const eventListRef = useRef(null);
@@ -975,7 +991,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         setCurrentEventId(null);
         setIsPlaying(false);
         setIsTheaterMode(false);
-        setIsSidebarOpen(true);
         setIsHistoryOpen(true);
         setHighlightAnalysisNo(null);
         setBboxList([]);
@@ -1040,11 +1055,23 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     });
   }, [periodVideos, searchQuery, videos]);
 
-  // 메인화면 영상 목록 페이지네이션 (6개 초과 시 페이지 분할)
-  const VIDEOS_PER_PAGE = 6;
+  // 메인화면 영상 목록 페이지네이션 — 한 페이지 = 지금 열 수 × 줄 수(두 줄 이상, 최소 6개).
+  // 3열 이하(보통 화면)는 예전처럼 6개, 화면이 넓거나 축소해 열이 늘면 줄을 꽉 채운다(예: 6열 → 12개)
+  const [videoGridEl, setVideoGridEl] = useState(null);
+  const gridCols = useGridColumns(videoGridEl);
+  const VIDEOS_PER_PAGE = gridCols * Math.max(2, Math.ceil(6 / gridCols));
   const [currentPage, setCurrentPage] = useState(1);
 
   const totalPages = Math.max(1, Math.ceil(filteredVideos.length / VIDEOS_PER_PAGE));
+
+  // 한 페이지 개수가 바뀌면(창 크기·배율 변경) 보던 첫 영상이 들어 있는 페이지로 옮긴다
+  const prevPerPage = useRef(VIDEOS_PER_PAGE);
+  useEffect(() => {
+    if (prevPerPage.current === VIDEOS_PER_PAGE) return;
+    const firstIndex = (currentPage - 1) * prevPerPage.current;
+    prevPerPage.current = VIDEOS_PER_PAGE;
+    setCurrentPage(Math.floor(firstIndex / VIDEOS_PER_PAGE) + 1);
+  }, [VIDEOS_PER_PAGE, currentPage]);
 
   // 필터 조건(기간, 검색어) 변경 시 1페이지로 리셋
   useEffect(() => {
@@ -1061,7 +1088,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const paginatedVideos = useMemo(() => {
     const startIndex = (currentPage - 1) * VIDEOS_PER_PAGE;
     return filteredVideos.slice(startIndex, startIndex + VIDEOS_PER_PAGE);
-  }, [filteredVideos, currentPage]);
+  }, [filteredVideos, currentPage, VIDEOS_PER_PAGE]);
 
   const handlePageChange = (newPage) => {
     setCurrentPage(newPage);
@@ -1087,14 +1114,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   }, [videos]);
 
   const calendarDays = useMemo(() => getCalendarDays(calendarMonth), [calendarMonth]);
-  const nextVideos = useMemo(() => {
-    if (!selectedVideo || videos.length === 0) return [];
-    const currentIndex = videos.findIndex((video) => video.id === selectedVideo.id);
-    if (currentIndex === -1) return [];
-    return Array.from({ length: Math.min(4, videos.length - 1) }, (_, index) => {
-      return videos[(currentIndex + index + 1) % videos.length];
-    });
-  }, [selectedVideo, videos]);
 
   const moveCalendarMonth = (offset) => {
     setCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() + offset, 1));
@@ -1789,7 +1808,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const renderGeom = overlaySize ? geomFor(overlaySize.w, overlaySize.h) : null;
 
   // 고른 차량 박스(bboxList)는 원본 영상 해상도 좌표로 저장한다.
-  // 영상 칸 크기가 바뀌어도(창 크기 · 사이드바 · 오른쪽 패널 · 영화관 모드 · 전체화면) 그릴 때마다 지금 크기로 바꾸므로
+  // 영상 칸 크기가 바뀌어도(창 크기 · 오른쪽 패널 · 영화관 모드 · 전체화면) 그릴 때마다 지금 크기로 바꾸므로
   // 박스가 영상의 같은 자리에 있고, 분석에 보내는 좌표도 그대로다.
   // 화면(오버레이) 좌표 → 원본 좌표 (영상 밖 레터박스로 나간 부분은 영상 안으로 자른다)
   const toOrigBox = (x1, y1, x2, y2) => {
@@ -1829,11 +1848,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             : 1;
   const selectedVideoJob = selectedVideo ? analyzingJobs.find((j) => j.videoId === selectedVideo.id) : null;
   // 차량 탐지·직접 지정 중 — 영상 크기·비율이 바뀌면 그리던 박스·탐지 박스 위치가 흔들리므로
-  // 이 동안엔 영상 크기를 바꾸는 기능(영화관 모드·전체화면·왼쪽 클립 칸 닫기/열기)을 쓰지 못하게 한다
+  // 이 동안엔 영상 크기를 바꾸는 기능(영화관 모드·전체화면·오른쪽 패널 열기/닫기)을 쓰지 못하게 한다
   const isChoosingVehicle = selectionMode !== "none" || isDetectingVehicles;
   // 분석 이력에서 고른 분석의 클립이 아직 남아 있으면 '강조 중' (클립을 다 지우면 저절로 풀림)
   const isHighlighting = !!selectedVideo && highlightAnalysisNo != null
     && selectedVideo.events.some((e) => e.analysisNo === highlightAnalysisNo);
+  // 왼쪽 목록은 가장 최근 분석을 먼저, 같은 분석 안에서는 영상 시각 순으로 보인다.
+  const listedEvents = selectedVideo
+    ? [...selectedVideo.events].sort((a, b) => (b.analysisNo ?? 0) - (a.analysisNo ?? 0) || a.startSec - b.startSec)
+    : [];
   const workflowSteps = selectedVideo ? (
     <ol className="incident-workflow" aria-label="사고 의심 구간 검토 순서">
       {[
@@ -2231,8 +2254,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           </div>
 
 
-          {/* 영상 썸네일 그리드 */}
-          <div className="video-grid">
+          {/* 영상 썸네일 그리드 — 열 수는 CSS 가 화면 폭에 맞춰 정하고, 한 페이지 개수가 그 열 수를 따른다 */}
+          <div className="video-grid" ref={setVideoGridEl}>
             {filteredVideos.length === 0 ? (
               <div className="empty-state">
                 {videoLoadError ? (
@@ -2398,192 +2421,153 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             </div>
           )}
 
-          <div className={`watch-layout ${isTheaterMode ? "theater-mode" : ""} ${!isSidebarOpen ? "sidebar-collapsed" : ""} ${!isHistoryOpen && isXLScreen ? "history-collapsed" : ""}`}>
+          <div className={`watch-layout ${isTheaterMode ? "theater-mode" : ""} ${!isHistoryOpen && isXLScreen ? "history-collapsed" : ""}`}>
             {/* 왼쪽 칸: (넓은 화면) 버튼 묶음 + 사고 클립 사이드바 */}
             <div className="watch-side">
               {actionsInSide && watchActionButtons}
-              <aside className={`event-sidebar ${!isSidebarOpen ? "collapsed" : ""} ${isHighlighting ? "highlighting" : ""}`}>
-                {isSidebarOpen ? (
-                  <>
-                    {/* 머리말: 윗줄 제목 + 버튼(가운데 맞춤), 아랫줄 건수 안내(가로 전체 — 버튼 때문에 줄바꿈되지 않게) */}
-                    <div className="event-sidebar-header">
-                      <h3>사고 의심 구간</h3>
-                      {/* 전체 삭제 · 닫기(×)를 한 줄로 — 전체 삭제가 × 왼쪽 */}
-                      <div className="event-header-actions">
-                        {selectedVideo.events.length > 0 && (
-                          <button
-                            className="event-clear-all-btn"
-                            onClick={requestClearAllEvents}
-                            title="이 영상의 사고 의심 클립을 모두 삭제합니다"
-                          >
-                            🗑 전체 삭제
-                          </button>
-                        )}
-                        <button
-                          className="sidebar-icon-btn"
-                          onClick={() => setIsSidebarOpen(false)}
-                          disabled={isChoosingVehicle} /* 닫으면 영상 칸이 넓어져 영상 크기가 바뀐다 */
-                          aria-label="이벤트 목록 닫기"
-                          title={isChoosingVehicle ? "차량을 고르는 중에는 쓸 수 없습니다" : undefined}
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <p className="event-summary">클립 {selectedVideo.events.length}건 · 직접 검토가 필요합니다.</p>
-                    </div>
+              <aside className={`event-sidebar ${isHighlighting ? "highlighting" : ""}`}>
+                {/* 머리말: 윗줄 제목 + 버튼(가운데 맞춤), 아랫줄 건수 안내(가로 전체 — 버튼 때문에 줄바꿈되지 않게) */}
+                <div className="event-sidebar-header">
+                  <h3>사고 의심 구간</h3>
+                  {/* 전체 삭제 (목록 닫기(×)는 사용자 요청으로 뺐다, 2026-10-27) */}
+                  <div className="event-header-actions">
+                    {selectedVideo.events.length > 0 && (
+                      <button
+                        className="event-clear-all-btn"
+                        onClick={requestClearAllEvents}
+                        title="이 영상의 사고 의심 클립을 모두 삭제합니다"
+                      >
+                        🗑 전체 삭제
+                      </button>
+                    )}
+                  </div>
+                  <p className="event-summary">클립 {selectedVideo.events.length}건 · 직접 검토가 필요합니다.</p>
+                </div>
 
-                    <div className="event-list" ref={eventListRef}>
-                      {selectedVideo.events.length === 0 ? (
-                        <div className="event-empty-hint">감지된 이벤트가 없습니다.</div>
-                      ) : (
-                        selectedVideo.events.map((event) => (
-                          <div
-                            key={event.id}
-                            className={`event-item ${currentEventId === event.id ? "active" : ""} ${
-                              !isHighlighting
-                                ? ""
-                                : event.analysisNo === highlightAnalysisNo ? "analysis-highlight" : "analysis-dim"
-                            }`}
-                            onClick={() => setCurrentEventId(event.id)}
-                          >
-                            <div className="event-item-top">
-                              <span className="event-time-pill">{formatTime(event.timestamp)}</span>
-                              <span className="event-actual-time-text" title="이 영상의 몇 번째 분석에서 나온 클립인지 나타냅니다">
-                                {event.analysisNo != null && `분석 #${event.analysisNo}`}
-                              </span>
-                              <div className="event-item-actions">
-                                <button
-                                  className="event-play-icon-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCurrentEventId(event.id);
-                                    if (event.hasClip) {
-                                      setClipEvent(event);
-                                    } else {
-                                      showToast("이 이벤트의 사고 클립이 아직 없습니다.", "warning");
-                                    }
-                                  }}
-                                  aria-label={`${formatTime(event.timestamp)} 사고구간 클립 재생`}
-                                  title="사고 구간 클립을 봅니다"
-                                >
-                                  ▶
-                                </button>
-                                <button
-                                  className="event-delete-item-btn"
-                                  onClick={(e) => requestDeleteEvent(event, e)}
-                                  title="이 클립을 삭제합니다"
-                                  aria-label={`${formatTime(event.timestamp)} 사고구간 클립 삭제`}
-                                >
-                                  <TrashIcon size={14} />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="event-item-bottom">
-                              <h4 className="event-title-text" title="분석 일시">
-                                {(() => {
-                                  const at = formatAnalyzedAt(event.analyzedAt);
-                                  return at && (
-                                    <>
-                                      {at[0]}
-                                      <span className="event-analyzed-time">{at[1]}</span>
-                                    </>
-                                  );
-                                })()}
-                              </h4>
-                            </div>
+                <div className="event-list" ref={eventListRef}>
+                  {selectedVideo.events.length === 0 ? (
+                    <div className="event-empty-hint">감지된 이벤트가 없습니다.</div>
+                  ) : (
+                    listedEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className={`event-item ${currentEventId === event.id ? "active" : ""} ${
+                          !isHighlighting
+                            ? ""
+                            : event.analysisNo === highlightAnalysisNo ? "analysis-highlight" : "analysis-dim"
+                        }`}
+                        onClick={() => setCurrentEventId(event.id)}
+                      >
+                        <div className="event-item-top">
+                          <span className="event-time-pill">{formatTime(event.timestamp)}</span>
+                          <span className="event-actual-time-text" title="이 영상의 몇 번째 분석에서 나온 클립인지 나타냅니다">
+                            {event.analysisNo != null && `분석 #${event.analysisNo}`}
+                          </span>
+                          <div className="event-item-actions">
+                            <button
+                              className="event-play-icon-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCurrentEventId(event.id);
+                                if (event.hasClip) {
+                                  setClipEvent(event);
+                                } else {
+                                  showToast("이 이벤트의 사고 클립이 아직 없습니다.", "warning");
+                                }
+                              }}
+                              aria-label={`${formatTime(event.timestamp)} 사고구간 클립 재생`}
+                              title="사고 구간 클립을 봅니다"
+                            >
+                              {/* 글자 ▶ 는 글꼴마다 모양이 다르고 macOS·iOS 에선 이모지(▶️)로 바뀌어 SVG 로 그린다 */}
+                              <PlayerIcon name="play" size={14} />
+                            </button>
+                            <button
+                              className="event-delete-item-btn"
+                              onClick={(e) => requestDeleteEvent(event, e)}
+                              title="이 클립을 삭제합니다"
+                              aria-label={`${formatTime(event.timestamp)} 사고구간 클립 삭제`}
+                            >
+                              <TrashIcon size={15} />
+                            </button>
                           </div>
-                        ))
-                      )}
+                        </div>
+                        <div className="event-item-bottom">
+                          <h4 className="event-title-text" title="분석 일시">
+                            {(() => {
+                              const at = formatAnalyzedAt(event.analyzedAt);
+                              return at && (
+                                <>
+                                  {at[0]}
+                                  <span className="event-analyzed-time">{at[1]}</span>
+                                </>
+                              );
+                            })()}
+                          </h4>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+
+                {/* 달력을 사이드바 이벤트 목록 하단으로 삽입 */}
+                <div className="sidebar-calendar-container">
+                  <section className="event-calendar-panel" style={{ background: "transparent", padding: 0 }}>
+                    <div className="calendar-header">
+                      <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
+                        ‹
+                      </button>
+                      <h2>{formatMonthLabel(calendarMonth)}</h2>
+                      <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
+                        ›
+                      </button>
                     </div>
 
-
-                    {/* 달력을 사이드바 이벤트 목록 하단으로 삽입 */}
-                    <div className="sidebar-calendar-container">
-                      <section className="event-calendar-panel" style={{ background: "transparent", padding: 0 }}>
-                        <div className="calendar-header">
-                          <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
-                            ‹
-                          </button>
-                          <h2>{formatMonthLabel(calendarMonth)}</h2>
-                          <button className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
-                            ›
-                          </button>
-                        </div>
-
-                        <div className="calendar-weekdays">
-                          {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-                            <span key={day}>{day}</span>
-                          ))}
-                        </div>
-
-                        <div className="calendar-grid">
-                          {calendarDays.map((date, index) => {
-                            if (!date) {
-                              return <div key={`empty-${index}`} className="calendar-day empty" />;
-                            }
-
-                            const dateText = formatDate(date);
-                            const videos = videosByDate[dateText] ?? [];
-                            const hasVideo = videos.length > 0;
-                            const isSelectedDate = (selectedCalendarDate ?? selectedVideo.date) === dateText;
-
-                            // 영상의 총 이벤트 건수를 합산하여 강도를 계산
-                            const totalEvents = videos.reduce((acc, v) => acc + v.events.length, 0);
-
-                            let intensityClass = "";
-                            if (totalEvents === 1) intensityClass = "intensity-1";
-                            else if (totalEvents === 2) intensityClass = "intensity-2";
-                            else if (totalEvents >= 3) intensityClass = "intensity-3";
-
-                            return (
-                              <button
-                                key={dateText}
-                                className={`calendar-day ${hasVideo ? `has-video ${intensityClass}` : ""} ${isSelectedDate ? "selected" : ""}`}
-                                onClick={() => handleCalendarDateClick(date)}
-                                title={hasVideo ? `총 ${videos.length}개 영상 / ${totalEvents}건의 이벤트` : "영상 없음"}
-                              >
-                                <span className="calendar-date-number">{date.getDate()}</span>
-                                {videos.length > 1 && (
-                                  <span className="calendar-multi-count-badge" title={`영상 ${videos.length}개`}>
-                                    {videos.length}개
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                      <div className="calendar-legend"><span><i /> 영상 있음</span><span><i /> 의심 구간 있음</span><span><i /> 선택한 날짜</span></div>
-                    </div>
-                  </>
-                ) : (
-                  <button
-                    className="sidebar-open-btn"
-                    onClick={() => setIsSidebarOpen(true)}
-                    disabled={isChoosingVehicle} /* 열면 영상 칸이 좁아져 영상 크기가 바뀐다 */
-                    title={isChoosingVehicle ? "차량을 고르는 중에는 쓸 수 없습니다" : undefined}
-                  >
-                    이벤트 목록 열기
-                  </button>
-                )}
-
-                {!isSidebarOpen && nextVideos.length > 0 && (
-                  <section className="next-video-section">
-                    <h3>다음 영상</h3>
-                    <div className="next-video-list">
-                      {nextVideos.map((video) => (
-                        <button
-                          key={video.id}
-                          className="next-video-card"
-                          onClick={() => handleWatchVideo(video)}
-                        >
-                          <strong>{video.date}</strong>
-                          <small>사고 의심 {video.events.length}건 · {formatTime(video.duration)}</small>
-                        </button>
+                    <div className="calendar-weekdays">
+                      {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+                        <span key={day}>{day}</span>
                       ))}
                     </div>
+
+                    <div className="calendar-grid">
+                      {calendarDays.map((date, index) => {
+                        if (!date) {
+                          return <div key={`empty-${index}`} className="calendar-day empty" />;
+                        }
+
+                        const dateText = formatDate(date);
+                        const videos = videosByDate[dateText] ?? [];
+                        const hasVideo = videos.length > 0;
+                        const isSelectedDate = (selectedCalendarDate ?? selectedVideo.date) === dateText;
+
+                        // 영상의 총 이벤트 건수를 합산하여 강도를 계산
+                        const totalEvents = videos.reduce((acc, v) => acc + v.events.length, 0);
+
+                        let intensityClass = "";
+                        if (totalEvents === 1) intensityClass = "intensity-1";
+                        else if (totalEvents === 2) intensityClass = "intensity-2";
+                        else if (totalEvents >= 3) intensityClass = "intensity-3";
+
+                        return (
+                          <button
+                            key={dateText}
+                            className={`calendar-day ${hasVideo ? `has-video ${intensityClass}` : ""} ${isSelectedDate ? "selected" : ""}`}
+                            onClick={() => handleCalendarDateClick(date)}
+                            title={hasVideo ? `총 ${videos.length}개 영상 / ${totalEvents}건의 이벤트` : "영상 없음"}
+                          >
+                            <span className="calendar-date-number">{date.getDate()}</span>
+                            {videos.length > 1 && (
+                              <span className="calendar-multi-count-badge" title={`영상 ${videos.length}개`}>
+                                {videos.length}개
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </section>
-                )}
+                  <div className="calendar-legend"><span><i /> 영상 있음</span><span><i /> 의심 구간 있음</span><span><i /> 선택한 날짜</span></div>
+                </div>
               </aside>
             </div>
 
@@ -2994,26 +2978,25 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               </div>
             </section>
 
-            {/* 오른쪽 패널: (1280px 이상) 진행 단계 + 이 영상의 분석 이력. 넓은 화면에서 닫으면 칸째 빠진다(헤더의 '패널 닫기').
-                좁은 화면에선 영상 아래에 늘 보인다(영상 크기와 상관없음) */}
-            {(isHistoryOpen || !isXLScreen) && (
-              <div className="watch-right">
-                {isXLScreen && workflowSteps}
-                <AnalysisHistoryPanel
-                  history={selectedVideo.analysisHistory || []}
-                  events={selectedVideo.events}
-                  progressText={(taskId) => {
-                    const job = analyzingJobs.find((j) => j.taskId === taskId);
-                    return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
-                  }}
-                  activeNo={highlightAnalysisNo}
-                  onSelect={(history) => {
-                    // 그 분석의 클립을 왼쪽 목록에서 강조(나머지는 흐리게). 같은 이력을 다시 누르면 해제
-                    setHighlightAnalysisNo((cur) => (cur === history.no ? null : history.no));
-                  }}
-                />
-              </div>
-            )}
+            {/* 오른쪽 패널: (1280px 이상) 진행 단계 + 이 영상의 분석 이력. 넓은 화면에서 닫으면(헤더의 '패널 닫기') 칸 폭이
+                0.3초 동안 0 으로 줄며 사라진다(App.css) — 그동안 보이도록 닫혀도 화면에서 빼지 않고, 대신 inert 로
+                보이지 않는 버튼에 Tab·클릭이 가지 않게 한다. 좁은 화면에선 영상 아래에 늘 보인다(영상 크기와 상관없음) */}
+            <div className="watch-right" inert={isXLScreen && !isHistoryOpen} aria-hidden={isXLScreen && !isHistoryOpen ? true : undefined}>
+              {isXLScreen && workflowSteps}
+              <AnalysisHistoryPanel
+                history={selectedVideo.analysisHistory || []}
+                events={selectedVideo.events}
+                progressText={(taskId) => {
+                  const job = analyzingJobs.find((j) => j.taskId === taskId);
+                  return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
+                }}
+                activeNo={highlightAnalysisNo}
+                onSelect={(history) => {
+                  // 그 분석의 클립을 왼쪽 목록에서 강조(나머지는 흐리게). 같은 이력을 다시 누르면 해제
+                  setHighlightAnalysisNo((cur) => (cur === history.no ? null : history.no));
+                }}
+              />
+            </div>
           </div>
         </main>
       )}
