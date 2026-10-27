@@ -1942,6 +1942,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 분석 이력에서 고른 분석의 클립이 아직 남아 있으면 '강조 중' (클립을 다 지우면 저절로 풀림)
   const isHighlighting = !!selectedVideo && highlightAnalysisNo != null
     && selectedVideo.events.some((e) => e.analysisNo === highlightAnalysisNo);
+  // 왼쪽 클립 목록 순서: 최근 분석이 위, 같은 분석 안에서는 영상 시각 순(사용자 요청 2026-10-27).
+  // 재생바의 빨간 구간은 서버 순서 그대로 둔다 — 겹친 구간은 나중에 그린 최근 분석이 위에 와서 눌린다
+  const listedEvents = selectedVideo
+    ? [...selectedVideo.events].sort((a, b) => (b.analysisNo ?? 0) - (a.analysisNo ?? 0) || a.startSec - b.startSec)
+    : [];
   const workflowSteps = selectedVideo ? (
     <ol className="incident-workflow" aria-label="사고 의심 구간 검토 순서">
       {[
@@ -2522,7 +2527,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   {selectedVideo.events.length === 0 ? (
                     <div className="event-empty-hint">감지된 이벤트가 없습니다.</div>
                   ) : (
-                    selectedVideo.events.map((event) => (
+                    listedEvents.map((event) => (
                       <div
                         key={event.id}
                         className={`event-item ${currentEventId === event.id ? "active" : ""} ${
