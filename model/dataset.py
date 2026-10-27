@@ -1,6 +1,9 @@
 import os
 import glob
+import hashlib
+import inspect
 import math
+from pathlib import Path
 import cv2
 import numpy as np
 import torch
@@ -12,6 +15,28 @@ from PIL import Image
 import config
 
 
+def _open_video(path, threads=None):
+    """영상 열기. threads 를 주면 영상 풀기 스레드를 그 수로 제한한다(config.TRAIN_CV2_THREADS —
+    로더 작업자 여러 개가 CPU 코어를 나눠 쓸 때). 그렇게 못 열면 기본 방식으로 연다. 풀린 화소는 같다."""
+    if threads and hasattr(cv2, 'CAP_PROP_N_THREADS'):
+        cap = cv2.VideoCapture(path, cv2.CAP_FFMPEG, [cv2.CAP_PROP_N_THREADS, int(threads)])
+        if cap.isOpened():
+            return cap
+        cap.release()
+    return cv2.VideoCapture(path)
+
+
+def limit_cv2_threads(n, _worker_id=None):
+    """OpenCV 계산(색 변환·크기 줄이기) 스레드 수를 n 으로. 로더를 만들기 전에 부모 프로세스에서 한 번 부르고,
+    DataLoader worker_init_fn 으로도 넘긴다(functools.partial(limit_cv2_threads, n)).
+
+    ⚠️ fork 된 작업자 안에서 처음 바꾸면 멈춘다(부모가 OpenCV 스레드를 이미 띄웠을 때 — 2026-10-28 확인).
+       그래서 부모에서 먼저 정해 작업자가 물려받게 하고, 작업자에서는 값이 다를 때만(spawn — Windows·macOS) 바꾼다.
+    """
+    if cv2.getNumThreads() != int(n):
+        cv2.setNumThreads(int(n))
+
+
 class HitAndRunDataset(Dataset):
     def __init__(
         self,
@@ -20,6 +45,7 @@ class HitAndRunDataset(Dataset):
         r_value=config.R_VALUE,
         resize=config.RESIZE,
         augment=True,
+        cache_dir=None,
     ):
         self.data_dir = data_dir
         self.clip_length = clip_length
@@ -27,6 +53,13 @@ class HitAndRunDataset(Dataset):
         self.resize = resize
         # augment=True → 학습용(랜덤 증강 적용), False → 검증용(증강 없음, 결정적)
         self.augment = augment
+        # 클립 저장본 폴더(검증 전용, config.TRAIN_VAL_CACHE). 증강하면 매번 클립이 달라 쓸 수 없다.
+        if augment and cache_dir:
+            raise ValueError('클립 저장본은 증강 없는(검증) 데이터셋에만 쓸 수 있습니다')
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        self._cache_off = False
+        # 영상 풀기 스레드 수(None = OpenCV 기본). 작업자 쪽 OpenCV 계산 스레드는 train.py 가 맞춘다.
+        self.cv2_threads = getattr(config, 'TRAIN_CV2_THREADS', None)
         # A 클립 방식(config.TRAIN_A_MODE). 'span'이면 샘플마다 창 묶음 (K, 3, T, H, W)을
         # 돌려주고(비충돌은 K=1), 로더는 span_collate 로 묶는다.
         a_mode = getattr(config, 'TRAIN_A_MODE', 'pre')
@@ -262,6 +295,90 @@ class HitAndRunDataset(Dataset):
 
         return aug_frames
 
+    def _read_frames(self, mp4_path, s0, n_read, bbox, r):
+        """s0 부터 n_read 프레임을 읽어 자르고 줄인 uint8 RGB 프레임 목록. 영상이 짧으면 마지막 프레임으로 채운다."""
+        cap = _open_video(mp4_path, self.cv2_threads)
+        frames = []
+        cap.set(cv2.CAP_PROP_POS_FRAMES, s0)
+
+        for _ in range(n_read):
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append(self._crop_and_pad(frame, bbox, r))
+        cap.release()
+
+        while len(frames) < n_read:
+            frames.append(
+                frames[-1] if frames else np.zeros((self.resize[1], self.resize[0], 3), dtype=np.uint8))
+        return frames
+
+    # ── 클립 저장본 (검증 전용, config.TRAIN_VAL_CACHE) ──
+    # 검증은 증강 없이 매 에포크 같은 클립이라, 자르고 줄인 uint8 프레임을 한 번 저장해 두고 읽는다.
+    # 키 = 클립 만드는 코드(_read_frames·_crop_and_pad)·OpenCV 버전 + 영상 파일(경로·크기·수정시각)
+    #      + 시작 프레임·길이·박스·r·크기 — 하나라도 바뀌면 다른 파일이 되어 새로 만든다.
+    _cache_code = None
+
+    @classmethod
+    def _cache_code_key(cls):
+        if cls._cache_code is None:
+            src = inspect.getsource(cls._read_frames) + inspect.getsource(cls._crop_and_pad)
+            cls._cache_code = hashlib.sha1(f'{src}|{cv2.__version__}'.encode()).hexdigest()
+        return cls._cache_code
+
+    def _cache_path(self, mp4_path, s0, n_read, bbox, r):
+        if self.cache_dir is None or self._cache_off:
+            return None
+        try:
+            st = os.stat(mp4_path)
+        except OSError:
+            return None
+        key = repr((self._cache_code_key(), os.path.abspath(mp4_path), st.st_size, st.st_mtime_ns,
+                    int(s0), int(n_read), tuple(int(v) for v in bbox), float(r), tuple(self.resize)))
+        return self.cache_dir / f'{hashlib.sha1(key.encode()).hexdigest()}.npy'
+
+    def _cache_load(self, path, n_read):
+        if path is None or not path.exists():
+            return None
+        try:
+            arr = np.load(path)
+        except (OSError, ValueError):
+            return None                       # 읽을 수 없는 파일 — 새로 만들어 덮어쓴다
+        if arr.dtype != np.uint8 or arr.shape != (n_read, self.resize[1], self.resize[0], 3):
+            return None
+        return arr
+
+    def _cache_save(self, path, frames):
+        if path is None:
+            return
+        tmp = path.with_name(f'{path.stem}.{os.getpid()}.tmp')
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(tmp, 'wb') as f:
+                np.save(f, np.stack(frames, axis=0))
+            os.replace(tmp, path)   # 다 쓴 뒤 이름을 바꿔, 다른 작업자가 쓰다 만 파일을 읽지 않게
+        except OSError as e:
+            # 디스크가 차는 등 — 이 작업자는 저장 없이 계속한다(검증 결과는 같다)
+            self._cache_off = True
+            print(f'⚠️ 검증 클립 저장본을 쓰지 못해 저장 없이 계속합니다: {e}')
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def cache_status(self, indices):
+        """저장본 상태 (이미 있는 클립 수, 클립 수, 다 만들었을 때 크기 GB) — 학습 시작 때 안내용."""
+        have, size = 0, 0
+        for i in indices:
+            s = self.samples[i]
+            starts = list(s.get('win_starts') or [s['start_f']])
+            s0, n_read = min(starts), max(starts) - min(starts) + self.clip_length
+            p = self._cache_path(s['mp4_path'], s0, n_read, s['bbox'], self.r_value)
+            have += bool(p is not None and p.exists())
+            size += n_read * self.resize[0] * self.resize[1] * 3
+        return have, len(indices), size / 2 ** 30
+
     def _frames_to_tensor(self, frames):
         arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
         video_tensor = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()
@@ -312,21 +429,11 @@ class HitAndRunDataset(Dataset):
         # 모든 창이 같은 박스·r·증강을 쓰게 되어, 같은 충돌의 다른 시점일 뿐이 된다.
         s0 = min(starts)
         n_read = max(starts) - s0 + self.clip_length
-        cap = cv2.VideoCapture(sample['mp4_path'])
-        frames = []
-        cap.set(cv2.CAP_PROP_POS_FRAMES, s0)
-
-        for _ in range(n_read):
-            ret, frame = cap.read()
-            if not ret:
-                break
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append(self._crop_and_pad(frame, bbox, r))
-        cap.release()
-
-        while len(frames) < n_read:
-            frames.append(
-                frames[-1] if frames else np.zeros((self.resize[1], self.resize[0], 3), dtype=np.uint8))
+        cache = self._cache_path(sample['mp4_path'], s0, n_read, bbox, r)
+        frames = self._cache_load(cache, n_read)
+        if frames is None:
+            frames = self._read_frames(sample['mp4_path'], s0, n_read, bbox, r)
+            self._cache_save(cache, frames)
 
         # 증강은 학습 세트에만 적용 (검증 세트는 결정적이어야 val loss가 안정됨)
         if self.augment:

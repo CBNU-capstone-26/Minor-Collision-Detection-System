@@ -180,11 +180,25 @@ TARGET_ID = 0
 USE_AMP = True
 # GPU 메모리 배치 channels_last_3d (학습·평가·영상 분석·서비스 워커 공통, GPU 일 때만 — CPU 는 원래 안 씀).
 # 처음(2026-06, I3D 계열 모델) '켜면 빠르다'는 일반 권장으로 켰지만 X3D 로 바꾼 뒤 재 보지 않았다.
-# 2026-10-22 학습 서버 RTX 3080 실측(model/train_speed_check, 묶음 15·AMP·checkpointing):
+# 2026-10-22 학습 서버 RTX 3080 실측(model/speed_check, 당시 이름 train_speed_check · 묶음 15·AMP·checkpointing):
 #   켬 → 끔: 학습 1단계 1.190 → 0.527초(2.3배), 검증 1단계 0.239 → 0.093초(2.6배), 메모리 5.80 → 5.21GB,
 #   P(A) 차이 1.9e-6(같은 결과). X3D 의 채널별(depthwise) 3D 합성곱이 이 배치에서 느린 것으로 보인다.
-# GPU 나 모델을 바꾸면 python -m model.train_speed_check 로 다시 잰다.
+# GPU 나 모델을 바꾸면 python -m model.speed_check 로 다시 잰다.
 USE_CHANNELS_LAST = False
+
+# ---------- 학습 속도 (결과는 같다) ----------
+# 검증 클립 저장본: 검증은 증강 없이 매 에포크 같은 클립을 쓰므로, 처음 만든 클립(자르고 줄인 uint8)을
+# 저장해 두고 다음 에포크부터 읽는다 — 검증 입력이 비트 단위로 같고, 검증의 영상 풀기 시간이 사라진다
+# (2026-10-22 기준 검증 1,144클립 ≈ 5.2GB, 검증이 에포크의 약 15%). 영상 파일·시작 프레임·박스·r·크기·
+# 클립 만드는 코드가 바뀌면 새로 만든다. 예전 저장본은 자동으로 지우지 않는다 — 공간이 필요하면
+# 폴더째 지워도 된다(다음 학습 때 다시 만든다). 디스크가 차면 저장 없이 계속한다.
+TRAIN_VAL_CACHE = os.getenv("TRAIN_VAL_CACHE", "1").strip().lower() not in ("0", "false", "no")
+TRAIN_VAL_CACHE_DIR = _ROOT / "data" / ".clip_cache" / "val"
+# 데이터 로더 작업자마다 OpenCV 스레드 수(영상 풀기·색 변환·크기 줄이기). None = OpenCV 기본(코어 수만큼).
+# 작업자 8개가 각자 코어 전부를 쓰려 하면 스레드가 코어보다 많아져 서로 기다릴 수 있다(서버에서 작업자
+# 8 → 24개로 늘려도 묶음 0.93 → 0.90초로 그대로였다). python -m model.speed_check 의 ③④로
+# '기본 vs 1'을 재 보고 빠를 때만 1로 둔다(환경변수 TRAIN_CV2_THREADS=1 도 같다). 화소는 같다.
+TRAIN_CV2_THREADS = int(os.getenv("TRAIN_CV2_THREADS", "0") or 0) or None
 
 # ---------- 사전학습 / 입력 정규화 ----------
 # 백본은 pytorchvideo X3D-M. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.

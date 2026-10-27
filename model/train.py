@@ -1,4 +1,5 @@
 import csv
+import functools
 import json
 import math
 import os
@@ -12,8 +13,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 
 import config
-from dataset import HitAndRunDataset, span_collate
+from dataset import HitAndRunDataset, limit_cv2_threads, span_collate
 from device_utils import get_device, is_cuda_like, is_channels_last_3d_supported
+import hitandrun_model
 from hitandrun_model import HitAndRun3DCNN
 from runlog import make_run_dir, write_run_info
 from train_balance import build as build_balance, resolve_csv
@@ -86,6 +88,13 @@ def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sa
     if num_workers > 0:
         # ② prefetch_factor 증가 — GPU 연산 중 다음 배치를 더 많이 미리 준비
         kwargs.update({'persistent_workers': True, 'prefetch_factor': 4})
+        # ③ 작업자마다 OpenCV 스레드 수(config.TRAIN_CV2_THREADS, 기본 None = OpenCV 기본).
+        #    부모에서 먼저 정해 작업자가 물려받게 한다(작업자 안에서 처음 바꾸면 멈춤 — dataset.py 주석).
+        #    영상 풀기 스레드는 dataset.py 가 같은 값으로 연다.
+        threads = getattr(config, 'TRAIN_CV2_THREADS', None)
+        if threads:
+            limit_cv2_threads(threads)
+            kwargs['worker_init_fn'] = functools.partial(limit_cv2_threads, threads)
     return DataLoader(dataset, **kwargs)
 
 
@@ -126,9 +135,11 @@ def train_model(
         data_dir=data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=True,
     )
+    # 검증 클립은 매 에포크 같으므로 처음 만든 것을 저장해 두고 읽는다(config.TRAIN_VAL_CACHE, 결과 같음)
     val_dataset = HitAndRunDataset(
         data_dir=data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=False,
+        cache_dir=config.TRAIN_VAL_CACHE_DIR if getattr(config, 'TRAIN_VAL_CACHE', False) else None,
     )
     # 계층적 분할(stratified): 그룹을 세분화해 각 그룹을 train_split_ratio(8:2)로 나눈다.
     #   rc  : 방향(N/S/L/R) × 클래스(A/S) → 최대 8그룹 (각 방향·클래스가 train/val에 고루 분포)
@@ -188,6 +199,17 @@ def train_model(
     print("  그룹별 개수: " + ", ".join(
         f"{d}{'' if dr == '-' else '-' + dr}-{sc}:{len(v)}"
         for (d, dr, sc), v in sorted(groups.items())))
+    if val_dataset.cache_dir is not None:
+        have, n_val, gb = val_dataset.cache_status(val_rc_idx + val_real_idx)
+        print(f"[검증 저장본] {val_dataset.cache_dir} — 클립 {n_val}개 중 {have}개 있음 · 전체 약 {gb:.1f}GB "
+              f"({'모두 있어 첫 검증부터 읽음' if have == n_val else '없는 클립은 첫 검증 때 만들어 저장'})")
+    else:
+        print("[검증 저장본] 끔(config.TRAIN_VAL_CACHE) — 매 에포크 영상에서 검증 클립을 만든다")
+    if getattr(config, 'TRAIN_CV2_THREADS', None):
+        print(f"[로더] 작업자마다 OpenCV 스레드 {config.TRAIN_CV2_THREADS}개(config.TRAIN_CV2_THREADS)")
+    if hitandrun_model.GRAD_CHECKPOINT and hitandrun_model.GRAD_CHECKPOINT_BLOCKS is not None:
+        print(f"[체크포인팅] 앞 블록 {hitandrun_model.GRAD_CHECKPOINT_BLOCKS}개만 다시 계산"
+              f"(GRAD_CHECKPOINT_BLOCKS, 기본 4) — 바뀐 블록은 BN momentum 을 맞춰 결과 같음")
 
     # ── A 클립 방식 (config.TRAIN_A_MODE) ──
     # 'span' 이면 충돌 샘플 하나가 '접근~충돌 종료'를 덮는 창들이다. 창을 전부 A로 학습하되
