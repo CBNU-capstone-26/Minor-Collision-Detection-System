@@ -39,7 +39,7 @@ import torch
 import torch.nn.functional as F
 
 import config
-from device_utils import predict_batch_size
+from device_utils import is_cuda_like, predict_batch_size
 
 # 검사·변환 방식이 바뀌면 올린다 → 저장된 결과·변환 파일을 새로 만든다
 # (2: 변환 모델이 logits 와 함께 칸별 클래스 지도(CAM)도 내보낸다)
@@ -328,6 +328,11 @@ def _fp16_supported(dev):
 
 def _select_gpu(model, clip_shape, batch):
     dev = next(model.parameters()).device
+    # cuDNN 은 입력 모양마다 처음 정한 계산 방식을 기억해 두고, benchmark 를 나중에 켜도 다시 재지 않는다.
+    # 아래 FP16 자가 검사가 서비스 묶음 크기로 모델을 처음 돌리므로 그 전에 켜야 서비스가 빠른 방식을 쓴다
+    # (2026-10-22 fp16_check: 꺼진 채 먼저 돌려 FP32 가 41.6 → 28.1창/초로 묶였다).
+    if is_cuda_like(dev):
+        torch.backends.cudnn.benchmark = True
     base = _torch_runner(model)
     if not config.INFER_FP16:
         _log(f'PyTorch GPU ({torch.cuda.get_device_name(dev)}) — FP32')

@@ -96,6 +96,10 @@ def _run(args):
     if cap < (7, 0):
         print('⚠️ 연산능력 7.0 미만(Tensor Core 없음) — FP16 이 빠르지 않을 수 있고 서비스는 이 GPU 에서 FP16 을 켜지 않습니다.')
     cl = is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST
+    # 서비스·평가처럼 cuDNN 이 가장 빠른 방식을 재서 고르게 한다. 꺼진 채 속도표를 먼저 돌리면 그때 정한
+    # (느릴 수 있는) 방식이 입력 모양마다 기억돼, 뒤의 --full-eval 이 benchmark 를 켜도 그대로 쓰인다.
+    torch.backends.cudnn.benchmark = True
+    print(f'cuDNN benchmark 켬 · channels_last {"켬" if cl else "끔"}')
 
     def run(x, fp16, tf32=True):
         old = torch.backends.cudnn.allow_tf32
