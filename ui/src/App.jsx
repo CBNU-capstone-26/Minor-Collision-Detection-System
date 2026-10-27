@@ -197,7 +197,7 @@ function clipEventAt(events, t, selectedId) {
 
 // 빨간 구간·목록의 클립을 누르면 구간 이만큼 앞부터 재생한다 — 사고 장면부터 바로 틀면 갑작스러워서(사용자 요청 2026-10-27).
 // 그동안 CAM 클립을 미리 불러 맞춰 두어 구간에 들어서는 순간 바로 바뀐다
-const EVENT_PREROLL_SEC = 2;
+const EVENT_PREROLL_SEC = 1;   // 처음 2초였다가 길다는 요청으로 1초(2026-10-27)
 
 // 재생 위치 t 부터 lead 초 안에 화면에 나올 클립들 — 지금 나올 클립과, 구간 경계에서 바뀌어 나올 클립.
 // 미리 불러 재생 위치를 맞춰 두면 경계에서 바로 바뀐다(그때 불러오면 0.1~0.6초 원본이 비쳤다, 2026-10-27 실측)
@@ -1625,7 +1625,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setIsSeeking(false);
   };
 
-  // 재생바의 빨간 구간·왼쪽 클립 목록 클릭 → 그 구간 2초 앞(EVENT_PREROLL_SEC)부터 재생. 그 클립을 고른 것으로 두어,
+  // 재생바의 빨간 구간·왼쪽 클립 목록 클릭 → 그 구간 1초 앞(EVENT_PREROLL_SEC)부터 재생. 그 클립을 고른 것으로 두어,
   // 같은 시각에 여러 분석의 클립이 겹치면 이 클립이 메인 화면에 나온다(clipEventAt)
   const seekToEvent = (event) => {
     if (isDetectingVehicles) return;
