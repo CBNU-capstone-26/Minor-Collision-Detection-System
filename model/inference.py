@@ -176,7 +176,8 @@ def _draw_collision_cam(frame, cam, square, box, min_rel=config.PREDICT_CLIP_CAM
     square: 정사각 크롭의 원본 좌표 (x1, y1, x2, y2) — 영상 밖으로 나간 부분 포함
     box   : 칠할 bbox 의 원본 좌표 (x1, y1, x2, y2) — 영상 안으로 자른 것
     bbox 안에서 가장 강한 값의 min_rel 배 이상인 곳만, 강할수록 진하게(최대 alpha, 빠르기 gamma) 칠하고 나머지는 원본 그대로 둔다.
-    색은 JET 의 노랑~빨강 부분만 써서 가장자리 노랑·주황 → 가운데 진한 빨강 — 초록이 섞이면 옅어 보였다(2026-10-27).
+    색은 바깥 하늘색 → 초록 → 노랑 → 가운데 빨강의 고리 — 사용자가 보여 준 참고 모양(충돌 지점에 작은 무지개 고리, 2026-10-27).
+    JET 의 아주 파란 끝(0~0.2)은 쓰지 않는다 — 가장자리가 짙은 파랑이면 칠한 곳이 멍처럼 보인다.
     (예전엔 bbox 전체에 JET 를 40% 덮어 근거가 약한 곳까지 파랗게 칠해졌다)
     """
     sx1, sy1, sx2, sy2 = square
@@ -194,7 +195,7 @@ def _draw_collision_cam(frame, cam, square, box, min_rel=config.PREDICT_CLIP_CAM
         return                      # bbox 안에 사고 쪽 근거가 없으면 칠하지 않는다
     t = np.clip((part / peak - min_rel) / (1 - min_rel), 0, 1)     # 기준선 0 ~ 가장 강한 곳 1
     a = (t ** gamma * alpha)[..., None]
-    color = cv2.applyColorMap(((0.7 + 0.3 * t) * 255).astype(np.uint8), cv2.COLORMAP_JET)
+    color = cv2.applyColorMap(((0.2 + 0.8 * t) * 255).astype(np.uint8), cv2.COLORMAP_JET)
     roi = frame[by1:by2, bx1:bx2]
     frame[by1:by2, bx1:bx2] = (roi * (1 - a) + color * a).astype(np.uint8)
 
