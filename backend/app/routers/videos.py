@@ -1,4 +1,5 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
+import json
 import math
 import shutil
 import tempfile
@@ -369,7 +370,7 @@ def video_thumbnail(video_id: int, db: Session = Depends(get_db), user: db_model
     return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
 
 
-@router.post("/{video_id}/detect-vehicles", response_model=api_schemas.VehicleDetectionResponse)
+@router.post("/{video_id}/detect-vehicles-sync", response_model=api_schemas.VehicleDetectionResponse)
 def detect_vehicles_in_video(
     video_id: int,
     timestamp_sec: float | None = Query(0.0),
@@ -459,4 +460,94 @@ def detect_vehicles_in_video(
         detected_vehicles=[
             api_schemas.DetectedVehicleBox(**item) for item in detected_list
         ],
+    )
+
+
+VEHICLE_DETECTION_ACTIVE_STATUSES = ("PENDING", "PROCESSING")
+
+
+def _vehicle_detection_progress(task: db_models.VehicleDetectionTask) -> dict:
+    if task.status != "PROCESSING" or not task.celery_task_id:
+        return {"progress": None, "stage": None}
+    from app.worker import celery_app
+    result = celery_app.AsyncResult(task.celery_task_id)
+    if result.state == "PROGRESS" and isinstance(result.info, dict):
+        return {"progress": result.info.get("percent"), "stage": result.info.get("stage")}
+    return {"progress": None, "stage": None}
+
+
+def _vehicle_detection_rows(task: db_models.VehicleDetectionTask) -> list[dict]:
+    if not task.result_json:
+        return []
+    try:
+        rows = json.loads(task.result_json)
+    except json.JSONDecodeError:
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def _enqueue_vehicle_detection(video: db_models.Video, timestamp_sec: float, db: Session):
+    existing = (db.query(db_models.VehicleDetectionTask)
+                .filter(db_models.VehicleDetectionTask.video_id == video.id,
+                        db_models.VehicleDetectionTask.status.in_(VEHICLE_DETECTION_ACTIVE_STATUSES))
+                .order_by(db_models.VehicleDetectionTask.id).first())
+    if existing is not None:
+        return api_schemas.VehicleDetectionTaskOut(
+            task_id=existing.id,
+            celery_task_id=existing.celery_task_id,
+            status=existing.status,
+            already_running=True,
+        )
+
+    task = db_models.VehicleDetectionTask(
+        video_id=video.id,
+        timestamp_sec=max(0.0, timestamp_sec),
+        status="PENDING",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    from app.vehicle_job import run_vehicle_detection_task
+    async_result = run_vehicle_detection_task.delay(task.id)
+    task.celery_task_id = async_result.id
+    db.commit()
+    return api_schemas.VehicleDetectionTaskOut(
+        task_id=task.id,
+        celery_task_id=task.celery_task_id,
+        status=task.status,
+    )
+
+
+@router.post("/{video_id}/detect-vehicles", response_model=api_schemas.VehicleDetectionTaskOut)
+def enqueue_vehicle_detection(
+    video_id: int,
+    timestamp_sec: float | None = Query(0.0),
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    """GPU 워커에 차량 탐지를 맡기고, UI가 추적할 작업 ID를 반환한다."""
+    video = _get_owned_video(video_id, db, user)
+    return _enqueue_vehicle_detection(video, timestamp_sec or 0.0, db)
+
+
+@router.get("/{video_id}/vehicle-detection-tasks/{task_id}",
+            response_model=api_schemas.VehicleDetectionTaskStatusOut)
+def get_vehicle_detection_task(
+    video_id: int,
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    video = _get_owned_video(video_id, db, user)
+    task = db.get(db_models.VehicleDetectionTask, task_id)
+    if task is None or task.video_id != video.id:
+        raise HTTPException(status_code=404, detail="차량 탐지 작업을 찾을 수 없습니다.")
+    return api_schemas.VehicleDetectionTaskStatusOut(
+        task_id=task.id,
+        status=task.status,
+        error_message=task.error_message,
+        detected_vehicles=[api_schemas.DetectedVehicleBox(**row)
+                           for row in _vehicle_detection_rows(task)],
+        **_vehicle_detection_progress(task),
     )

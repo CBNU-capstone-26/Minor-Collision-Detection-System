@@ -1225,8 +1225,25 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     detectAbortControllerRef.current = controller;
 
     try {
-      const res = await api.detectVehicles(selectedVideo.id, currentTime, controller.signal);
-      const list = res.detected_vehicles || [];
+      const request = await api.detectVehicles(selectedVideo.id, currentTime, controller.signal);
+      let result;
+      while (!result) {
+        if (controller.signal.aborted) {
+          throw new DOMException("차량 탐지가 취소되었습니다.", "AbortError");
+        }
+        const status = await api.getVehicleDetectionTask(
+          selectedVideo.id, request.task_id, controller.signal,
+        );
+        if (status.status === "SUCCESS") {
+          result = status;
+          break;
+        }
+        if (status.status === "FAILURE" || status.status === "CANCELLED") {
+          throw new Error(status.error_message || "차량 탐지에 실패했습니다.");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+      const list = result.detected_vehicles || [];
       setDetectedBoxes(list);
       setIsBBoxMode(true);
       // 탐지 성공은 알리지 않는다(영상 위에 차량이 바로 표시됨). 한 대도 없을 때만 다음 행동을 안내한다.

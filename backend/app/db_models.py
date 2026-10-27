@@ -49,6 +49,7 @@ class Video(Base):
 
     owner = relationship("User", back_populates="videos")
     analysis_tasks = relationship("AnalysisTask", back_populates="video")
+    vehicle_detection_tasks = relationship("VehicleDetectionTask", back_populates="video")
     crash_events = relationship("CrashEvent", back_populates="video")
 
 
@@ -73,6 +74,23 @@ class AnalysisTask(Base):
 
     video = relationship("Video", back_populates="analysis_tasks")
     crash_events = relationship("CrashEvent", back_populates="task")
+
+
+class VehicleDetectionTask(Base):
+    """GPU 워커가 실행하는 프레임별 차량 탐지 작업."""
+    __tablename__ = "vehicle_detection_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False)
+    celery_task_id = Column(String(255), unique=True, index=True, nullable=True)
+    timestamp_sec = Column(Float, nullable=False, default=0.0)
+    status = Column(String(50), nullable=False, default="PENDING")
+    error_message = Column(Text, nullable=True)
+    result_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+
+    video = relationship("Video", back_populates="vehicle_detection_tasks")
 
 
 class CrashEvent(Base):

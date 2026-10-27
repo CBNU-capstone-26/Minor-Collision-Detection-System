@@ -172,6 +172,8 @@ export const api = {
       method: "POST",
       signal,
     }),
+  getVehicleDetectionTask: (videoId, taskId, signal) =>
+    request(`/videos/${videoId}/vehicle-detection-tasks/${taskId}`, { signal }),
   analyze: (videoId, bbox, signal) =>
     request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox, signal }),
   getTaskStatus: (taskId) => request(`/tasks/${taskId}`),

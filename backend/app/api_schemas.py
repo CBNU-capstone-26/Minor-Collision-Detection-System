@@ -90,6 +90,23 @@ class VehicleDetectionResponse(BaseModel):
     detected_vehicles: list[DetectedVehicleBox] = []
 
 
+class VehicleDetectionTaskOut(BaseModel):
+    """차량 탐지 요청 직후 반환하는 추적용 작업 정보."""
+    task_id: int
+    celery_task_id: Optional[str] = None
+    status: str
+    already_running: bool = False
+
+
+class VehicleDetectionTaskStatusOut(BaseModel):
+    task_id: int
+    status: str
+    progress: Optional[float] = None
+    stage: Optional[str] = None
+    error_message: Optional[str] = None
+    detected_vehicles: list[DetectedVehicleBox] = []
+
+
 # ---------- 영상 ----------
 class LastTaskOut(BaseModel):
     """영상의 가장 최근 분석 작업 — 실패·중단을 화면에서 알리고 '다시 실행'하기 위함."""
