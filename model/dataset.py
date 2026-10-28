@@ -26,6 +26,40 @@ def _open_video(path, threads=None):
     return cv2.VideoCapture(path)
 
 
+def h264_roundtrip(frames, crf, gop):
+    """RGB 프레임 목록을 H.264(libx264)로 메모리 안에서 압축했다 풀어 같은 수의 프레임으로 돌려준다.
+
+    실제 CCTV 처럼 키프레임 사이는 앞 프레임과 달라진 곳만 저장해, 가만히 있는 곳은 그대로고 움직이는 곳이 깨진다.
+    B 프레임 없음(zerolatency)·스레드 1(로더 작업자가 이미 코어를 나눠 씀). 크기는 짝수여야 한다(yuv420p).
+    """
+    import io
+    import av
+    h, w = frames[0].shape[:2]
+    buf = io.BytesIO()
+    out = av.open(buf, mode='w', format='h264')
+    try:
+        st = out.add_stream('libx264', rate=30)
+        st.width, st.height, st.pix_fmt = w, h, 'yuv420p'
+        st.options = {'crf': str(int(crf)), 'preset': 'ultrafast', 'tune': 'zerolatency',
+                      'g': str(int(gop)), 'threads': '1'}
+        for f in frames:
+            for pkt in st.encode(av.VideoFrame.from_ndarray(np.ascontiguousarray(f), format='rgb24')):
+                out.mux(pkt)
+        for pkt in st.encode():
+            out.mux(pkt)
+    finally:
+        out.close()
+    buf.seek(0)
+    inp = av.open(buf, mode='r', format='h264')
+    try:
+        dec = [fr.to_ndarray(format='rgb24') for fr in inp.decode(video=0)]
+    finally:
+        inp.close()
+    if len(dec) != len(frames):
+        raise ValueError(f'H.264 복원 프레임 수가 다름({len(dec)} != {len(frames)})')
+    return dec
+
+
 def limit_cv2_threads(n, _worker_id=None):
     """OpenCV 계산(색 변환·크기 줄이기) 스레드 수를 n 으로. 로더를 만들기 전에 부모 프로세스에서 한 번 부르고,
     DataLoader worker_init_fn 으로도 넘긴다(functools.partial(limit_cv2_threads, n)).
@@ -58,6 +92,7 @@ class HitAndRunDataset(Dataset):
             raise ValueError('클립 저장본은 증강 없는(검증) 데이터셋에만 쓸 수 있습니다')
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self._cache_off = False
+        self._lq_off = False         # 저화질 증강이 실패하면(PyAV 없음 등) 이 작업자는 끄고 계속한다
         # 영상 풀기 스레드 수(None = OpenCV 기본). 작업자 쪽 OpenCV 계산 스레드는 train.py 가 맞춘다.
         self.cv2_threads = getattr(config, 'TRAIN_CV2_THREADS', None)
         # A 클립 방식(config.TRAIN_A_MODE). 'span'이면 샘플마다 창 묶음 (K, 3, T, H, W)을
@@ -295,6 +330,33 @@ class HitAndRunDataset(Dataset):
 
         return aug_frames
 
+    def _apply_low_quality(self, frames, crop_side):
+        """저화질 증강(config.TRAIN_LQ_AUG_PROB, 학습 전용 — 주석은 config). 깨끗한 클립만 H.264 로 압축했다 풀고,
+        TRAIN_LQ_SIZE_PROB 비율은 먼저 작게 줄였다 다시 키운다. 값은 클립마다 하나(모든 프레임이 같은 영상)."""
+        p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0.0) or 0.0)
+        if (p <= 0 or self._lq_off or crop_side < getattr(config, 'TRAIN_LQ_MIN_CROP', 128)
+                or random.random() >= p):
+            return frames
+        h, w = frames[0].shape[:2]
+        size = None
+        if random.random() < getattr(config, 'TRAIN_LQ_SIZE_PROB', 0.5):
+            lo, hi = getattr(config, 'TRAIN_LQ_SIZE_RANGE', (48, 128))
+            hi = min(hi, int(crop_side * 0.75))      # 원래보다 확실히 작게만
+            if hi >= lo:
+                size = random.randint(lo // 2, hi // 2) * 2
+        crf = random.randint(*getattr(config, 'TRAIN_LQ_CRF_RANGE', (28, 42)))
+        gop = random.choice((10, 15, 30, 60))         # CCTV 키프레임 간격(0.3~2초)
+        src = [cv2.resize(f, (size, size), interpolation=cv2.INTER_AREA) for f in frames] if size else frames
+        try:
+            out = h264_roundtrip(src, crf, gop)
+        except Exception as e:                        # PyAV·libx264 없음 등 — 이 작업자는 증강 없이 계속
+            self._lq_off = True
+            print(f'⚠️ 저화질 증강을 쓸 수 없어 끄고 계속합니다: {type(e).__name__}: {e}')
+            return frames
+        if size:
+            out = [cv2.resize(f, (w, h), interpolation=cv2.INTER_LINEAR) for f in out]
+        return out
+
     def _read_frames(self, mp4_path, s0, n_read, bbox, r):
         """s0 부터 n_read 프레임을 읽어 자르고 줄인 uint8 RGB 프레임 목록. 영상이 짧으면 마지막 프레임으로 채운다."""
         cap = _open_video(mp4_path, self.cv2_threads)
@@ -438,6 +500,8 @@ class HitAndRunDataset(Dataset):
         # 증강은 학습 세트에만 적용 (검증 세트는 결정적이어야 val loss가 안정됨)
         if self.augment:
             frames = self._apply_augmentation(frames)
+            # 저화질 증강은 색·노이즈 뒤에(찍은 뒤 저장할 때 압축되는 순서). 원본 프레임 크롭 한 변으로 대상을 고른다
+            frames = self._apply_low_quality(frames, max(bbox[2] - bbox[0], bbox[3] - bbox[1]) * r)
 
         video = self._frames_to_tensor(frames)
         label = torch.tensor(sample['label'], dtype=torch.long)

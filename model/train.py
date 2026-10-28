@@ -281,6 +281,15 @@ def train_model(
         print(f"[묶음] 기본(무작위) — 에포크당 충돌 {n_a} · 정상 {n_s} = 1:{n_s / max(n_a, 1):.1f} · "
               f"묶음 {nb}개 · 충돌 없는 묶음 기대 {nb * (n_s / len(train_idx)) ** batch_size:.0f}개")
 
+    # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
+    lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
+    if lq_p > 0:
+        run_tag = f"{run_tag}_lq"
+        lo, hi = config.TRAIN_LQ_SIZE_RANGE
+        c_lo, c_hi = config.TRAIN_LQ_CRF_RANGE
+        print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
+              f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
+
     if dry_run:
         if batch_sampler is not None:
             for ep in range(3):
