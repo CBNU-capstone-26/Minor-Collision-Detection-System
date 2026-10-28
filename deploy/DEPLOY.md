@@ -146,6 +146,21 @@ sudo ./deploy/install.sh
 
 진행 중이던 분석은 재시작 때 끊기고 '실패'로 바뀐다 — 화면에서 다시 실행하면 된다.
 
+### 기존 영상의 썸네일 준비
+
+기존 큰 JPEG를 최대 640×360 미리보기로 바꾸고 서버 캐시에 미리 채우려면 실행한다.
+
+```bash
+cd ~/capstone-26/backend
+../venv311/bin/python -B -m app.backfill_thumbnails
+```
+
+미리보기는 R2의 `thumbnails/preview-v1/`와 서버의
+`STORAGE_DIR/thumbnails/preview-v1/`에 저장한다. 새 업로드는 자동 생성하며,
+서버 캐시가 비었으면 첫 요청에서 복구한다. 영상 삭제·보관 기간 정리 시 함께 지운다.
+썸네일 API는 매번 소유권을 확인하고, 브라우저의 ETag가 같으면 304로 재사용한다.
+R2 연결은 전송 중인 작업이 없고 2분 이상 사용하지 않았으면 다음 작업 전에 갱신한다.
+
 ## 문제 해결
 
 | 증상 | 확인할 것 |

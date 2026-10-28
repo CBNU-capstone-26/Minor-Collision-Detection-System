@@ -1,5 +1,6 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
 import json
+import logging
 import math
 import shutil
 import tempfile
@@ -8,7 +9,7 @@ from uuid import uuid4
 from pathlib import Path
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, UploadFile, Query,
+    APIRouter, Depends, File, Form, HTTPException, UploadFile, Query, Request, Response,
 )
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session, selectinload
@@ -18,6 +19,7 @@ from app import db_models, api_schemas
 from app.auth_guard import get_current_user, get_media_user
 from app.settings import settings
 from app.object_storage import LocalObjectStorage, get_storage, materialize
+from app.thumbnails import ensure_thumbnail, thumbnail_key, delete_thumbnail_cache
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
@@ -188,6 +190,10 @@ def upload_video(
         if total_frames <= 0:
             raise HTTPException(status_code=400, detail="영상을 읽을 수 없습니다.")
         storage.upload_path(temp_path, object_key, content_type=file.content_type or "video/mp4")
+        try:
+            ensure_thumbnail(storage, object_key, settings.THUMBNAIL_DIR, source_video=temp_path)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Thumbnail preparation failed: %s", type(exc).__name__)
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -290,6 +296,8 @@ def purge_video(video: db_models.Video, db: Session) -> None:
     storage = get_storage()
     storage.delete(video.video_path)
     storage.delete(f"thumbnails/{Path(video.video_path).stem}.jpg")
+    storage.delete(thumbnail_key(video.video_path))
+    delete_thumbnail_cache(video.video_path, settings.THUMBNAIL_DIR)
 
     # 4) 영상 행 삭제
     db.delete(video)
@@ -353,35 +361,24 @@ def stream_video(video_id: int, db: Session = Depends(get_db), user: db_models.U
 
 
 @router.get("/{video_id}/thumbnail")
-def video_thumbnail(video_id: int, db: Session = Depends(get_db), user: db_models.User = Depends(get_media_user)):
+def video_thumbnail(video_id: int, request: Request, db: Session = Depends(get_db), user: db_models.User = Depends(get_media_user)):
     video = _get_owned_video(video_id, db, user)
-
-    storage = get_storage()
-    thumb_key = f"thumbnails/{Path(video.video_path).stem}.jpg"
-    if storage.exists(thumb_key):
-        if not isinstance(storage, LocalObjectStorage):
-            return RedirectResponse(storage.presigned_url(
-                thumb_key, settings.S3_PRESIGNED_URL_EXPIRES))
-        return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
-
-    if not storage.exists(video.video_path):
-        raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
-    with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as src:
-        import cv2  # 지연 임포트
-        cap = cv2.VideoCapture(str(src))
-        ok, frame = cap.read()  # 첫 프레임 (BGR)
-        cap.release()
-        if not ok:
-            raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
-        with tempfile.NamedTemporaryFile(suffix=".jpg") as temp_thumb:
-            if not cv2.imwrite(temp_thumb.name, frame):
-                raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
-            storage.upload_path(temp_thumb.name, thumb_key, content_type="image/jpeg")
-
-    if not isinstance(storage, LocalObjectStorage):
-        return RedirectResponse(storage.presigned_url(
-            thumb_key, settings.S3_PRESIGNED_URL_EXPIRES))
-    return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
+    try:
+        path = ensure_thumbnail(get_storage(), video.video_path, settings.THUMBNAIL_DIR)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
+    response = FileResponse(str(path), media_type="image/jpeg", stat_result=path.stat(),
+                            headers={"Cache-Control": "private, no-cache",
+                                     "Vary": "Cookie, Authorization"})
+    # Always authorize before revalidating a browser's private cached image.
+    tags = {value.strip().removeprefix("W/")
+            for value in request.headers.get("if-none-match", "").split(",")}
+    if response.headers["etag"] in tags or "*" in tags:
+        return Response(status_code=304, headers={
+            name: response.headers[name]
+            for name in ("etag", "last-modified", "cache-control", "vary")
+        })
+    return response
 
 
 @router.post("/{video_id}/detect-vehicles-sync", response_model=api_schemas.VehicleDetectionResponse)

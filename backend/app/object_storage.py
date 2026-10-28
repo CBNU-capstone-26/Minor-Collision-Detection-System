@@ -6,10 +6,11 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
-from urllib.parse import quote
 
 
 class LocalObjectStorage:
@@ -30,8 +31,9 @@ class LocalObjectStorage:
         with destination.open("wb") as output:
             shutil.copyfileobj(fileobj, output)
 
-    def upload_path(self, source: str | Path, key: str, content_type: str | None = None):
-        del content_type
+    def upload_path(self, source: str | Path, key: str, content_type: str | None = None,
+                    cache_control: str | None = None):
+        del content_type, cache_control
         destination = self.path_for(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
@@ -59,6 +61,9 @@ class LocalObjectStorage:
 
 
 class S3ObjectStorage:
+    # Replace the pool before idle network connections become unusable.
+    CLIENT_MAX_IDLE_SECONDS = 120
+
     def __init__(
         self,
         *,
@@ -68,45 +73,88 @@ class S3ObjectStorage:
         secret_access_key: str,
         region: str,
     ):
-        import boto3
-        from botocore.config import Config
-
         self.bucket = bucket
-        self.client = boto3.client(
-            "s3",
+        self._client_options = dict(
             endpoint_url=endpoint_url,
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             region_name=region,
+        )
+        self._client_lock = threading.Lock()
+        self._active_operations = 0
+        self.client = self._new_client()
+        self._last_network_use = time.monotonic()
+
+    def _new_client(self):
+        import boto3
+        from botocore.config import Config
+
+        return boto3.client(
+            "s3",
+            **self._client_options,
             # R2 연결이 멈춰도 개별 미디어 요청이 웹 워커를 무기한 점유하지 않게 한다.
             config=Config(
                 connect_timeout=3,
                 read_timeout=5,
                 retries={"max_attempts": 2, "mode": "standard"},
+                tcp_keepalive=True,
             ),
         )
 
+    @contextmanager
+    def _use_client(self, *, network=True):
+        with self._client_lock:
+            now = time.monotonic()
+            if (self._active_operations == 0 and
+                    now - self._last_network_use >= self.CLIENT_MAX_IDLE_SECONDS):
+                old_client = self.client
+                self.client = self._new_client()
+                self._last_network_use = now
+                # No operation can still be using this pool, including transfers.
+                old_client.close()
+            client = self.client
+            self._active_operations += 1
+        try:
+            yield client
+        finally:
+            with self._client_lock:
+                self._active_operations -= 1
+                if network:
+                    self._last_network_use = time.monotonic()
+
     def upload_fileobj(self, fileobj: BinaryIO, key: str, content_type: str | None = None):
         extra_args = {"ContentType": content_type} if content_type else None
-        self.client.upload_fileobj(fileobj, self.bucket, key, ExtraArgs=extra_args or {})
+        with self._use_client() as client:
+            client.upload_fileobj(fileobj, self.bucket, key, ExtraArgs=extra_args or {})
 
-    def upload_path(self, source: str | Path, key: str, content_type: str | None = None):
-        extra_args = {"ContentType": content_type} if content_type else None
-        self.client.upload_file(str(source), self.bucket, key, ExtraArgs=extra_args or {})
+    def upload_path(self, source: str | Path, key: str, content_type: str | None = None,
+                    cache_control: str | None = None):
+        extra_args = {}
+        if content_type:
+            extra_args["ContentType"] = content_type
+        if cache_control:
+            extra_args["CacheControl"] = cache_control
+        with self._use_client() as client:
+            client.upload_file(str(source), self.bucket, key, ExtraArgs=extra_args)
 
     def download_to_path(self, key: str, destination: str | Path):
-        self.client.download_file(self.bucket, key, str(destination))
+        with self._use_client() as client:
+            client.download_file(self.bucket, key, str(destination))
 
     def delete(self, key: str):
-        self.client.delete_object(Bucket=self.bucket, Key=key)
+        with self._use_client() as client:
+            client.delete_object(Bucket=self.bucket, Key=key)
 
     def exists(self, key: str) -> bool:
-        try:
-            self.client.head_object(Bucket=self.bucket, Key=key)
-        except self.client.exceptions.ClientError as error:
-            if error.response.get("Error", {}).get("Code") in {"404", "NoSuchKey"}:
-                return False
-            raise
+        from botocore.exceptions import ClientError
+
+        with self._use_client() as client:
+            try:
+                client.head_object(Bucket=self.bucket, Key=key)
+            except ClientError as error:
+                if error.response.get("Error", {}).get("Code") in {"404", "NoSuchKey"}:
+                    return False
+                raise
         return True
 
     def local_path(self, key: str) -> Path:
@@ -121,11 +169,10 @@ class S3ObjectStorage:
         params = {"Bucket": self.bucket, "Key": key}
         if response_content_disposition:
             params["ResponseContentDisposition"] = response_content_disposition
-        return self.client.generate_presigned_url(
-            "get_object",
-            Params=params,
-            ExpiresIn=expires,
-        )
+        with self._use_client(network=False) as client:
+            return client.generate_presigned_url(
+                "get_object", Params=params, ExpiresIn=expires,
+            )
 
 
 def create_storage(
@@ -164,22 +211,25 @@ def create_storage(
 
 
 _storage = None
+_storage_lock = threading.Lock()
 
 
 def get_storage():
     global _storage
     if _storage is None:
-        from app.settings import settings
+        with _storage_lock:
+            if _storage is None:
+                from app.settings import settings
 
-        _storage = create_storage(
-            backend=settings.STORAGE_BACKEND,
-            local_root=settings.STORAGE_DIR,
-            endpoint_url=settings.S3_ENDPOINT_URL,
-            bucket=settings.S3_BUCKET,
-            access_key_id=settings.S3_ACCESS_KEY_ID,
-            secret_access_key=settings.S3_SECRET_ACCESS_KEY,
-            region=settings.S3_REGION,
-        )
+                _storage = create_storage(
+                    backend=settings.STORAGE_BACKEND,
+                    local_root=settings.STORAGE_DIR,
+                    endpoint_url=settings.S3_ENDPOINT_URL,
+                    bucket=settings.S3_BUCKET,
+                    access_key_id=settings.S3_ACCESS_KEY_ID,
+                    secret_access_key=settings.S3_SECRET_ACCESS_KEY,
+                    region=settings.S3_REGION,
+                )
     return _storage
 
 
