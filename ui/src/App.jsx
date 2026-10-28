@@ -183,6 +183,33 @@ function useGridColumns(el, fallback = 3) {
   return cols;
 }
 
+// 현재 재생 시각에 표시할 사고 클립을 찾는다. 겹치는 분석이 있으면 선택된 클립, 없으면 최신 분석을 쓴다.
+function clipEventAt(events, t, selectedId) {
+  const inSeg = events.filter((e) => e.hasClip && e.clipStartSec != null
+    && t >= e.startSec && t <= Math.max(e.startSec, e.endSec ?? e.startSec));
+  return inSeg.find((e) => e.id === selectedId)
+    || inSeg.reduce((best, e) => (!best || (e.analysisNo ?? 0) > (best.analysisNo ?? 0)
+      || ((e.analysisNo ?? 0) === (best.analysisNo ?? 0) && e.id > best.id) ? e : best), null);
+}
+
+const EVENT_PREROLL_SEC = 1;
+
+function clipEventsAhead(events, t, selectedId, lead) {
+  const times = [t];
+  events.forEach((e) => {
+    if (!e.hasClip || e.clipStartSec == null) return;
+    [e.startSec, Math.max(e.startSec, e.endSec ?? e.startSec) + 0.001].forEach((b) => {
+      if (b > t && b <= t + lead) times.push(b);
+    });
+  });
+  const out = [];
+  times.forEach((x) => {
+    const ev = clipEventAt(events, x, selectedId);
+    if (ev && !out.includes(ev)) out.push(ev);
+  });
+  return out;
+}
+
 let toastSeq = 0; // 하단 알림 번호 (showToast)
 let bboxSeq = 0; // 고른 차량 박스 번호
 
@@ -824,6 +851,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true); // 오른쪽 패널(진행 단계 + 분석 이력) — 기본은 열림(영상을 열 때마다)
   const [highlightAnalysisNo, setHighlightAnalysisNo] = useState(null); // 분석 이력에서 고른 분석 — 그 클립을 왼쪽 목록에서 강조
+  const [clipView, setClipView] = useState("cam");
+  const camChipRef = useRef(null);
   const eventListRef = useRef(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
   const playerContainerRef = useRef(null);
@@ -1613,13 +1642,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setIsSeeking(false);
   };
 
-  // 이벤트 구간 클릭 → 해당 시점으로 이동 후 재생
+  // 이벤트 구간 클릭 → 1초 앞부터 재생해 사고 직전 상황도 볼 수 있게 한다.
   const seekToEvent = (event) => {
     if (isDetectingVehicles) return;
     setCurrentEventId(event.id);
     const v = videoElRef.current;
     if (v) {
-      v.currentTime = event.startSec ?? event.timestamp;
+      v.currentTime = Math.max(0, (event.startSec ?? event.timestamp) - EVENT_PREROLL_SEC);
       v.play().catch(() => {});
     }
   };
@@ -1850,6 +1879,65 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 차량 탐지·직접 지정 중 — 영상 크기·비율이 바뀌면 그리던 박스·탐지 박스 위치가 흔들리므로
   // 이 동안엔 영상 크기를 바꾸는 기능(영화관 모드·전체화면·오른쪽 패널 열기/닫기)을 쓰지 못하게 한다
   const isChoosingVehicle = selectionMode !== "none" || isDetectingVehicles;
+  const camEnabled = clipView === "cam" && !isChoosingVehicle;
+  const camShown = camEnabled && selectedVideo
+    ? clipEventsAhead(selectedVideo.events, currentTime, currentEventId, 3) : [];
+  const camKey = camShown.map((e) => e.id).join(",");
+
+  // 원본 재생 시각과 CAM 클립을 맞추고 현재 구간에 해당하는 클립만 겹쳐 보여 준다.
+  useEffect(() => {
+    const main = videoElRef.current;
+    const overlay = bboxOverlayRef.current;
+    if (!main || !overlay || !camKey) return undefined;
+    const events = selectedVideo?.events || [];
+    const layers = [...overlay.querySelectorAll(".cam-clip-layer")]
+      .map((layer) => ({
+        layer,
+        cam: layer.querySelector("video"),
+        ev: events.find((e) => e.id === Number(layer.dataset.eventId)),
+      }))
+      .filter((x) => x.cam && x.ev);
+    const chip = camChipRef.current;
+    const sync = () => {
+      const now = clipEventAt(events, main.currentTime, currentEventId);
+      let shown = null;
+      layers.forEach(({ layer, cam, ev }) => {
+        const local = main.currentTime - ev.clipStartSec;
+        const inClip = local >= 0 && local < (cam.duration || 0);
+        if (inClip) {
+          if (Math.abs(cam.currentTime - local) > (main.paused ? 0.01 : 0.12)) cam.currentTime = local;
+          if (cam.playbackRate !== main.playbackRate) cam.playbackRate = main.playbackRate;
+          if (!main.paused && cam.paused) cam.play().catch(() => {});
+          if (main.paused && !cam.paused) cam.pause();
+        } else if (!cam.paused) {
+          cam.pause();
+        }
+        const show = now?.id === ev.id && inClip && cam.readyState >= 2;
+        layer.classList.toggle("shown", show);
+        if (show) shown = ev;
+      });
+      if (chip) {
+        chip.hidden = !shown;
+        if (shown) chip.textContent = shown.analysisNo != null ? `분석 #${shown.analysisNo} 충돌 표시` : "충돌 표시";
+      }
+    };
+    let raf = 0;
+    const loop = () => { sync(); raf = requestAnimationFrame(loop); };
+    const onPlay = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); };
+    const onPause = () => { cancelAnimationFrame(raf); sync(); };
+    const mainEvents = { play: onPlay, pause: onPause, seeking: sync, seeked: sync, ratechange: sync };
+    const camEvents = { loadedmetadata: sync, loadeddata: sync, seeked: sync };
+    Object.entries(mainEvents).forEach(([k, fn]) => main.addEventListener(k, fn));
+    layers.forEach(({ cam }) => Object.entries(camEvents).forEach(([k, fn]) => cam.addEventListener(k, fn)));
+    if (main.paused) sync(); else onPlay();
+    return () => {
+      cancelAnimationFrame(raf);
+      Object.entries(mainEvents).forEach(([k, fn]) => main.removeEventListener(k, fn));
+      layers.forEach(({ cam }) => Object.entries(camEvents).forEach(([k, fn]) => cam.removeEventListener(k, fn)));
+      if (chip) chip.hidden = true;
+    };
+  }, [camKey, selectedVideo, currentEventId]);
+
   // 분석 이력에서 고른 분석의 클립이 아직 남아 있으면 '강조 중' (클립을 다 지우면 저절로 풀림)
   const isHighlighting = !!selectedVideo && highlightAnalysisNo != null
     && selectedVideo.events.some((e) => e.analysisNo === highlightAnalysisNo);
@@ -2456,7 +2544,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                             ? ""
                             : event.analysisNo === highlightAnalysisNo ? "analysis-highlight" : "analysis-dim"
                         }`}
-                        onClick={() => setCurrentEventId(event.id)}
+                        onClick={() => seekToEvent(event)}
                       >
                         <div className="event-item-top">
                           <span className="event-time-pill">{formatTime(event.timestamp)}</span>
@@ -2734,6 +2822,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     }}
                   />
 
+                  {/* CAM 클립을 원본 영상 시각에 맞춰 영상 그림 영역 위에 겹친다. */}
+                  {camShown.map((ev) => (
+                    <div
+                      key={ev.id}
+                      data-event-id={ev.id}
+                      className="cam-clip-layer"
+                      style={renderGeom ? {
+                        left: renderGeom.offsetX,
+                        top: renderGeom.offsetY,
+                        width: renderGeom.vw * renderGeom.scale,
+                        height: renderGeom.vh * renderGeom.scale,
+                      } : { inset: 0 }}
+                      aria-hidden="true"
+                    >
+                      <video src={api.clipUrl(ev.id)} muted playsInline preload="auto" />
+                    </div>
+                  ))}
+
                   {/* 차량 자동 탐지 중: 영상 화면 위에 로딩 표시 */}
                   {isDetectingVehicles && (
                     <div className="vehicle-detect-loading" role="status" aria-live="polite">
@@ -2936,6 +3042,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     </span>
 
                     <div className="right-controls">
+                      <span className="cam-now-chip" ref={camChipRef} hidden />
                       <select
                         className="speed-select"
                         value={playbackSpeed}
@@ -2949,6 +3056,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         <option value="1.5">1.5x</option>
                         <option value="2">2x</option>
                       </select>
+                      {selectedVideo.events.some((e) => e.hasClip && e.clipStartSec != null) && (
+                        <div className="clip-view-toggle" role="group" aria-label="사고 구간 화면">
+                          <button
+                            type="button"
+                            className={clipView === "orig" ? "active" : ""}
+                            aria-pressed={clipView === "orig"}
+                            onClick={() => setClipView("orig")}
+                            title="빨간 구간에서도 원본 영상을 봅니다"
+                          >원본</button>
+                          <button
+                            type="button"
+                            className={clipView === "cam" ? "active" : ""}
+                            aria-pressed={clipView === "cam"}
+                            onClick={() => setClipView("cam")}
+                            title="사고 구간에서 AI가 충돌로 본 부위를 표시합니다"
+                          >충돌 표시</button>
+                        </div>
+                      )}
                       {/* 전체화면에선 영화관 모드가 의미 없어 숨긴다 */}
                       {!isFullscreen && (
                         <button

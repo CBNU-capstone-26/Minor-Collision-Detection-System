@@ -135,6 +135,7 @@ def run_prediction_task(self, task_id: int):
                     end_frame_number=r["end_frame"],
                     crash_prob=r["crash_prob"],
                     clip_path=clip_key,
+                    clip_start_sec=r.get("clip_start_sec"),
                 ))
 
         # 분석 도중 취소됐는데(revoke 실패 등) 끝까지 돌았다면 결과를 버린다

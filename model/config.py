@@ -42,6 +42,21 @@ R_VALUE = 1.0
 TRAIN_R_AUGMENT_PROB = 0.4            # 이 확률로만 r을 바꾸고, 나머지 60%는 r=1.0
 TRAIN_R_AUGMENT_VALUES = (1.5, 2.0, 2.33, 3.0)
 
+# ---------- 저화질(압축) 증강 (실험용, 기본 끔) ----------
+# 2026-10-28 robust_check(서비스 가중치): 정상 창을 JPEG 화질 25 로 압축하면 P(A) 0.168 → 0.305, 작게 줄였다
+# 압축하면 0.487 로 정상 영상 10개 중 9개가 오탐 — 압축 깨짐을 사고 단서로 쓴다. 해상도만 낮추면 거의 그대로였다.
+# 학습 데이터의 480p 이하가 실제 사고 38% · 실제 정상 8% · RC 0% 라 '깨끗하면 정상' 쪽으로 치우친 것으로 본다.
+# 그래서 깨끗한 클립(원본 프레임에서 크롭 한 변 TRAIN_LQ_MIN_CROP 이상 — 이미 작은 차는 더 망가뜨리지 않는다)을
+# 사고·정상 구분 없이 이 확률로 실제 CCTV 처럼 H.264 로 압축했다 풀고(CRF 범위, 키프레임 간격 무작위), 그중 절반은
+# 먼저 작게 줄였다가 다시 키운다(작은 차를 압축이 심한 CCTV 로 본 것). 다른 증강(색·노이즈) 뒤에 한다 —
+# 카메라가 찍은 뒤 저장할 때 압축되는 순서. 시험(robust_check)은 JPEG 라, 학습과 다른 방식으로 확인하게 된다.
+# 켜기: 환경변수 TRAIN_LQ_AUG_PROB=0.3 (이름에 _lq). PyAV(pytorchvideo 의존성)의 libx264 를 쓰고, 없으면 끄고 계속한다.
+TRAIN_LQ_AUG_PROB = float(os.getenv("TRAIN_LQ_AUG_PROB", "0") or 0)
+TRAIN_LQ_MIN_CROP = 128              # 원본 프레임 크롭 한 변(px)이 이보다 작으면 적용하지 않음
+TRAIN_LQ_SIZE_RANGE = (48, 128)      # 줄일 때 크기(px). 원래 크롭의 3/4 보다 작은 값만 쓴다
+TRAIN_LQ_SIZE_PROB = 0.5             # 압축할 때 먼저 줄이는 비율
+TRAIN_LQ_CRF_RANGE = (28, 42)        # H.264 CRF(클수록 압축 심함). 224px 30프레임 PSNR 약 30 ~ 22dB
+
 # ---------- 비충돌(S) 클립 슬라이싱 ----------
 # 기존 구현은 S 영상당 '맨 앞 30프레임' 1개만 학습에 넣었다(start_f=0 고정).
 # 그러면 모델이 배우는 '비충돌'이 사실상 "아직 차가 안 들어온 빈 장면"이 되어,
@@ -180,11 +195,30 @@ TARGET_ID = 0
 USE_AMP = True
 # GPU 메모리 배치 channels_last_3d (학습·평가·영상 분석·서비스 워커 공통, GPU 일 때만 — CPU 는 원래 안 씀).
 # 처음(2026-06, I3D 계열 모델) '켜면 빠르다'는 일반 권장으로 켰지만 X3D 로 바꾼 뒤 재 보지 않았다.
-# 2026-10-22 학습 서버 RTX 3080 실측(model/train_speed_check, 묶음 15·AMP·checkpointing):
+# 2026-10-22 학습 서버 RTX 3080 실측(model/speed_check, 당시 이름 train_speed_check · 묶음 15·AMP·checkpointing):
 #   켬 → 끔: 학습 1단계 1.190 → 0.527초(2.3배), 검증 1단계 0.239 → 0.093초(2.6배), 메모리 5.80 → 5.21GB,
 #   P(A) 차이 1.9e-6(같은 결과). X3D 의 채널별(depthwise) 3D 합성곱이 이 배치에서 느린 것으로 보인다.
-# GPU 나 모델을 바꾸면 python -m model.train_speed_check 로 다시 잰다.
+# GPU 나 모델을 바꾸면 python -m model.speed_check 로 다시 잰다.
 USE_CHANNELS_LAST = False
+
+# ---------- 학습 속도 (결과는 같다) ----------
+# 검증 클립 저장본: 검증은 증강 없이 매 에포크 같은 클립을 쓰므로, 처음 만든 클립(자르고 줄인 uint8)을
+# 저장해 두고 다음 에포크부터 읽는다 — 검증 입력이 비트 단위로 같고, 검증의 영상 풀기 시간이 사라진다
+# (2026-10-22 기준 검증 1,144클립 ≈ 5.2GB, 검증이 에포크의 약 15%). 영상 파일·시작 프레임·박스·r·크기·
+# 클립 만드는 코드가 바뀌면 새로 만든다. 예전 저장본은 자동으로 지우지 않는다 — 공간이 필요하면
+# 폴더째 지워도 된다(다음 학습 때 다시 만든다). 디스크가 차면 저장 없이 계속한다.
+TRAIN_VAL_CACHE = os.getenv("TRAIN_VAL_CACHE", "1").strip().lower() not in ("0", "false", "no")
+TRAIN_VAL_CACHE_DIR = _ROOT / "data" / ".clip_cache" / "val"
+# 데이터 로더 작업자마다 OpenCV 스레드 수(영상 풀기·색 변환·크기 줄이기). None = OpenCV 기본(코어 수만큼).
+# 작업자 8개가 각자 코어 전부를 쓰려 하면 스레드가 코어보다 많아져 서로 기다릴 수 있다(서버에서 작업자
+# 8 → 24개로 늘려도 묶음 0.93 → 0.90초로 그대로였다). python -m model.speed_check 의 ③④로
+# '기본 vs 1'을 재 보고 빠를 때만 1로 둔다(환경변수 TRAIN_CV2_THREADS=1 도 같다). 화소는 같다.
+TRAIN_CV2_THREADS = int(os.getenv("TRAIN_CV2_THREADS", "0") or 0) or None
+# 학습 로더 작업자 수. None = min(8, CPU 코어)(지금까지와 같다). 검증 로더는 저장본을 읽어 가벼우므로 그대로 둔다.
+# 2026-10-28 서버(24코어) speed_check ③: 로더 묶음 하나 — 8개·기본 0.983초 / 24개·기본 0.934초 /
+# 24개·작업자당 1스레드 0.732초. 작업자를 늘릴 때는 TRAIN_CV2_THREADS=1 과 같이 쓰고 ④로 확인한 뒤 켠다.
+# 작업자마다 미리 만들어 둘 묶음은 전체 약 32묶음이 되게 줄인다(train.loader_prefetch — 메모리).
+TRAIN_NUM_WORKERS = int(os.getenv("TRAIN_NUM_WORKERS", "0") or 0) or None
 
 # ---------- 사전학습 / 입력 정규화 ----------
 # 백본은 pytorchvideo X3D-M. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.
@@ -391,9 +425,11 @@ PREDICT_MIN_EVENT_SPAN_FRAMES = 35
 #     처음 한 번의 전체 검사(수십 초)를 미리 해 두기: python -m model.main --mode check-backend
 #   · 변환 모델은 판정(logits)과 함께 칸별 클래스 지도(CAM)도 내보내, 사고 클립 히트맵을 켜도 같은 방식으로 돈다.
 INFER_BACKEND = os.getenv("INFER_BACKEND", "auto").strip().lower()
-# GPU FP16(autocast). Tensor Core 가 있는 NVIDIA GPU(연산능력 7.0 이상)에서만 켜지고 자가 검사도 거친다.
-# 학습 서버에서 python -m model.fp16_check 로 속도·평가 결과를 확인한 뒤 켠다(환경변수 INFER_FP16=1).
-INFER_FP16 = os.getenv("INFER_FP16", "0").strip().lower() in ("1", "true", "yes")
+# GPU FP16(autocast). Tensor Core 가 있는 NVIDIA GPU(연산능력 7.0 이상)에서만 켜지고 자가 검사도 거친다
+# (그 밖의 GPU·CPU 는 그대로 FP32). 기본 켬 — 2026-10-28 RTX 3080 fp16_check --full-eval(서비스 가중치):
+# P(A) 차이 최대 4.1e-3(TF32 자체 차이 3.9e-3 수준), 기준 0.5·0.3 을 넘나든 창 0개, 평가 지표 전부 같음,
+# 서비스 경로 74.7 → 90.3fps(1.21배). 다른 GPU 로 옮기면 fp16_check 로 다시 확인. 끄기: 환경변수 INFER_FP16=0.
+INFER_FP16 = os.getenv("INFER_FP16", "1").strip().lower() in ("1", "true", "yes")
 INFER_CHECK_MAX_PROB_DIFF = 1e-3   # 자가 검사: FP32 방식들의 P(A) 허용 차이 (개발 PC 실측 최대 8e-5)
 INFER_FP16_MAX_PROB_DIFF = 1e-2    # 자가 검사: FP16 의 P(A) 허용 차이
 INFER_CACHE_DIR = _ROOT / "weights" / ".infer_cache"   # 변환 파일(ONNX)·자가 검사 결과

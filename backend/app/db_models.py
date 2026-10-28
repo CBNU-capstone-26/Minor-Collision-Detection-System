@@ -111,6 +111,8 @@ class CrashEvent(Base):
     crash_prob = Column(Float, nullable=True)          # 구간 대표 확률 (0~1)
     # DB 컬럼명은 기존 cam_heatmap_path 를 유지하고, 코드에서는 실제 역할인 clip_path 로 쓴다.
     clip_path = Column("cam_heatmap_path", String(500), nullable=True)
+    # 생성된 CAM 클립이 원본 영상에서 시작하는 시각. 이전 분석 결과는 NULL.
+    clip_start_sec = Column(Float, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

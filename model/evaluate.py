@@ -698,9 +698,10 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     tag = next((t for t in ('ptY', 'ptN') if f'_{t}_' in weights),
                getattr(config, 'PRETRAIN_TAG', '?'))
     # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다.
-    # 묶음 구성(--balance)으로 학습한 가중치는 _bal 도 붙인다.
+    # 묶음 구성(--balance)으로 학습한 가중치는 _bal, 저화질 증강(TRAIN_LQ_AUG_PROB)은 _lq 도 붙인다.
     name_tag = (tag + ('_span' if '_span_' in weights else '')
-                + ('_bal' if '_bal_' in weights else ''))
+                + ('_bal' if '_bal_' in weights else '')
+                + ('_lq' if '_lq_' in weights else ''))
     # 크롭 r 을 바꿔 평가하면(main --r) 이름에 _r<값> 을 붙인다 — 요약 표의 run 열로 구분된다
     r_value = float(kwargs.get('r_value', config.R_VALUE))
     if abs(r_value - 1.0) > 1e-9:
