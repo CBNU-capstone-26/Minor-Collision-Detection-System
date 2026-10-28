@@ -199,6 +199,11 @@ TRAIN_VAL_CACHE_DIR = _ROOT / "data" / ".clip_cache" / "val"
 # 8 → 24개로 늘려도 묶음 0.93 → 0.90초로 그대로였다). python -m model.speed_check 의 ③④로
 # '기본 vs 1'을 재 보고 빠를 때만 1로 둔다(환경변수 TRAIN_CV2_THREADS=1 도 같다). 화소는 같다.
 TRAIN_CV2_THREADS = int(os.getenv("TRAIN_CV2_THREADS", "0") or 0) or None
+# 학습 로더 작업자 수. None = min(8, CPU 코어)(지금까지와 같다). 검증 로더는 저장본을 읽어 가벼우므로 그대로 둔다.
+# 2026-10-28 서버(24코어) speed_check ③: 로더 묶음 하나 — 8개·기본 0.983초 / 24개·기본 0.934초 /
+# 24개·작업자당 1스레드 0.732초. 작업자를 늘릴 때는 TRAIN_CV2_THREADS=1 과 같이 쓰고 ④로 확인한 뒤 켠다.
+# 작업자마다 미리 만들어 둘 묶음은 전체 약 32묶음이 되게 줄인다(train.loader_prefetch — 메모리).
+TRAIN_NUM_WORKERS = int(os.getenv("TRAIN_NUM_WORKERS", "0") or 0) or None
 
 # ---------- 사전학습 / 입력 정규화 ----------
 # 백본은 pytorchvideo X3D-M. 학습 시 Kinetics-400 사전학습 가중치로 초기화한다.

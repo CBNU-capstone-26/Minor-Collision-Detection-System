@@ -67,11 +67,21 @@ def _unique_path(path):
     return out
 
 
-def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sampler=None):
+def loader_prefetch(workers):
+    """작업자마다 미리 만들어 둘 묶음 수 — 작업자 수와 상관없이 모두 합쳐 약 32묶음이 되게 한다.
+
+    묶음 하나가 공유 메모리 약 0.27GB(묶음 15)라, 작업자를 24개로 늘리고 4묶음씩 두면 96묶음(약 26GB)까지
+    쌓일 수 있다. 작업자 8개면 지금까지와 같은 4, 24개면 1.
+    """
+    return max(1, 32 // max(1, workers))
+
+
+def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sampler=None, workers=None):
     # CUDA: 멀티워커 + prefetch 활성화 (① Ryzen 7 5700X 16스레드 기준)
     # CPU : Windows 멀티프로세싱 충돌 방지 및 디바이스 컨텍스트 공유 불가 문제로 단일 프로세스 사용
+    # workers: 작업자 수(None = min(8, CPU)). 학습 로더만 config.TRAIN_NUM_WORKERS 를 넘긴다.
     if is_cuda_like(device):
-        num_workers = min(8, os.cpu_count() or 2)
+        num_workers = workers or min(8, os.cpu_count() or 2)
     else:
         num_workers = 0
     kwargs = {
@@ -86,8 +96,8 @@ def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sa
     if collate_fn is not None:
         kwargs['collate_fn'] = collate_fn
     if num_workers > 0:
-        # ② prefetch_factor 증가 — GPU 연산 중 다음 배치를 더 많이 미리 준비
-        kwargs.update({'persistent_workers': True, 'prefetch_factor': 4})
+        # ② prefetch — GPU 연산 중 다음 배치를 미리 준비(작업자 8개면 4, 전체 약 32묶음 — loader_prefetch)
+        kwargs.update({'persistent_workers': True, 'prefetch_factor': loader_prefetch(num_workers)})
         # ③ 작업자마다 OpenCV 스레드 수(config.TRAIN_CV2_THREADS, 기본 None = OpenCV 기본).
         #    부모에서 먼저 정해 작업자가 물려받게 한다(작업자 안에서 처음 바꾸면 멈춤 — dataset.py 주석).
         #    영상 풀기 스레드는 dataset.py 가 같은 값으로 연다.
@@ -205,6 +215,9 @@ def train_model(
               f"({'모두 있어 첫 검증부터 읽음' if have == n_val else '없는 클립은 첫 검증 때 만들어 저장'})")
     else:
         print("[검증 저장본] 끔(config.TRAIN_VAL_CACHE) — 매 에포크 영상에서 검증 클립을 만든다")
+    if getattr(config, 'TRAIN_NUM_WORKERS', None):
+        print(f"[로더] 학습 작업자 {config.TRAIN_NUM_WORKERS}개(config.TRAIN_NUM_WORKERS) · 작업자마다 미리 "
+              f"{loader_prefetch(config.TRAIN_NUM_WORKERS)}묶음")
     if getattr(config, 'TRAIN_CV2_THREADS', None):
         print(f"[로더] 작업자마다 OpenCV 스레드 {config.TRAIN_CV2_THREADS}개(config.TRAIN_CV2_THREADS)")
     if hitandrun_model.GRAD_CHECKPOINT and hitandrun_model.GRAD_CHECKPOINT_BLOCKS is not None:
@@ -281,7 +294,8 @@ def train_model(
 
     train_loader = _make_loader(
         Subset(train_dataset, train_idx), batch_size=batch_size,
-        shuffle=True, device=device, collate_fn=collate, batch_sampler=batch_sampler)
+        shuffle=True, device=device, collate_fn=collate, batch_sampler=batch_sampler,
+        workers=getattr(config, 'TRAIN_NUM_WORKERS', None))
     val_rc_loader = _make_loader(
         Subset(val_dataset, val_rc_idx), batch_size=batch_size,
         shuffle=False, device=device, collate_fn=collate) if val_rc_idx else None
