@@ -273,6 +273,19 @@ def purge_video(video: db_models.Video, db: Session) -> None:
             db_models.AnalysisTask.video_id == video.id).all():
         db.delete(task)
 
+    # Vehicle-detection history has a required FK to videos. Remove these rows
+    # explicitly so both Supabase/Postgres and MySQL can delete the video.
+    detection_tasks = db.query(db_models.VehicleDetectionTask).filter(
+        db_models.VehicleDetectionTask.video_id == video.id).all()
+    for task in detection_tasks:
+        if task.celery_task_id and task.status in VEHICLE_DETECTION_ACTIVE_STATUSES:
+            try:
+                from app.worker import celery_app
+                celery_app.control.revoke(task.celery_task_id, terminate=True)
+            except Exception:
+                pass
+        db.delete(task)
+
     # 3) 원본 영상 + 썸네일 파일 삭제
     storage = get_storage()
     storage.delete(video.video_path)
@@ -510,7 +523,14 @@ def _enqueue_vehicle_detection(video: db_models.Video, timestamp_sec: float, db:
     db.refresh(task)
 
     from app.vehicle_job import run_vehicle_detection_task
-    async_result = run_vehicle_detection_task.delay(task.id)
+    try:
+        async_result = run_vehicle_detection_task.delay(task.id)
+    except Exception as exc:
+        task.status = "FAILURE"
+        task.error_message = f"탐지 작업을 큐에 넣지 못했습니다: {exc}"[:2000]
+        task.finished_at = datetime.utcnow()
+        db.commit()
+        raise HTTPException(status_code=503, detail="탐지 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.") from exc
     task.celery_task_id = async_result.id
     db.commit()
     return api_schemas.VehicleDetectionTaskOut(

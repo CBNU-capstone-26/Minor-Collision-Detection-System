@@ -15,6 +15,7 @@ class EventSerializationTests(unittest.TestCase):
             end_frame_number=60,
             crash_prob=0.9,
             clip_path="clips/demo.mp4",
+            clip_start_sec=0.5,
             created_at=None,
             task_id=1,
             video=SimpleNamespace(analysis_tasks=[]),

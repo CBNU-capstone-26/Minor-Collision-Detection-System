@@ -2,12 +2,11 @@ services:
   db:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: capstone_db
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-capstone_db}
     ports:
-      # macOS native MySQL commonly uses 3306; expose this project's
-      # container on 3307 so both databases can run at the same time.
-      - "3306:3306"
+      # Loopback only; MYSQL_PORT defaults to the port in the local DB URL.
+      - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
     # 데이터 영구 보존: named volume을 MySQL 데이터 디렉터리에 마운트
     # (컨테이너를 삭제·재생성해도 mysql_data 볼륨에 데이터가 유지됨)
     volumes:
@@ -17,10 +16,18 @@ services:
 
   redis:
     image: redis:alpine
-    # AOF 영속화 활성화 + 볼륨 (Celery 작업 큐/결과 보존용)
-    command: ["redis-server", "--appendonly", "yes"]
+    # AOF persistence; authenticate only when a password is configured.
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      if [ -n "$$REDIS_PASSWORD" ]; then
+        exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD";
+      else
+        exec redis-server --appendonly yes;
+      fi
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped

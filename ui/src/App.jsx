@@ -831,7 +831,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 상태 관리
   const [videos, setVideos] = useState([]); // API에서 로드한 영상 목록
-  const [isLoadingVideos, setIsLoadingVideos] = useState(false);
+  const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [videoLoadError, setVideoLoadError] = useState(null);
   const [filterDays, setFilterDays] = useState(9999); // 기본 전체
   const [searchQuery, setSearchQuery] = useState(""); // 상단 검색어
@@ -885,7 +885,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [showJobsDropdown, setShowJobsDropdown] = useState(false);
   const [now, setNow] = useState(() => Date.now()); // 진행률 계산용 현재시각(0.5s마다 갱신)
   const selectedVideoIdRef = useRef(null); // 폴링 중 최신 선택 영상 추적(stale closure 방지)
-  const progressSmoothRef = useRef({}); // 작업별 화면 진행률(부드럽게 움직이고 뒤로 가지 않게)
   const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 간다
   const pollingRef = useRef(new Set()); // 이미 상태를 확인 중인 작업(중복 폴링 방지)
   const [clipEvent, setClipEvent] = useState(null); // 사고 클립 팝업 대상 이벤트
@@ -933,11 +932,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 하단 알림. 알림마다 번호를 붙여, 타이머는 자기 알림이 아직 떠 있을 때만 닫는다
   // (앞 알림의 타이머가 뒤에 뜬 알림 — 예: 7초짜리 분석 결과 — 을 일찍 닫지 않게)
-  const showToast = (message, type = "warning", durationMs = 2600) => {
+  const showToast = useCallback((message, type = "warning", durationMs = 2600) => {
     const id = ++toastSeq;
     setToast({ id, message, type });
     setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), durationMs);
-  };
+  }, []);
 
   // 프로필 & 설정 관련 상태
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -950,13 +949,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [profilePhone, setProfilePhone] = useState(currentUser?.phone || "");
   const [profileEmail, setProfileEmail] = useState(currentUser?.email || "");
 
-  useEffect(() => {
-    if (currentUser) {
-      setProfileName(currentUser.name || "");
-      setProfilePhone(currentUser.phone || "");
-      setProfileEmail(currentUser.email || "");
-    }
-  }, [currentUser]);
+  const openSettings = () => {
+    setProfileName(currentUser?.name || "");
+    setProfilePhone(currentUser?.phone || "");
+    setProfileEmail(currentUser?.email || "");
+    setIsSettingsOpen(true);
+  };
 
   const displayName = currentUser?.name || currentUser?.username || "사용자";
   const avatarInitial = (displayName[0] || currentUsername[0] || "U").toUpperCase();
@@ -998,9 +996,18 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   useEffect(() => {
-    // 마운트 시 영상 목록 비동기 로드 (setState는 await 이후 발생)
-    // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
-    loadVideos();
+    let active = true;
+    api.listVideos(9999)
+      .then((list) => {
+        if (active) setVideos(list);
+      })
+      .catch((error) => {
+        if (active) setVideoLoadError(`영상 목록을 불러오지 못했습니다: ${error.message}`);
+      })
+      .finally(() => {
+        if (active) setIsLoadingVideos(false);
+      });
+    return () => { active = false; };
   }, []);
 
   // 라우트(videoId)에 맞춰 selectedVideo 설정
@@ -1092,32 +1099,21 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [currentPage, setCurrentPage] = useState(1);
 
   const totalPages = Math.max(1, Math.ceil(filteredVideos.length / VIDEOS_PER_PAGE));
+  const visiblePage = Math.min(currentPage, totalPages);
 
   // 한 페이지 개수가 바뀌면(창 크기·배율 변경) 보던 첫 영상이 들어 있는 페이지로 옮긴다
   const prevPerPage = useRef(VIDEOS_PER_PAGE);
   useEffect(() => {
     if (prevPerPage.current === VIDEOS_PER_PAGE) return;
-    const firstIndex = (currentPage - 1) * prevPerPage.current;
+    const firstIndex = (visiblePage - 1) * prevPerPage.current;
     prevPerPage.current = VIDEOS_PER_PAGE;
     setCurrentPage(Math.floor(firstIndex / VIDEOS_PER_PAGE) + 1);
-  }, [VIDEOS_PER_PAGE, currentPage]);
-
-  // 필터 조건(기간, 검색어) 변경 시 1페이지로 리셋
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterDays, searchQuery]);
-
-  // 영상 삭제 등으로 인해 현재 페이지가 전체 페이지 수보다 커지면 조정
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [totalPages, currentPage]);
+  }, [VIDEOS_PER_PAGE, visiblePage]);
 
   const paginatedVideos = useMemo(() => {
-    const startIndex = (currentPage - 1) * VIDEOS_PER_PAGE;
+    const startIndex = (visiblePage - 1) * VIDEOS_PER_PAGE;
     return filteredVideos.slice(startIndex, startIndex + VIDEOS_PER_PAGE);
-  }, [filteredVideos, currentPage, VIDEOS_PER_PAGE]);
+  }, [filteredVideos, visiblePage, VIDEOS_PER_PAGE]);
 
   const handlePageChange = (newPage) => {
     setCurrentPage(newPage);
@@ -1126,7 +1122,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   const getPageNumbers = () => {
     const maxButtons = 5;
-    let start = Math.max(1, currentPage - 2);
+    let start = Math.max(1, visiblePage - 2);
     let end = Math.min(totalPages, start + maxButtons - 1);
     if (end - start + 1 < maxButtons) {
       start = Math.max(1, end - maxButtons + 1);
@@ -1323,20 +1319,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 사고감지 분석 작업 취소
   // 보고 있는 영상의 상세(분석 이력 포함)를 다시 받아 온다 — 그사이 다른 영상으로 옮겼으면 덮어쓰지 않는다
   const refreshSelectedVideo = async (videoId) => {
-    if (videoId == null || selectedVideoIdRef.current !== videoId) return;
+    if (videoId == null) return;
     try {
       const v = await api.getVideo(videoId);
-      if (selectedVideoIdRef.current === videoId) setSelectedVideo(v);
+      setSelectedVideo((current) => current?.id === videoId ? v : current);
     } catch {
       /* 이력 갱신에 실패해도 다음 갱신 때 맞춰진다 */
     }
   };
 
   const handleCancelAnalysis = async (taskId) => {
-    if (analyzeAbortControllerRef.current) {
-      analyzeAbortControllerRef.current.abort();
-      analyzeAbortControllerRef.current = null;
-    }
     if (taskId) {
       try {
         const cancelledVideoId = analyzingJobs.find((j) => j.taskId === taskId)?.videoId;
@@ -1753,35 +1745,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   );
 
   const jobProgress = (job) => {
-    const key = job.taskId ?? job.videoId;
     const hasReal = typeof job.progress === "number" && (job.progress > 0 || !!job.phase);
     // 단계: 요청(서버 대기열에서 차례를 기다림) → 준비 → 진행(서버가 단계·진행도를 보냄)
     // 다른 사용자의 작업 정보는 드러내지 않으므로 대기 순번은 보여 주지 않는다.
     const stage = hasReal ? "running" : job.status === "PENDING" ? "queued" : "starting";
 
-    // 진행률(막대·%): 서버 값(2초마다, 소수 첫째 자리) 사이를 최근 진행 속도로 채워 계속 조금씩
-    // 움직이게 한다. 서버 값보다 최대 3%p(약 4초어치)까지만 앞서가고, 뒤로는 가지 않으며,
-    // 서버 값이 크게 뛰어도 0.5초마다 남은 차이의 40%씩 따라가 부드럽게 움직인다.
+    // 진행률은 서버가 보내는 값을 그대로 표시한다.
     const serverP = hasReal ? Math.min(99, job.progress) : 0;
-    const sm = progressSmoothRef.current[key]
-      || (progressSmoothRef.current[key] = { disp: 0, p: null, at: null, rate: 0, tick: null });
-    if (sm.tick !== now) {                        // 같은 순간 여러 곳에서 불러도 한 번만 계산
-      const at = job.progressAt ?? now;
-      if (sm.p === null || at !== sm.at) {        // 새 서버 값
-        if (sm.p !== null && at > sm.at && serverP >= sm.p) {
-          const r = (serverP - sm.p) / ((at - sm.at) / 1000);
-          sm.rate = sm.rate ? sm.rate * 0.6 + r * 0.4 : r;   // 진행 속도(%/초)도 부드럽게
-        }
-        sm.p = serverP;
-        sm.at = at;
-      }
-      const ahead = Math.min(3, sm.rate * 4);
-      const guess = Math.min(99, sm.p + Math.min(ahead, sm.rate * Math.max(0, (now - sm.at) / 1000)));
-      const target = Math.max(sm.disp, guess);
-      sm.disp += (target - sm.disp) * 0.4;
-      sm.tick = now;
-    }
-    const pct = hasReal ? sm.disp : 0;
+    const pct = serverP;
 
     const ph = PHASE_TEXT[job.phase]?.(job.phaseCount, job.phaseIndex) ?? { main: "분석 중" };
     // 상단 대표 칸: 단계 문구(가운데)와 진행률(맨 오른쪽, pctText)을 따로 보여 준다
@@ -2026,6 +1997,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             className="detect-run-btn analyzing-cancel-btn"
             onClick={() => {
               const currentJob = analyzingJobs.find((j) => j.videoId === selectedVideo?.id);
+              analyzeAbortControllerRef.current?.abort();
+              analyzeAbortControllerRef.current = null;
               handleCancelAnalysis(currentJob?.taskId);
             }}
             title="진행 중인 사고 감지 분석을 취소합니다"
@@ -2150,7 +2123,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                                 </span>
                                 <button
                                   className="analysis-job-cancel-btn"
-                                  onClick={() => handleCancelAnalysis(job.taskId)}
+                                  onClick={() => {
+                                    analyzeAbortControllerRef.current?.abort();
+                                    analyzeAbortControllerRef.current = null;
+                                    handleCancelAnalysis(job.taskId);
+                                  }}
                                   title="이 분석을 취소합니다"
                                 >
                                   🛑 취소
@@ -2212,7 +2189,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     className="dropdown-item"
                     onClick={() => {
                       setIsProfileOpen(false);
-                      setIsSettingsOpen(true);
+                      openSettings();
                       setActiveSettingsTab("account");
                     }}
                   >
@@ -2222,7 +2199,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     className="dropdown-item"
                     onClick={() => {
                       setIsProfileOpen(false);
-                      setIsSettingsOpen(true);
+                      openSettings();
                       setActiveSettingsTab("security");
                     }}
                   >
@@ -2280,11 +2257,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           <div className="home-toolbar">
             <div className="home-toolbar-filters">
               <div className="filter-pills">
-                <button className={filterDays === 9999 ? "active" : ""} onClick={() => setFilterDays(9999)}>전체</button>
-                <button className={filterDays === 7 ? "active" : ""} onClick={() => setFilterDays(7)}>1주일</button>
-                <button className={filterDays === 14 ? "active" : ""} onClick={() => setFilterDays(14)}>2주일</button>
-                <button className={filterDays === 30 ? "active" : ""} onClick={() => setFilterDays(30)}>1개월</button>
-                <button className={filterDays === 90 ? "active" : ""} onClick={() => setFilterDays(90)}>3개월</button>
+                <button className={filterDays === 9999 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(9999); }}>전체</button>
+                <button className={filterDays === 7 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(7); }}>1주일</button>
+                <button className={filterDays === 14 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(14); }}>2주일</button>
+                <button className={filterDays === 30 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(30); }}>1개월</button>
+                <button className={filterDays === 90 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(90); }}>3개월</button>
               </div>
 
               <div className="list-search-bar">
@@ -2293,11 +2270,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   type="text"
                   placeholder="영상 날짜, 제목 검색"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setCurrentPage(1); setSearchQuery(e.target.value); }}
                   aria-label="영상 검색"
                 />
                 {searchQuery && (
-                  <button className="search-clear-btn" onClick={() => setSearchQuery("")} aria-label="검색어 지우기">
+                  <button className="search-clear-btn" onClick={() => { setCurrentPage(1); setSearchQuery(""); }} aria-label="검색어 지우기">
                     ✕
                   </button>
                 )}
@@ -2421,15 +2398,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                 <button
                   className="pagination-btn pagination-nav"
                   onClick={() => handlePageChange(1)}
-                  disabled={currentPage === 1}
+                  disabled={visiblePage === 1}
                   title="첫 페이지로 이동"
                 >
                   «
                 </button>
                 <button
                   className="pagination-btn pagination-nav"
-                  onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
+                  onClick={() => handlePageChange(Math.max(1, visiblePage - 1))}
+                  disabled={visiblePage === 1}
                   title="이전 페이지로 이동"
                 >
                   ‹
@@ -2439,7 +2416,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   {getPageNumbers().map((pageNum) => (
                     <button
                       key={pageNum}
-                      className={`pagination-btn pagination-num ${currentPage === pageNum ? "active" : ""}`}
+                      className={`pagination-btn pagination-num ${visiblePage === pageNum ? "active" : ""}`}
                       onClick={() => handlePageChange(pageNum)}
                     >
                       {pageNum}
@@ -2449,8 +2426,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
                 <button
                   className="pagination-btn pagination-nav"
-                  onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                  disabled={currentPage === totalPages}
+                  onClick={() => handlePageChange(Math.min(totalPages, visiblePage + 1))}
+                  disabled={visiblePage === totalPages}
                   title="다음 페이지로 이동"
                 >
                   ›
@@ -2458,7 +2435,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                 <button
                   className="pagination-btn pagination-nav"
                   onClick={() => handlePageChange(totalPages)}
-                  disabled={currentPage === totalPages}
+                  disabled={visiblePage === totalPages}
                   title="마지막 페이지로 이동"
                 >
                   »
@@ -2466,7 +2443,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               </div>
 
               <span className="pagination-info">
-                {currentPage} / {totalPages} 페이지 (총 {filteredVideos.length}개)
+                {visiblePage} / {totalPages} 페이지 (총 {filteredVideos.length}개)
               </span>
             </div>
           )}

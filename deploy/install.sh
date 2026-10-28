@@ -24,6 +24,18 @@ env_get() {
   sed -n "s/^$1=//p" "$REPO/.env" | tail -n 1 | tr -d '\r'
 }
 
+env_first() {
+  local name value
+  for name in "$@"; do
+    value="$(env_get "$name")"
+    if [[ -n "$value" ]]; then
+      printf '%s' "$value"
+      return 0
+    fi
+  done
+  return 0
+}
+
 DOMAIN="$(env_get DOMAIN)"
 SERVER_NAME="${DOMAIN:-_}"   # 도메인이 없으면 IP 로 들어오는 요청을 모두 받는다
 HTTPS=""
@@ -53,10 +65,41 @@ fi
 [[ "$RUN_USER" != "root" ]] || die "root 계정이 아니라 평소 계정에서 sudo 로 실행하세요(서비스가 그 계정으로 돕니다)"
 [[ -x "$REPO/venv311/bin/python" ]] || die "venv311 이 없습니다 — deploy/DEPLOY.md 2단계"
 [[ -f "$REPO/.env" ]] || die ".env 가 없습니다 — cp deploy/env.example .env 후 값을 채우세요"
-[[ -n "$(env_get DATABASE_URL)" ]] || die ".env 의 DATABASE_URL(Supabase PostgreSQL)을 채우세요"
+DATABASE_URL="$(env_first DATABASE_URL AZURE_POSTGRESQL_CONNECTIONSTRING)"
+LOCAL_DATABASE="0"
+if [[ -z "$DATABASE_URL" ]]; then
+  LOCAL_DATABASE="1"
+  warn "DATABASE_URL 이 비어 있어 loopback 전용 로컬 MySQL을 사용합니다"
+fi
+REDIS_URL="$(env_get REDIS_URL)"
+LOCAL_REDIS="1"
+if [[ -n "$REDIS_URL" ]]; then
+  case "$REDIS_URL" in
+    redis://*localhost:*|redis://*127.0.0.1:*|rediss://*localhost:*|rediss://*127.0.0.1:*) ;;
+    *) LOCAL_REDIS="0" ;;
+  esac
+else
+  REDIS_HOST="$(env_first REDIS_HOST AZURE_REDIS_HOST)"
+  case "$REDIS_HOST" in
+    ""|localhost|127.0.0.1|::1) ;;
+    *) LOCAL_REDIS="0" ;;
+  esac
+fi
 [[ -n "$(env_get AUTH_SECRET_KEY)" ]] || warn "AUTH_SECRET_KEY 가 비어 있어 backend/.auth_secret 에 키를 만들어 씁니다"
+STORAGE_BACKEND="$(env_get STORAGE_BACKEND)"
+STORAGE_BACKEND="${STORAGE_BACKEND:-local}"
+if [[ "$STORAGE_BACKEND" == "s3" ]]; then
+  [[ -n "$(env_first S3_ENDPOINT_URL R2_ENDPOINT_URL CLOUDFLARE_R2_ACCOUNT_ID)" ]] || die ".env 에 R2 endpoint 또는 CLOUDFLARE_R2_ACCOUNT_ID 를 채우세요"
+  [[ -n "$(env_first S3_BUCKET R2_BUCKET CLOUDFLARE_R2_BUCKET)" ]] || die ".env 에 S3_BUCKET 또는 CLOUDFLARE_R2_BUCKET 을 채우세요"
+  [[ -n "$(env_first S3_ACCESS_KEY_ID R2_ACCESS_KEY_ID CLOUDFLARE_R2_ACCESS_KEY_ID)" ]] || die ".env 에 R2 access key 를 채우세요"
+  [[ -n "$(env_first S3_SECRET_ACCESS_KEY R2_SECRET_ACCESS_KEY CLOUDFLARE_R2_SECRET_ACCESS_KEY)" ]] || die ".env 에 R2 secret key 를 채우세요"
+elif [[ "$STORAGE_BACKEND" != "local" ]]; then
+  die ".env 의 STORAGE_BACKEND 는 local 또는 s3 이어야 합니다"
+fi
 command -v nginx >/dev/null || die "nginx 가 없습니다 — deploy/DEPLOY.md 1단계"
-command -v docker >/dev/null || die "docker 가 없습니다 — deploy/DEPLOY.md 1단계"
+if [[ "$LOCAL_DATABASE" == "1" || "$LOCAL_REDIS" == "1" ]]; then
+  command -v docker >/dev/null || die "로컬 DB/Redis를 쓰려면 docker가 필요합니다 — deploy/DEPLOY.md 1단계"
+fi
 
 WEIGHTS="$(sudo -u "$RUN_USER" env SERVICE_WEIGHTS="$(env_get SERVICE_WEIGHTS)" \
   "$REPO/venv311/bin/python" -c "import sys; sys.path.insert(0, '$REPO/model'); import config; print(config.SERVICE_WEIGHTS_PATH)")"
@@ -98,9 +141,20 @@ if [[ -n "$STORAGE" ]]; then
   install -d -o "$RUN_USER" "$STORAGE"
 fi
 
-# ── 3) Redis (docker) ─────────────────────────────────────────────────
-log "Redis 켜기 (DB는 Supabase를 사용)"
-docker compose --project-directory "$REPO" -f "$REPO/docker-compose.yml" up -d redis
+# ── 3) 선택한 로컬 DB·Redis (docker) ──────────────────────────────────
+LOCAL_SERVICES=()
+if [[ "$LOCAL_DATABASE" == "1" ]]; then
+  LOCAL_SERVICES+=(db)
+fi
+if [[ "$LOCAL_REDIS" == "1" ]]; then
+  LOCAL_SERVICES+=(redis)
+fi
+if (( ${#LOCAL_SERVICES[@]} > 0 )); then
+  log "로컬 서비스 기동: ${LOCAL_SERVICES[*]} (loopback 전용)"
+  docker compose --project-directory "$REPO" -f "$REPO/docker-compose.yml" up -d "${LOCAL_SERVICES[@]}"
+else
+  log "외부 PostgreSQL·Redis 설정을 사용합니다"
+fi
 
 # ── 4) 백엔드·워커 서비스 ──────────────────────────────────────────────
 log "백엔드·워커 서비스 등록·재시작 (실행 계정 $RUN_USER)"

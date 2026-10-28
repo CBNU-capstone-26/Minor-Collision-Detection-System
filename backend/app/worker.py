@@ -4,6 +4,7 @@
 (워커 환경에는 torch/opencv 등 ML 의존성이 설치돼 있어야 한다.)
 """
 import os
+from datetime import datetime
 
 from celery import Celery
 from celery.signals import worker_ready
@@ -63,5 +64,14 @@ def _fail_interrupted_tasks(**_):
         db.commit()
         if n:
             print(f"[worker] 재시작으로 중단된 분석 {n}건을 실패로 정리")
+        detection_n = (db.query(db_models.VehicleDetectionTask)
+                       .filter(db_models.VehicleDetectionTask.status == "PROCESSING")
+                       .update({"status": "FAILURE",
+                                "error_message": "탐지 서버가 재시작되어 작업이 중단되었습니다. 다시 실행해 주세요.",
+                                "finished_at": datetime.utcnow()},
+                               synchronize_session=False))
+        db.commit()
+        if detection_n:
+            print(f"[worker] 재시작으로 중단된 차량 탐지 {detection_n}건을 실패로 정리")
     finally:
         db.close()

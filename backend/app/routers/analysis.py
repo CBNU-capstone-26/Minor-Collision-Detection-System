@@ -1,6 +1,7 @@
 """분석 요청 / 태스크 상태 / 이벤트·클립 조회 라우터."""
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
@@ -204,11 +205,16 @@ def download_raw_clip(event_id: int, db: Session = Depends(get_db),
     if key is None or not storage.exists(key):
         raise HTTPException(status_code=404,
                             detail="원본 클립이 없습니다. 영상을 다시 분석하면 만들어집니다.")
-    if not isinstance(storage, LocalObjectStorage):
-        return RedirectResponse(storage.presigned_url(key, settings.S3_PRESIGNED_URL_EXPIRES))
     t = event.timestamp_sec or 0.0
     stem = Path(event.video.video_name).stem if event.video else "video"
     name = f"{stem}_{int(t // 60):02d}분{int(t % 60):02d}초_원본사고클립.mp4"
+    if not isinstance(storage, LocalObjectStorage):
+        disposition = f"attachment; filename=clip.mp4; filename*=UTF-8''{quote(name, safe='')}"
+        return RedirectResponse(storage.presigned_url(
+            key,
+            settings.S3_PRESIGNED_URL_EXPIRES,
+            response_content_disposition=disposition,
+        ))
     return FileResponse(str(storage.local_path(key)), media_type="video/mp4", filename=name)
 
 

@@ -33,6 +33,8 @@ def delete_expired_videos() -> list[int]:
         for video in expired_videos(db):
             if any(t.status in ACTIVE_STATUSES for t in video.analysis_tasks):
                 continue   # 분석이 끝나면 다음 정리 때
+            if any(t.status in ACTIVE_STATUSES for t in video.vehicle_detection_tasks):
+                continue   # 차량 탐지가 끝나면 다음 정리 때
             video_id = video.id
             purge_video(video, db)
             db.commit()

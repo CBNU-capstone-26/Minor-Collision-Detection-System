@@ -68,6 +68,25 @@ def run_vehicle_detection_task(self, detection_task_id: int):
         )
         rows = _detection_rows(detector.detect_frame(frame))
 
+        if settings.DETECT_DEBUG_IMAGES:
+            try:
+                import cv2
+
+                debug_frame = frame.copy()
+                for row in rows:
+                    x1, y1, x2, y2 = row["bbox"]
+                    cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    label = f'#{row["id"] + 1} {row["class_name"]} {round(row["confidence"] * 100)}%'
+                    cv2.putText(debug_frame, label, (x1, max(y1 - 4, 10)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                output_dir = settings.BASE_DIR / "outputs"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir / f"detect_{Path(video.video_name).stem}_f{frame_index}.jpg"
+                if not cv2.imwrite(str(output_path), debug_frame):
+                    raise RuntimeError("탐지 디버그 이미지를 저장하지 못했습니다.")
+            except Exception as debug_exc:  # Debug output must not fail an otherwise successful detection.
+                print(f"[detect] 디버그 이미지 저장 실패(무시): {debug_exc}")
+
         result_json = json.dumps(rows, ensure_ascii=False)
         task.result_json = result_json
         task.status = "SUCCESS"

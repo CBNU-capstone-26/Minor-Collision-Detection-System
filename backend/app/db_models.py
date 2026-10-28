@@ -6,7 +6,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date, ForeignKey, Text,
+    Column, Integer, String, Float, DateTime, Date, ForeignKey, Index, Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -30,6 +30,7 @@ class User(Base):
 
 class Video(Base):
     __tablename__ = "videos"
+    __table_args__ = (Index("idx_videos_user_id_fk", "user_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -55,6 +56,7 @@ class Video(Base):
 
 class AnalysisTask(Base):
     __tablename__ = "analysis_tasks"
+    __table_args__ = (Index("idx_analysis_tasks_video_id_fk", "video_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     video_id = Column(Integer, ForeignKey("videos.id"), nullable=False)
@@ -79,6 +81,7 @@ class AnalysisTask(Base):
 class VehicleDetectionTask(Base):
     """GPU 워커가 실행하는 프레임별 차량 탐지 작업."""
     __tablename__ = "vehicle_detection_tasks"
+    __table_args__ = (Index("idx_vehicle_detection_tasks_video_id_fk", "video_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     video_id = Column(Integer, ForeignKey("videos.id"), nullable=False)
@@ -96,6 +99,10 @@ class VehicleDetectionTask(Base):
 class CrashEvent(Base):
     """사고 의심 구간(이벤트) 1건. 구간별 CAM 클립 1개."""
     __tablename__ = "crash_events"
+    __table_args__ = (
+        Index("idx_crash_events_task_id_fk", "task_id"),
+        Index("idx_crash_events_video_id_fk", "video_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer, ForeignKey("analysis_tasks.id"), nullable=False)

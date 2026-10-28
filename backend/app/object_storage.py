@@ -9,6 +9,7 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
+from urllib.parse import quote
 
 
 class LocalObjectStorage:
@@ -47,8 +48,13 @@ class LocalObjectStorage:
     def local_path(self, key: str) -> Path:
         return self.path_for(key)
 
-    def presigned_url(self, key: str, expires: int = 3600) -> str | None:
-        del key, expires
+    def presigned_url(
+        self,
+        key: str,
+        expires: int = 3600,
+        response_content_disposition: str | None = None,
+    ) -> str | None:
+        del key, expires, response_content_disposition
         return None
 
 
@@ -106,10 +112,18 @@ class S3ObjectStorage:
     def local_path(self, key: str) -> Path:
         raise RuntimeError("remote objects do not have a persistent local path")
 
-    def presigned_url(self, key: str, expires: int = 3600) -> str:
+    def presigned_url(
+        self,
+        key: str,
+        expires: int = 3600,
+        response_content_disposition: str | None = None,
+    ) -> str:
+        params = {"Bucket": self.bucket, "Key": key}
+        if response_content_disposition:
+            params["ResponseContentDisposition"] = response_content_disposition
         return self.client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": self.bucket, "Key": key},
+            Params=params,
             ExpiresIn=expires,
         )
 
