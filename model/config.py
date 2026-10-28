@@ -410,9 +410,11 @@ PREDICT_MIN_EVENT_SPAN_FRAMES = 35
 #     처음 한 번의 전체 검사(수십 초)를 미리 해 두기: python -m model.main --mode check-backend
 #   · 변환 모델은 판정(logits)과 함께 칸별 클래스 지도(CAM)도 내보내, 사고 클립 히트맵을 켜도 같은 방식으로 돈다.
 INFER_BACKEND = os.getenv("INFER_BACKEND", "auto").strip().lower()
-# GPU FP16(autocast). Tensor Core 가 있는 NVIDIA GPU(연산능력 7.0 이상)에서만 켜지고 자가 검사도 거친다.
-# 학습 서버에서 python -m model.fp16_check 로 속도·평가 결과를 확인한 뒤 켠다(환경변수 INFER_FP16=1).
-INFER_FP16 = os.getenv("INFER_FP16", "0").strip().lower() in ("1", "true", "yes")
+# GPU FP16(autocast). Tensor Core 가 있는 NVIDIA GPU(연산능력 7.0 이상)에서만 켜지고 자가 검사도 거친다
+# (그 밖의 GPU·CPU 는 그대로 FP32). 기본 켬 — 2026-10-28 RTX 3080 fp16_check --full-eval(서비스 가중치):
+# P(A) 차이 최대 4.1e-3(TF32 자체 차이 3.9e-3 수준), 기준 0.5·0.3 을 넘나든 창 0개, 평가 지표 전부 같음,
+# 서비스 경로 74.7 → 90.3fps(1.21배). 다른 GPU 로 옮기면 fp16_check 로 다시 확인. 끄기: 환경변수 INFER_FP16=0.
+INFER_FP16 = os.getenv("INFER_FP16", "1").strip().lower() in ("1", "true", "yes")
 INFER_CHECK_MAX_PROB_DIFF = 1e-3   # 자가 검사: FP32 방식들의 P(A) 허용 차이 (개발 PC 실측 최대 8e-5)
 INFER_FP16_MAX_PROB_DIFF = 1e-2    # 자가 검사: FP16 의 P(A) 허용 차이
 INFER_CACHE_DIR = _ROOT / "weights" / ".infer_cache"   # 변환 파일(ONNX)·자가 검사 결과
