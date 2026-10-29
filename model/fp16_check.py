@@ -7,7 +7,7 @@
 평소처럼 outputs/evallogs 에 두 회차로 남는다.
 
 FP16 을 켜도 되는 기준 (셋 다):
-  ① 실제 창에서 판정(P(A) 0.5)·거친 탐색(0.3) 기준이 바뀐 창이 없다
+  ① 실제 창에서 판정 기준(A_THRESHOLD)·거친 탐색 기준(PREDICT_COARSE_PROB)이 바뀐 창이 없다
   ② --full-eval 에서 기존 판정·서비스 판정 지표가 FP32 와 같다
   ③ 속도 이득이 있다
 config.INFER_FP16 은 기본 켬(2026-10-28 RTX 3080 확인). 다른 GPU 에서 결과가 다르면 서비스 환경에 INFER_FP16=0
@@ -160,7 +160,7 @@ def _run(args):
         d = (p16 - p32).abs()
         per_video.append((float(d.max()), v.name))
         for k, s in enumerate(starts):
-            for th in (0.5, 0.3):
+            for th in (config.A_THRESHOLD, config.PREDICT_COARSE_PROB):
                 if (p32[k] > th) != (p16[k] > th):
                     flips.append((v.name, int(s), th, float(p32[k]), float(p16[k])))
     p32, p16, pst = torch.cat(all32), torch.cat(all16), torch.cat(allstrict)
@@ -170,9 +170,10 @@ def _run(args):
     print(f'  (참고) TF32 끈 FP32 vs 지금 FP32 : 최대 {dtf.max():.2e} / 평균 {dtf.mean():.2e}  '
           f'← GPU FP32 도 기본 TF32 라 이미 이 정도 차이가 있다')
     print('  차이가 큰 영상: ' + ', '.join(f'{n}({m:.1e})' for m, n in sorted(per_video, reverse=True)[:5]))
-    f05 = [f for f in flips if f[2] == 0.5]
-    f03 = [f for f in flips if f[2] == 0.3]
-    print(f'  판정이 바뀐 창: 판정 기준 0.5 → {len(f05)}개 / 거친 탐색 기준 0.3 → {len(f03)}개')
+    f05 = [f for f in flips if f[2] == config.A_THRESHOLD]
+    f03 = [f for f in flips if f[2] == config.PREDICT_COARSE_PROB]
+    print(f'  판정이 바뀐 창: 판정 기준 {config.A_THRESHOLD:g} → {len(f05)}개 / '
+          f'거친 탐색 기준 {config.PREDICT_COARSE_PROB:g} → {len(f03)}개')
     for name, s, th, a, b in flips[:20]:
         print(f'    {name} 창 시작 {s}f: 기준 {th}  FP32 {a:.4f} → FP16 {b:.4f}')
 

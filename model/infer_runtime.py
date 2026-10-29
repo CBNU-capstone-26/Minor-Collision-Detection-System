@@ -66,6 +66,24 @@ class Runner:
         return f'Runner({self.name}{", " + self.detail if self.detail else ""})'
 
 
+# ── 충돌 판정 (학습 검증·평가·서비스 공통) ──────────────────────────────
+
+def a_logit_margin(threshold=None):
+    """P(A) 기준(config.A_THRESHOLD)을 로짓 차이(logit_A − logit_S) 기준으로 바꾼 값. 0.5 → 0."""
+    t = float(config.A_THRESHOLD if threshold is None else threshold)
+    if not 0.0 < t < 1.0:
+        raise ValueError(f'A_THRESHOLD 는 0 과 1 사이여야 합니다: {t}')
+    return float(np.log(t / (1.0 - t)))
+
+
+def is_accident(logits, threshold=None):
+    """(N, 2) logits → 창마다 충돌(A) 판정 (N,) bool. P(A) > 기준과 같다.
+
+    로짓 차이로 비교해, 기준 0.5 면 argmax(동점은 S)와 똑같다 — 지금까지의 결과가 그대로다.
+    """
+    return (logits[:, 1].float() - logits[:, 0].float()) > a_logit_margin(threshold)
+
+
 # ── 공통 ────────────────────────────────────────────────────────────
 
 def _log(msg):

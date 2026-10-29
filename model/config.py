@@ -30,6 +30,15 @@ MODEL_NUM_CLASSES = 2
 CLIP_LENGTH = 30
 RESIZE = (224, 224)
 R_VALUE = 1.0
+# 창 하나를 충돌(A)로 보는 P(A) 기준. 0.5 = 두 클래스 중 큰 쪽(argmax)과 똑같다(지금까지의 모든 결과).
+# 학습 검증 지표(재현율·정밀도·구간 재현율)·suggest F1·평가 ①②·서비스 이벤트·클립 A/S 띠·robust_check 가
+# 모두 이 값을 쓴다(infer_runtime.is_accident). 판단 지표(균형 손실)·구분력은 기준과 무관하다.
+# ⚠️ 바꿀 때: ① 최종 가중치 하나에 대해 검증 데이터로 정한다(python -m model.val_recheck --threshold).
+#               평가 영상으로 고르면 평가 점수가 부풀려진다. 가중치마다 P(A) 분포가 달라 맞는 값도 다르다.
+#            ② PREDICT_COARSE_PROB 은 이 값보다 낮아야 한다(거친 탐색이 약한 신호를 줍는 값).
+#            ③ PREDICT_MIN_EVENT_SPAN_FRAMES 도 다시 본다(0.5 기준 연속 창 수로 정한 값).
+#            ④ 평가 결과 이름에 _th<값> 이 붙어 0.5 결과와 구분된다. 이미 분석된 영상(DB)은 옛 기준 그대로다.
+A_THRESHOLD = 0.5
 # r 증강(학습 전용): 논문은 r∈{1,1.5,2,2.33,3}로 클립을 확장(833→1457, 약 1.75배).
 # 우리는 인덱스를 늘리면 train/val 분할이 깨지거나 같은 영상이 양쪽에 들어가므로,
 # 학습 시 클립마다 r을 확률적으로 뽑아 같은 효과를 낸다(검증/추론은 항상 r=1.0).
@@ -387,7 +396,7 @@ PREDICT_CLIP_PAD_FRAMES = 30
 # ⚠️ 긴 영상에서 실제로 몇 %를 보는지는 서버 로그의 '[2단계] 거친 탐색 … N%' 줄로 확인.
 PREDICT_USE_COARSE_SCAN = True
 PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임). stride 의 배수로 맞춰 쓴다
-PREDICT_COARSE_PROB = 0.3      # 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다
+PREDICT_COARSE_PROB = 0.3      # 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다(A_THRESHOLD 보다 낮게)
 PREDICT_COARSE_PAD = CLIP_LENGTH  # 의심 창 주변 ±pad 프레임의 창을 모두 평가
 PREDICT_FLOW_SAMPLE_STEP = 2   # 충격 시점 판정용 광학흐름 계산 프레임 간격(속도)
 

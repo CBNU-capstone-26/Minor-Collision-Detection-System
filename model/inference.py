@@ -12,7 +12,7 @@ from pathlib import Path
 
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported, predict_batch_size
-from infer_runtime import get_runner
+from infer_runtime import get_runner, is_accident
 
 # 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
 _FFMPEG = shutil.which("ffmpeg")
@@ -347,7 +347,7 @@ def predict_full_video(
 
                 outputs = model(clips)
                 probs = F.softmax(outputs, dim=1)
-                pred_classes = outputs.argmax(dim=1)
+                pred_classes = is_accident(outputs).long()     # P(A) > config.A_THRESHOLD
                 feat_maps = activation['cam_layer']
 
                 for offset, window_idx in enumerate(batch_window_starts):
@@ -540,6 +540,9 @@ def predict_events_and_clips(
     # CAM 히트맵도 같은 실행기가 판정과 함께 내준다(runner.with_cam). 클립을 안 만들면(평가) 받지 않는다.
     runner = get_runner(model)
     cam_overlay = cam_overlay and render_clips
+    if use_coarse_scan and coarse_prob >= config.A_THRESHOLD:
+        print(f"⚠️ 거친 탐색 기준 {coarse_prob:g} 이 판정 기준 A_THRESHOLD {config.A_THRESHOLD:g} 보다 낮지 않아 "
+              "약한 충돌 신호를 흘릴 수 있습니다(config.PREDICT_COARSE_PROB)")
     # ── 영상을 처음부터 끝까지 한 번 읽으며 바로 판정한다(스트리밍) ──────────────
     # 예전엔 224 크롭 프레임을 영상 전체만큼 메모리에 쌓은 뒤 float 텐서로 바꿔 판정해
     # 프레임당 약 2MB(1시간 영상 ≈ 200GB)가 들었다. 이제 최근 프레임 몇십 장만 두고,
@@ -626,7 +629,7 @@ def predict_events_and_clips(
             else:
                 outputs, cams = runner(clips), None
             probs = F.softmax(outputs, dim=1)
-            pred_classes = outputs.argmax(dim=1)
+            pred_classes = is_accident(outputs).long()         # P(A) > config.A_THRESHOLD
             for offset, window_idx in enumerate(batch_window_starts):
                 # 판정·CAM 은 창 끝이 아니라 '창 시작 + display_offset' 프레임에
                 # 그린다 — 창 끝에 붙이면 A 표시가 실제 충돌보다 늦다(config 주석).

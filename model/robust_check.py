@@ -13,7 +13,7 @@
     저해상도 64px + 압축(작은 차를 압축이 심한 CCTV 로 본 것)
 학습한 증강에는 판단이 덜 흔들리고 학습하지 않은 변형에 크게 흔들리면 증강이 모델에 반영된 것이다. 저해상도에서
 정상 창의 P(A)가 오르면 '흐리면 사고' 지름길을 의심한다(학습 데이터의 저화질 영상이 사고 쪽에 몰려 있음).
-판정은 창 단위 P(A)>0.5 와, 영상의 고른 창 중 하나라도 0.5 를 넘으면 '사고'로 보는 축약 판정이다(서비스 판정과
+판정은 창 단위 P(A)>기준(config.A_THRESHOLD, 기본 0.5) 과, 영상의 고른 창 중 하나라도 기준을 넘으면 '사고'로 보는 축약 판정이다(서비스 판정과
 다르다 — 변형끼리 비교용). 결과는 화면과 outputs/robust_check/<시각>/report.txt · windows.csv 에 남는다.
 """
 import argparse
@@ -244,20 +244,21 @@ def _report(rows):
     n_av = sum(g == 'A' for g in gt_of.values())
     n_sv = len(gt_of) - n_av
     stats = {}
+    th = config.A_THRESHOLD     # 창 판정 기준(기본 0.5)
     for key, name, group, _ in CONDITIONS:
         sub = [(v, gt, s, p) for v, gt, s, k, p in rows if k == key]
         pa = [p for v, gt, s, p in sub if gt == 'A']
         ps = [p for v, gt, s, p in sub if gt == 'S']
         d = [abs(p - base[(v, s)]) for v, gt, s, p in sub]
-        miss = sum(gt == 'A' and base[(v, s)] > 0.5 >= p for v, gt, s, p in sub)     # 사고 창: 맞던 것을 놓침
-        fa = sum(gt == 'S' and base[(v, s)] <= 0.5 < p for v, gt, s, p in sub)       # 정상 창: 새로 오탐
+        miss = sum(gt == 'A' and base[(v, s)] > th >= p for v, gt, s, p in sub)     # 사고 창: 맞던 것을 놓침
+        fa = sum(gt == 'S' and base[(v, s)] <= th < p for v, gt, s, p in sub)       # 정상 창: 새로 오탐
         vmax = {}
         for v, gt, s, p in sub:
             vmax[v] = max(vmax.get(v, 0.0), p)
         stats[key] = dict(name=name, group=group, pa=np.mean(pa) if pa else float('nan'),
                           ps=np.mean(ps) if ps else float('nan'), d=float(np.mean(d)), miss=miss, fa=fa,
-                          auc=_auc(pa, ps), hit=sum(gt_of[v] == 'A' and m > 0.5 for v, m in vmax.items()),
-                          vfa=sum(gt_of[v] == 'S' and m > 0.5 for v, m in vmax.items()),
+                          auc=_auc(pa, ps), hit=sum(gt_of[v] == 'A' and m > th for v, m in vmax.items()),
+                          vfa=sum(gt_of[v] == 'S' and m > th for v, m in vmax.items()),
                           n_a=len(pa), n_s=len(ps))
     o = stats['orig']
     print(f'\n[결과] 창: 사고 {o["n_a"]}개 · 정상 {o["n_s"]}개 (사고 영상 {n_av}개 · 정상 영상 {n_sv}개)')
@@ -272,10 +273,10 @@ def _report(rows):
         s = stats[key]
         print(f'  {name:<18}{s["pa"]:>11.3f}{s["ps"]:>11.3f}{s["d"]:>9.3f}{s["miss"]:>6}{s["fa"]:>6}'
               f'{s["auc"]:>8.3f}{s["hit"]:>6}/{n_av:<2}{s["vfa"]:>6}/{n_sv:<2}')
-    print('  · 평균 변화 = 원본 대비 |P(A) 차이| 평균 · 놓침+ = 원본에선 0.5 를 넘던 사고 창이 넘지 못함 · '
-          '오탐+ = 원본에선 0.5 이하던 정상 창이 넘음')
+    print(f'  · 평균 변화 = 원본 대비 |P(A) 차이| 평균 · 놓침+ = 원본에선 {th:g} 를 넘던 사고 창이 넘지 못함 · '
+          f'오탐+ = 원본에선 {th:g} 이하던 정상 창이 넘음')
     print('  · 구분력 = 사고 창이 정상 창보다 P(A)가 높을 확률(1 이 완벽, 0.5 는 무작위) · '
-          '사고영상/정상오탐 = 영상의 고른 창 중 하나라도 0.5 초과(축약 판정)')
+          f'사고영상/정상오탐 = 영상의 고른 창 중 하나라도 {th:g} 초과(축약 판정)')
 
     tr = [stats[k] for k, _, g, _ in CONDITIONS if g == TRAINED]
     un = [stats[k] for k, _, g, _ in CONDITIONS if g == UNTRAINED]

@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported, predict_batch_size
-from infer_runtime import get_runner
+from infer_runtime import get_runner, is_accident
 from runlog import make_run_dir, write_run_info
 
 
@@ -135,7 +135,7 @@ def _evaluate_folder_impl(
             # ⑦ 영상 텐서를 처음부터 GPU에 상주 — 배치마다 .to(device) 전송 제거
             full_video_tensor = frames_to_tensor(frames).to(device)
             predicted_label = 0
-            first_a = None          # P(A) > 0.5 가 처음 나온 창의 시작 프레임
+            first_a = None          # P(A) > config.A_THRESHOLD 가 처음 나온 창의 시작 프레임
             num_windows = len(frames) - (clip_length - 1)
             window_starts = list(range(0, num_windows, window_stride))
 
@@ -150,10 +150,10 @@ def _evaluate_folder_impl(
                         memory_format=torch.channels_last_3d)
 
                 outputs = runner(clips)
-                pred_classes = outputs.argmax(dim=1)
-                if (pred_classes == 1).any().item():
+                is_a = is_accident(outputs)
+                if is_a.any().item():
                     predicted_label = 1
-                    first_a = batch_window_starts[int((pred_classes == 1).nonzero()[0])]
+                    first_a = batch_window_starts[int(is_a.nonzero()[0])]
                     break
 
             total_videos += 1
@@ -180,7 +180,7 @@ def _evaluate_folder_impl(
     # ── 논문(Hwang & Lee 2024, Table 6)과 동일한 지표 ──────────────
     base = _metrics(tp, fn, fp, tn)
     print("\n" + "=" * 60)
-    print("[① 기존 판정]  창 하나라도 P(A) > 0.5 면 그 영상은 충돌  (논문 Table 6 방식)")
+    print(f"[① 기존 판정]  창 하나라도 P(A) > {config.A_THRESHOLD:g} 면 그 영상은 충돌  (논문 Table 6 방식)")
     print(f"   창 간격 {window_stride}로 모든 창을 본다. 거친 탐색·이벤트 규칙이 없고, "
           "충돌 위치는 따지지 않는다.")
     print("=" * 60)
@@ -273,7 +273,7 @@ def _print_comparison(base, svc, rows, window_stride):
     print("[판정 방식 비교]  같은 영상, 영상 단위 (Positive = A/충돌)")
     print("=" * 64)
     line('', '① 기존 판정', '② 서비스 판정')
-    line('판정 규칙', '창 P(A)>0.5 1개↑', '이벤트 1개↑')
+    line('판정 규칙', f'창 P(A)>{config.A_THRESHOLD:g} 1개↑', '이벤트 1개↑')
     line('창 보는 방식', f'간격 {window_stride}, 전부', f'거친 탐색 → 의심 구간만')
     print("-" * 64)
     line('TP / FN / FP / TN', f"{base['tp']}/{base['fn']}/{base['fp']}/{base['tn']}",
@@ -567,7 +567,7 @@ def evaluate_service_path(
         frames_read = stats.get('frames', frames)
         base_r = (base_rows or {}).get(mp4_file, {})
         row = {'file': mp4_file, 'gt': 'A' if gt_sf is not None else 'S',
-               # 두 판정을 영상별로 나란히 — ① 기존(창 P(A)>0.5 1개↑) / ② 서비스(이벤트 1개↑)
+               # 두 판정을 영상별로 나란히 — ① 기존(창 P(A)>기준 1개↑) / ② 서비스(이벤트 1개↑)
                'base_pred': base_r.get('pred'), 'base_first_a': base_r.get('first_a'),
                'svc_pred': 'A' if events else 'S',
                'in_train': mp4_file in in_train, 'fps': round(fps, 2),
@@ -706,6 +706,9 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     r_value = float(kwargs.get('r_value', config.R_VALUE))
     if abs(r_value - 1.0) > 1e-9:
         name_tag += f'_r{r_value:g}'
+    # 판정 기준(config.A_THRESHOLD)이 0.5 가 아니면 _th<값> — 0.5 로 낸 결과와 섞이지 않게
+    if abs(config.A_THRESHOLD - 0.5) > 1e-9:
+        name_tag += f'_th{config.A_THRESHOLD:g}'
     run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, name_tag)
     log_path = run_dir / f"eval_{config.MODEL_NAME}_{name_tag}_{stamp}.txt"
     write_run_info(run_dir, [
@@ -716,6 +719,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
         ('평가 폴더', str(folder_path)),
         ('크롭 r', f'{r_value:g}'),
+        ('판정 기준 P(A)', f'{config.A_THRESHOLD:g}'),
         # 속도 지표는 이 설정이 같은 평가끼리만 비교한다(2026-10-22 부터 기본 끔 — GPU 추론 약 2.6배 빠름).
         # 정확도 지표는 켬/끔 차이가 P(A) 1e-6 수준이라 그대로 비교해도 된다.
         ('GPU 메모리 배치 channels_last',
@@ -744,7 +748,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     write_run_info(run_dir, [tuple(l.split(': ', 1)) for l in info] + [
         ('종료', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ('평가 영상 수', m.get('n_videos')),
-        ('① 기존 판정(창 P(A)>0.5 1개↑)', _info_metrics(m, 'base_', 'recall', 'false_alarm')),
+        (f'① 기존 판정(창 P(A)>{config.A_THRESHOLD:g} 1개↑)', _info_metrics(m, 'base_', 'recall', 'false_alarm')),
         ('② 서비스 판정(이벤트 1개↑)', _info_metrics(m, 'svc_', 'video_recall', 'video_false_alarm')),
         (f"② 서비스 위치 기준 재현율(시작 ±{m.get('svc_hit_tol_sec')}초)", _fmt_pct(m.get('svc_hit_recall'))),
         ('② 서비스 오탐 이벤트', m.get('svc_false_events')),
@@ -768,7 +772,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
 
     # 요약 CSV 에 한 줄 덧붙인다(모델 비교용)
     summary = log_dir / 'eval_summary.csv'
-    # base_* = ① 기존 판정(창 P(A)>0.5 1개↑), svc_* = ② 서비스 판정(이벤트 1개↑).
+    # base_* = ① 기존 판정(창 P(A)>기준 1개↑), svc_* = ② 서비스 판정(이벤트 1개↑). 기준이 0.5 가 아니면 run 열에 _th<값>.
     # 둘의 tp~f1 은 같은 정의라 그대로 비교된다. svc_hit_recall 은 위치 기준(시작 ±허용 오차).
     # ⚠️ 2026-10-12 이전 요약 파일의 'recall' 은 지금의 base_recall, 'svc_recall' 은
     #    지금의 svc_hit_recall 이다(이름만 바뀜).
