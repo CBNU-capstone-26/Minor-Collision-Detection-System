@@ -5,6 +5,8 @@
 좋아져서, 재현율은 그대로인데 오탐이 는 에포크를 고르기도 한다(2026-10-22 학습: 판단 지표
 1위 44에포크 7/12·오탐 6 vs 38에포크 7/12·오탐 2). 그래서 세 기준의 상위를 합쳐 후보로 낸다.
   ① 판단 지표(3에포크 평균) ② 그 에포크 균형손실 ③ 그 에포크 F1(서비스와 같은 0.5 판정의 재현율·정밀도)
+구간 재현율(접근~충돌 종료 창 중 하나라도 A)·구분력은 2026-10-29 부터 학습 CSV 에 있고, 보여 주기만 하며 고르는 기준엔
+넣지 않는다(그 전 학습은 '-' — python -m model.val_recheck 로 다시 계산).
 기준마다 상위 k개(config.TRAIN_SUGGEST_TOPK)를 서로 TRAIN_TOPK_MIN_GAP 에포크 이상 떨어진 것만
 고른다(붙은 에포크는 사실상 같은 모델). 검증 충돌이 적어 어느 기준도 흔들리므로 이것은 '후보'일 뿐이고,
 최종 선택은 평가 영상(서비스 판정·정상 영상 오탐)으로 한다. 에포크별 가중치는 회차 폴더 epochs/ 에 있다.
@@ -80,7 +82,7 @@ def suggest(run_dir, k=None, gap=None):
     lines = [f"[평가 추천] 기준마다 상위 {k}개(서로 {gap}에포크 이상 떨어진 것) — ① 판단 지표 ② 그 에포크 {dom} "
              f"균형손실 ③ 그 에포크 {dom} F1. 후보일 뿐이고 최종 선택은 평가 영상으로",
              f"  {'에포크':>6}{'판단지표':>10}{dom + ' 균형':>10}{dom + ' 재현율':>11}{dom + ' 정밀도':>11}"
-             f"{dom + ' F1':>8}{'rc 균형':>9}  {'뽑힌 기준':<16}가중치"]
+             f"{dom + ' F1':>8}{'구간 재현율':>9}{'구분력':>7}{'rc 균형':>9}  {'뽑힌 기준':<16}가중치"]
     files = []
     for e in pick:
         r = by_ep[e]
@@ -89,7 +91,8 @@ def suggest(run_dir, k=None, gap=None):
         why = '·'.join(name for name, eps in picks.items() if e in eps)
         lines.append(f"  {e:>6}{_n(_f(r, 'monitor')):>10}{_n(_f(r, bal)):>10}"
                      f"{_n(_f(r, f'val_{dom}_recallA')):>11}{_n(_f(r, f'val_{dom}_precA')):>11}"
-                     f"{_n(_f1(r, dom)):>8}{_n(_f(r, 'val_rc_bal')):>9}  {why:<16}"
+                     f"{_n(_f1(r, dom)):>8}{_n(_f(r, f'val_{dom}_spanRecA')):>9}{_n(_f(r, f'val_{dom}_auc')):>7}"
+                     f"{_n(_f(r, 'val_rc_bal')):>9}  {why:<16}"
                      f"{fp.name if fp else '(없음 — 에포크별 저장 전 학습)'}")
     have = [p for p in files if p]
     if have:

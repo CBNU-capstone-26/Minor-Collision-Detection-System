@@ -80,6 +80,7 @@ class HitAndRunDataset(Dataset):
         resize=config.RESIZE,
         augment=True,
         cache_dir=None,
+        span_windows=False,
     ):
         self.data_dir = data_dir
         self.clip_length = clip_length
@@ -101,6 +102,12 @@ class HitAndRunDataset(Dataset):
         if a_mode not in ('pre', 'span'):
             raise ValueError(f"TRAIN_A_MODE 는 'pre' 또는 'span' 이어야 합니다: {a_mode!r}")
         self.span = a_mode == 'span'
+        # span_windows=True(검증 전용): 'pre' 학습이어도 충돌 샘플을 span 과 같은 창 묶음으로 만든다.
+        # 첫 창이 'pre' 의 창과 같아, 기존 지표는 첫 창으로·구간 재현율은 창 전부로 잰다(train.validate).
+        # 샘플 수·순서는 그대로다(충돌 영상당 1개). A 슬라이싱(TRAIN_A_SLICE_ENABLED)은 샘플 수가 달라 함께 못 쓴다.
+        if span_windows and not self.span and getattr(config, 'TRAIN_A_SLICE_ENABLED', False):
+            raise ValueError('span_windows 는 TRAIN_A_SLICE_ENABLED 와 함께 쓸 수 없습니다(학습·검증 샘플 순서가 달라짐)')
+        self.span_windows = self.span or bool(span_windows)
         # 정규화 통계는 사전학습(Kinetics-400)과 동일하게 config에서 일괄 관리
         self.mean = torch.tensor(
             config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
@@ -176,7 +183,7 @@ class HitAndRunDataset(Dataset):
                 a_start = max(0, start_f - pre)
                 a_stride = max(1, int(getattr(config, 'TRAIN_A_SLICE_STRIDE', 15)))
                 last = end_f - self.clip_length + 1      # 창 끝 == end_f 인 시작점
-                if self.span:
+                if self.span_windows:
                     # span: 접근부터 충돌 종료까지를 덮는 창들을 샘플 하나로 둔다.
                     wins = self._span_starts(a_start, last, total)
                     _add(wins[0], wins)
@@ -505,7 +512,7 @@ class HitAndRunDataset(Dataset):
 
         video = self._frames_to_tensor(frames)
         label = torch.tensor(sample['label'], dtype=torch.long)
-        if not self.span:
+        if not self.span_windows:
             return video, label
         # (K, 3, T, H, W) — 구간을 덮는 창들
         return torch.stack([video[:, s - s0:s - s0 + self.clip_length]

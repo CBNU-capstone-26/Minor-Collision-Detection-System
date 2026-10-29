@@ -17,6 +17,7 @@ from dataset import HitAndRunDataset, limit_cv2_threads, span_collate
 from device_utils import get_device, is_cuda_like, is_channels_last_3d_supported
 import hitandrun_model
 from hitandrun_model import HitAndRun3DCNN
+from infer_runtime import is_accident
 from runlog import make_run_dir, write_run_info
 from train_balance import build as build_balance, resolve_csv
 
@@ -74,6 +75,146 @@ def loader_prefetch(workers):
     쌓일 수 있다. 작업자 8개면 지금까지와 같은 4, 24개면 1.
     """
     return max(1, 32 // max(1, workers))
+
+
+def span_weights(sizes, first_w, device):
+    """span: 창별 (무게, 주인 샘플 번호). 샘플마다 무게 합 = 1.
+
+    창 1개(비충돌·짧은 충돌)면 1, 여러 개면 첫 창 first_w + 나머지가 1 − first_w 를 나눈다.
+    """
+    w, owner = [], []
+    for i, k in enumerate(sizes.tolist()):
+        w += [1.0] if k == 1 else [first_w] + [(1.0 - first_w) / (k - 1)] * (k - 1)
+        owner += [i] * k
+    return (torch.tensor(w, device=device),
+            torch.tensor(owner, device=device, dtype=torch.long))
+
+
+def _run_windows(model, x, batch_size, channels_last=False):
+    """검증: 창들을 배치 크기 단위로 나눠 추론한다(fp32, 'pre' 검증과 같은 조건).
+
+    span 은 창이 샘플보다 많아 한 번에 넣으면 메모리가 부족할 수 있다. → 로짓 (N, 2)
+    """
+    outs = []
+    for i in range(0, x.size(0), batch_size):
+        chunk = x[i:i + batch_size]
+        if channels_last:
+            chunk = chunk.contiguous(memory_format=torch.channels_last_3d)
+        outs.append(model(chunk).float())
+    return torch.cat(outs)
+
+
+def _max_window(logits, sizes):
+    """샘플마다 충돌 점수(logit_A − logit_S)가 가장 높은 창의 위치(전체 창 기준)."""
+    score = logits[:, 1] - logits[:, 0]
+    picks, off = [], 0
+    for k in sizes.tolist():
+        picks.append(off + int(score[off:off + k].argmax()))
+        off += k
+    return picks
+
+
+def _auc(pos, neg):
+    """충돌 샘플 점수가 비충돌 샘플보다 높을 확률(동점 반) — 판정 기준과 무관한 구분력."""
+    if not pos or not neg:
+        return None
+    p, n = torch.tensor(pos)[:, None], torch.tensor(neg)[None, :]
+    return float((p > n).double().mean() + 0.5 * (p == n).double().mean())
+
+
+def validate(model, loader, device, *, span, criterion, batch_size, class_w=None,
+             first_w=0.5, channels_last=False, threshold=None):
+    """검증 로더 하나 → 지표 dict (로더가 없으면 None). 학습 중 검증과 val_recheck 가 같이 쓴다.
+
+    span              : 학습이 span 방식인가 — 손실·기존 판정을 학습 방식대로 낸다.
+    loss/acc/rec/prec : 기존 지표. 판정은 P(A) > 기준(config.A_THRESHOLD, 기본 0.5 = argmax).
+                        'pre' 는 첫 창, span 은 창 하나라도 A 면 A(점수가 가장 높은 창).
+    lossA / lossS     : 충돌·비충돌 클립 각각의 평균 손실(가중치 없는 CE).
+    bal               : (lossA + lossS) / 2 — 클래스 균형 손실.
+    preRec/prePrec    : 학습 방식과 상관없이 첫 창 1개(충돌 시작 TRAIN_A_PRE_FRAMES 전부터)로 판정.
+                        'pre' 학습의 rec/prec 와 같다.
+    spanRec/spanPrec  : 학습 방식과 상관없이 접근~충돌 종료 창(최대 TRAIN_SPAN_MAX_WINDOWS) 중
+                        하나라도 A 면 A — 서비스 판정에 가깝다(구간 재현율). span 학습의 rec/prec 와 같다.
+    auc               : 구분력 — 충돌 샘플(구간 창 중 최고 점수)이 비충돌 클립보다 P(A)가 높을 확률.
+                        판정 기준과 무관하다(1 이 완벽, 0.5 는 무작위).
+    로더가 창 묶음(span_collate)이 아니면 샘플마다 창 1개라 pre·span 지표가 같다.
+
+    ⚠️ val_real 은 51클립 중 40개가 비충돌이라 그냥 손실은 78%가 '비충돌을
+       얼마나 확신하느냐'로 정해진다. 목표는 충돌을 놓치지 않는 것이므로
+       best 판단에는 두 클래스를 같은 무게로 보는 bal 을 쓴다.
+       acc 도 A:S 불균형 때문에 전부 S로 찍어도 높게 나오니 recall 을 본다.
+    """
+    if loader is None:
+        return None
+    cuda_like = is_cuda_like(device)
+    model.eval()
+    vloss, correct = 0.0, 0
+    cnt = {k: [0, 0, 0] for k in ('base', 'pre', 'span')}   # 판정 방식별 [tp, fp, fn] — A(=1) 기준
+    sum_a = sum_s = 0.0
+    n_a = n_s = 0
+    score_a, score_s = [], []
+    with torch.inference_mode():
+        for batch in loader:
+            if len(batch) == 3:
+                inputs, sizes, labels = batch
+            else:
+                inputs, labels = batch
+                sizes = torch.ones(labels.size(0), dtype=torch.long)
+            inputs = inputs.to(device, non_blocking=cuda_like)
+            labels = labels.to(device, non_blocking=cuda_like)
+            logits = _run_windows(model, inputs, batch_size, channels_last)
+            first = (torch.cumsum(sizes, 0) - sizes).tolist()    # 샘플마다 첫 창 위치
+            best = _max_window(logits, sizes)
+            if span:
+                # 손실: 학습과 같은 무게(첫 창 + 나머지 창)로 샘플별 손실을 낸다.
+                # 판정(acc·recall·prec): 서비스처럼 창 하나라도 A면 A —
+                #   충돌 점수가 가장 높은 창으로 판정한다.
+                w, owner = span_weights(sizes, first_w, device)
+                ce = torch.zeros(labels.size(0), device=device).index_add_(
+                    0, owner, w * F.cross_entropy(logits, labels[owner], reduction='none'))
+                outputs = logits[best]
+                cls_w = (class_w[labels] if class_w is not None
+                         else torch.ones_like(ce))
+                vloss += ((cls_w * ce).sum() / cls_w.sum()).item() * labels.size(0)
+            else:
+                outputs = logits[first]
+                vloss += criterion(outputs, labels).item() * labels.size(0)
+                ce = F.cross_entropy(outputs.float(), labels, reduction='none')
+            is_a = labels == 1
+            sum_a += ce[is_a].sum().item()
+            sum_s += ce[~is_a].sum().item()
+            n_a += int(is_a.sum().item())
+            n_s += int((~is_a).sum().item())
+            for key, out in (('base', outputs), ('pre', logits[first]), ('span', logits[best])):
+                preds = is_accident(out, threshold)
+                if key == 'base':
+                    correct += torch.sum(preds == is_a).item()
+                c = cnt[key]
+                c[0] += torch.sum(preds & is_a).item()
+                c[1] += torch.sum(preds & ~is_a).item()
+                c[2] += torch.sum(~preds & is_a).item()
+            score = (logits[best][:, 1] - logits[best][:, 0]).tolist()
+            for sc, a in zip(score, is_a.tolist()):
+                (score_a if a else score_s).append(sc)
+    n = len(loader.dataset)
+    loss_a = sum_a / n_a if n_a else None
+    loss_s = sum_s / n_s if n_s else None
+
+    def _rp(key):
+        tp, fp, fn = cnt[key]
+        return (tp / (tp + fn) if (tp + fn) else None,
+                tp / (tp + fp) if (tp + fp) else None)
+
+    (rec, prec), (pre_rec, pre_prec), (span_rec, span_prec) = _rp('base'), _rp('pre'), _rp('span')
+    return {
+        'loss': vloss / n, 'acc': correct / n,
+        'rec': rec, 'prec': prec,
+        'lossA': loss_a, 'lossS': loss_s,
+        # 검증셋에 한 클래스가 없으면 균형 손실을 못 구한다
+        'bal': (loss_a + loss_s) / 2 if (n_a and n_s) else None,
+        'preRec': pre_rec, 'prePrec': pre_prec, 'spanRec': span_rec, 'spanPrec': span_prec,
+        'auc': _auc(score_a, score_s),
+    }
 
 
 def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sampler=None, workers=None):
@@ -150,6 +291,8 @@ def train_model(
         data_dir=data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=False,
         cache_dir=config.TRAIN_VAL_CACHE_DIR if getattr(config, 'TRAIN_VAL_CACHE', False) else None,
+        # 충돌 샘플을 접근~충돌 종료 창 묶음으로 — 기존 지표는 첫 창(= 'pre' 의 창)으로, 구간 재현율은 창 전부로
+        span_windows=not getattr(config, 'TRAIN_A_SLICE_ENABLED', False),
     )
     # 계층적 분할(stratified): 그룹을 세분화해 각 그룹을 train_split_ratio(8:2)로 나눈다.
     #   rc  : 방향(N/S/L/R) × 클래스(A/S) → 최대 8그룹 (각 방향·클래스가 train/val에 고루 분포)
@@ -249,6 +392,12 @@ def train_model(
     else:
         print("[A 방식] pre — 충돌 영상당 창 1개(충돌 시작 "
               f"{getattr(config, 'TRAIN_A_PRE_FRAMES', 0)}프레임 전부터)")
+    if val_dataset.span_windows:
+        print(f"[검증 지표] 기존(학습 방식대로) + 첫 창 재현율·구간 재현율(접근~충돌 종료 창 최대 "
+              f"{getattr(config, 'TRAIN_SPAN_MAX_WINDOWS', 6)}개 중 하나라도 A)·구분력 — "
+              f"판정 기준 P(A) {config.A_THRESHOLD:g}")
+    else:
+        print("[검증 지표] A 슬라이싱(TRAIN_A_SLICE_ENABLED)이 켜져 있어 구간 재현율 = 첫 창 재현율")
     # 실제 영상 S 의 1번 차량 클립 (config.TRAIN_S_REAL_USE_CAR1)
     car1 = [s for s in train_dataset.samples if s.get('car_id') == 1 and s['label'] == 0]
     s_car_info = (f"0번 + 실제 영상 S 는 1번도 (1번 클립 {len(car1)}개, "
@@ -305,12 +454,13 @@ def train_model(
         Subset(train_dataset, train_idx), batch_size=batch_size,
         shuffle=True, device=device, collate_fn=collate, batch_sampler=batch_sampler,
         workers=getattr(config, 'TRAIN_NUM_WORKERS', None))
+    val_collate = span_collate if val_dataset.span_windows else None
     val_rc_loader = _make_loader(
         Subset(val_dataset, val_rc_idx), batch_size=batch_size,
-        shuffle=False, device=device, collate_fn=collate) if val_rc_idx else None
+        shuffle=False, device=device, collate_fn=val_collate) if val_rc_idx else None
     val_real_loader = _make_loader(
         Subset(val_dataset, val_real_idx), batch_size=batch_size,
-        shuffle=False, device=device, collate_fn=collate) if val_real_idx else None
+        shuffle=False, device=device, collate_fn=val_collate) if val_real_idx else None
 
     # ── 이번 학습의 회차 폴더 ──────────────────────────────────────
     # outputs/trainlogs/<YYMMDD_HHMM>_<모델>_<ptY|ptN>[_span]/ 에 이번 학습의 산출물을 모은다.
@@ -368,6 +518,7 @@ def train_model(
          '켬' if (use_channels_last and is_channels_last_3d_supported(device)) else '끔'),
         ('데이터 폴더', str(data_dir)),
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
+        ('판정 기준 P(A)', f'{config.A_THRESHOLD:g} (검증 재현율·정밀도·suggest F1 — 판단 지표는 기준과 무관)'),
     ]
     write_run_info(run_dir, run_info)
 
@@ -384,6 +535,10 @@ def train_model(
             'val_rc_lossA', 'val_rc_lossS', 'val_rc_bal',
             'val_real_lossA', 'val_real_lossS', 'val_real_bal',
             'monitor', 'saved_best', 'saved_cand',
+            # ↓ 2026-10-29 추가(train.validate): 첫 창 1개 재현율·정밀도, 구간(접근~충돌 종료 창 중 하나라도)
+            #   재현율·정밀도, 구분력. 학습 방식(pre/span)과 상관없이 같은 정의라 서로 비교된다.
+            'val_rc_preRecA', 'val_rc_prePrecA', 'val_rc_spanRecA', 'val_rc_spanPrecA', 'val_rc_auc',
+            'val_real_preRecA', 'val_real_prePrecA', 'val_real_spanRecA', 'val_real_spanPrecA', 'val_real_auc',
         ])
     print(f"[로그] 학습 곡선 CSV: {log_path}")
 
@@ -505,18 +660,6 @@ def train_model(
 
     _cw_t = torch.tensor(_cw, dtype=torch.float32, device=device) if _cw else None
 
-    def _span_weights(sizes):
-        """span: 창별 (무게, 주인 샘플 번호). 샘플마다 무게 합 = 1.
-
-        창 1개(비충돌·짧은 충돌)면 1, 여러 개면 첫 창 first_w + 나머지가 1 − first_w 를 나눈다.
-        """
-        w, owner = [], []
-        for i, k in enumerate(sizes.tolist()):
-            w += [1.0] if k == 1 else [first_w] + [(1.0 - first_w) / (k - 1)] * (k - 1)
-            owner += [i] * k
-        return (torch.tensor(w, device=device),
-                torch.tensor(owner, device=device, dtype=torch.long))
-
     def _span_step(inputs, sizes, labels):
         """span 학습 한 스텝 → 배치 손실(샘플 평균, 'pre'의 손실과 같은 척도).
 
@@ -525,7 +668,7 @@ def train_model(
         창이 step_cap 을 넘으면 섞어서 고르게 나눠 역전파하고 기울기를 합쳐 한 번에 갱신한다.
         (나눠도 손실·기울기는 같고, BN 통계만 조각 단위로 계산된다)
         """
-        w, owner = _span_weights(sizes)
+        w, owner = span_weights(sizes, first_w, device)
         cls_w = (_cw_t[labels] if _cw_t is not None
                  else torch.ones(labels.size(0), device=device))
         coef = cls_w[owner] * w / cls_w.sum()
@@ -559,28 +702,6 @@ def train_model(
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
             optimizer.step()
         return total
-
-    def _run_windows(x):
-        """검증: 창들을 배치 크기 단위로 나눠 추론한다(fp32, 'pre' 검증과 같은 조건).
-
-        span 은 창이 샘플보다 많아 한 번에 넣으면 메모리가 부족할 수 있다. → 로짓 (N, 2)
-        """
-        outs = []
-        for i in range(0, x.size(0), batch_size):
-            chunk = x[i:i + batch_size]
-            if channels_last_enabled:
-                chunk = chunk.contiguous(memory_format=torch.channels_last_3d)
-            outs.append(model(chunk).float())
-        return torch.cat(outs)
-
-    def _max_window(logits, sizes):
-        """샘플마다 충돌 점수(logit_A − logit_S)가 가장 높은 창의 위치(전체 창 기준)."""
-        score = logits[:, 1] - logits[:, 0]
-        picks, off = [], 0
-        for k in sizes.tolist():
-            picks.append(off + int(score[off:off + k].argmax()))
-            off += k
-        return picks
 
     for epoch in range(num_epochs):
         model.train()
@@ -627,74 +748,11 @@ def train_model(
 
         avg_train_loss = train_loss / max(n_seen, 1)
 
-        # rc용/real용 val을 각각 분리해서 성능 측정
+        # rc용/real용 val을 각각 분리해서 성능 측정(validate — 기존 지표 + 구간 재현율·구분력)
         def _evaluate(loader):
-            """val 로더 하나 → 지표 dict (로더가 없으면 None).
-
-            loss/acc/rec/prec : argmax(임계값 0.5) 기준 — 기존과 같다.
-            lossA / lossS     : 충돌·비충돌 클립 각각의 평균 손실(가중치 없는 CE).
-            bal               : (lossA + lossS) / 2 — 클래스 균형 손실.
-
-            ⚠️ val_real 은 51클립 중 40개가 비충돌이라 그냥 손실은 78%가 '비충돌을
-               얼마나 확신하느냐'로 정해진다. 목표는 충돌을 놓치지 않는 것이므로
-               best 판단에는 두 클래스를 같은 무게로 보는 bal 을 쓴다.
-               acc 도 A:S 불균형 때문에 전부 S로 찍어도 높게 나오니 recall 을 본다.
-            """
-            if loader is None:
-                return None
-            model.eval()
-            vloss, correct = 0.0, 0
-            tp = fp = fn = 0                       # A(=1) 기준
-            sum_a = sum_s = 0.0
-            n_a = n_s = 0
-            with torch.inference_mode():
-                for batch in loader:
-                    if span:
-                        inputs, sizes, labels = batch
-                    else:
-                        inputs, labels = batch
-                    inputs = inputs.to(device, non_blocking=cuda_like)
-                    labels = labels.to(device, non_blocking=cuda_like)
-                    if span:
-                        # 손실: 학습과 같은 무게(첫 창 + 나머지 창)로 샘플별 손실을 낸다.
-                        # 판정(acc·recall·prec): 서비스처럼 창 하나라도 A면 A —
-                        #   충돌 점수가 가장 높은 창으로 판정한다.
-                        logits = _run_windows(inputs)
-                        w, owner = _span_weights(sizes)
-                        ce = torch.zeros(labels.size(0), device=device).index_add_(
-                            0, owner, w * F.cross_entropy(logits, labels[owner], reduction='none'))
-                        outputs = logits[_max_window(logits, sizes)]
-                        cls_w = (_cw_t[labels] if _cw_t is not None
-                                 else torch.ones_like(ce))
-                        vloss += ((cls_w * ce).sum() / cls_w.sum()).item() * labels.size(0)
-                    else:
-                        if channels_last_enabled:
-                            inputs = inputs.contiguous(
-                                memory_format=torch.channels_last_3d)
-                        outputs = model(inputs)
-                        vloss += criterion(outputs, labels).item() * labels.size(0)
-                        ce = F.cross_entropy(outputs.float(), labels, reduction='none')
-                    is_a = labels == 1
-                    sum_a += ce[is_a].sum().item()
-                    sum_s += ce[~is_a].sum().item()
-                    n_a += int(is_a.sum().item())
-                    n_s += int((~is_a).sum().item())
-                    preds = outputs.argmax(dim=1)
-                    correct += torch.sum(preds == labels).item()
-                    tp += torch.sum((preds == 1) & (labels == 1)).item()
-                    fp += torch.sum((preds == 1) & (labels != 1)).item()
-                    fn += torch.sum((preds != 1) & (labels == 1)).item()
-            n = len(loader.dataset)
-            loss_a = sum_a / n_a if n_a else None
-            loss_s = sum_s / n_s if n_s else None
-            return {
-                'loss': vloss / n, 'acc': correct / n,
-                'rec': tp / (tp + fn) if (tp + fn) else None,
-                'prec': tp / (tp + fp) if (tp + fp) else None,
-                'lossA': loss_a, 'lossS': loss_s,
-                # 검증셋에 한 클래스가 없으면 균형 손실을 못 구한다
-                'bal': (loss_a + loss_s) / 2 if (n_a and n_s) else None,
-            }
+            return validate(model, loader, device, span=span, criterion=criterion,
+                            batch_size=batch_size, class_w=_cw_t, first_w=first_w,
+                            channels_last=channels_last_enabled)
 
         rc = _evaluate(val_rc_loader)
         real = _evaluate(val_real_loader)
@@ -714,8 +772,10 @@ def train_model(
         def _fmt(d):
             if d is None:
                 return 'N/A'
-            rs = f"{d['rec']:.3f}" if d['rec'] is not None else '-'
-            return f"{d['loss']:.4f}/{d['acc']:.4f}/A{rs}"
+            def _v(k):
+                return f"{d[k]:.3f}" if d.get(k) is not None else '-'
+            # 구간 = 접근~충돌 종료 창 중 하나라도 A 인 재현율 · 구분 = 구분력(기준 무관)
+            return f"{d['loss']:.4f}/{d['acc']:.4f}/A{_v('rec')} 구간A{_v('spanRec')} 구분{_v('auc')}"
         print(f'Epoch [{epoch+1}/{num_epochs}] Train {avg_train_loss:.4f} | '
               f'val_rc(L/Acc/Arecall) {_fmt(rc)} | '
               f'val_real(L/Acc/Arecall) {_fmt(real)} | '
@@ -743,6 +803,8 @@ def train_model(
                 _csv(_g(rc, 'lossA')), _csv(_g(rc, 'lossS')), _csv(_g(rc, 'bal')),
                 _csv(_g(real, 'lossA')), _csv(_g(real, 'lossS')), _csv(_g(real, 'bal')),
                 f'{monitor:.6f}', int(saved_best), int(saved_cand),
+                *[_csv(_g(d, k)) for d in (rc, real)
+                  for k in ('preRec', 'prePrec', 'spanRec', 'spanPrec', 'auc')],
             ])
 
         # 학습 곡선 그래프 갱신 — 실패해도 학습은 계속한다
