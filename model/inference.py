@@ -468,6 +468,28 @@ def predict_full_video(
             out_video.release()
 
 
+def fps_scaled_event_params(fps, coarse_step=None, min_span=None, clip_length=None, enabled=None):
+    """거친 탐색 간격·이벤트 최소 길이를 영상 fps 에 맞춘다(config.PREDICT_FPS_SCALED_POSTPROC).
+
+    두 값은 30fps(config.PREDICT_POSTPROC_REF_FPS) 기준 프레임 수다. 최소 길이 = (창 길이 − 2) + 연속 A 창 수인데,
+    창 길이 몫은 창이 늘 clip_length 프레임이라 그대로 두고 연속 창 수만 fps 비율로 바꾼다(1 이하면 필터를 끈
+    값이라 그대로). 서비스와 postproc_check 가 같이 쓴다. 반환: (거친 탐색 간격, 최소 길이) 프레임.
+    """
+    coarse_step = config.PREDICT_COARSE_STEP if coarse_step is None else coarse_step
+    min_span = config.PREDICT_MIN_EVENT_SPAN_FRAMES if min_span is None else min_span
+    clip_length = config.CLIP_LENGTH if clip_length is None else clip_length
+    enabled = config.PREDICT_FPS_SCALED_POSTPROC if enabled is None else enabled
+    if not enabled or not fps or fps <= 0:
+        return int(coarse_step), int(min_span)
+    s = float(fps) / float(config.PREDICT_POSTPROC_REF_FPS)
+    coarse_step = max(1, int(round(coarse_step * s)))
+    base = clip_length - 2
+    run = min_span - base
+    if run > 1:
+        min_span = base + max(1, int(round(run * s)))
+    return coarse_step, int(min_span)
+
+
 def predict_events_and_clips(
     model,
     video_path,
@@ -554,6 +576,9 @@ def predict_events_and_clips(
     #   거친 창 - coarse_pad' 이후에만 생기므로, 그보다 앞선 창은 순서가 확정된다.
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    # 거친 탐색 간격·최소 길이는 30fps 기준 값 → 이 영상 fps 에 맞춘다(config.PREDICT_FPS_SCALED_POSTPROC)
+    coarse_step, min_span = fps_scaled_event_params(fps, coarse_step, config.PREDICT_MIN_EVENT_SPAN_FRAMES,
+                                                    clip_length)
 
     ret, first_frame = cap.read()
     if not ret:
@@ -839,7 +864,7 @@ def predict_events_and_clips(
           f"의심 {len(hot)}개 주변 {len(refine_done)}개 추가 | 전체 "
           f"{len(window_starts)} 윈도우 중 3D-CNN 평가 {len(window_pred)}개 "
           f"({100.0 * len(window_pred) / max(1, len(window_starts)):.0f}%) "
-          f"| 영상 {real_frame_count}프레임, 버퍼 최대 {max_buf[0]}장")
+          f"| 영상 {real_frame_count}프레임 {fps:.1f}fps · 최소 길이 {min_span}, 버퍼 최대 {max_buf[0]}장")
 
     # Phase B: 전체 윈도우 순서대로 상태머신(S→A→S)으로 이벤트 구간 확정.
     # 평가 안 한 윈도우는 비사고(0)로 간주한다.
@@ -879,8 +904,7 @@ def predict_events_and_clips(
             else:
                 merged.append(ev)
         events = [e for e in merged
-                  if (e['end_frame'] - e['start_frame'])
-                  >= config.PREDICT_MIN_EVENT_SPAN_FRAMES]
+                  if (e['end_frame'] - e['start_frame']) >= min_span]
     if _n_raw != len(events):
         print(f"[이벤트 후처리] {_n_raw}개 → 병합·길이필터 후 {len(events)}개")
 

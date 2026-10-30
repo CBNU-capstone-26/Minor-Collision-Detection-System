@@ -6,9 +6,11 @@
 
 바꿔 보는 것 (모든 조합을 summary.csv 에 남긴다)
   · 판정 기준 A_THRESHOLD 0.2~0.7. 거친 탐색 기준은 config 기본식 min(0.3, 0.6×기준)
-  · 후처리 단위 — 거친 탐색 간격(10)·최소 길이(35)는 프레임 수라 10fps 영상에선 1초·3.5초가 된다.
-    'fps' 는 둘을 30fps 기준 길이로 보고 영상 fps 에 맞춰 줄인다(병합 간격은 이미 초 단위)
-  · 최소 길이 35·25·15 (fps 맞춤이면 30fps 기준)
+  · 후처리 단위 — 'frame' 프레임 수 고정 · 'fps' 거친 탐색 간격(10)과 최소 길이의 연속 A 창 수(7)를 30fps 기준으로 보고
+    영상 fps 에 맞춤(inference.fps_scaled_event_params — 서비스와 같은 함수, config.PREDICT_FPS_SCALED_POSTPROC).
+    10fps 면 간격 3·연속 2창. 병합 간격은 이미 초 단위
+    (2026-10-30 첫 결과 261030_070150 의 'fps맞춤'은 최소 길이를 통째로 줄여 30fps 미만에선 필터가 꺼졌던 옛 계산)
+  · 최소 길이 35·32·30·29 = 연속 A 창 7·4·2·1(=필터 끔) (이벤트 길이 = 28 + 연속 창 수, fps 맞춤이면 30fps 기준)
   · 거친 탐색 켬·끔(끄면 모든 창을 본다 — 거친 탐색이 놓치는 것)
   · 저fps(20 미만) 영상 시간축 — none 그대로 · repeat 프레임 반복 · blend 이웃 프레임 섞기. round(30/fps)배로 늘려
     창 하나(30프레임)가 학습 때처럼 약 1초가 되게 한다
@@ -39,13 +41,19 @@ import torch.nn.functional as F
 import config
 from device_utils import is_channels_last_3d_supported, is_cuda_like, predict_batch_size
 from evaluate import _Tee, _read_label
+from inference import fps_scaled_event_params
 
 L = config.CLIP_LENGTH
 LOW_FPS = 20.0
 RESAMPLES = ('none', 'repeat', 'blend')
 THRESHOLDS = (0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7)
-MIN_SPANS = (35, 25, 15)
+MIN_SPANS = (35, 32, 30, 29)
 SETS = (('eval', '평가'), ('val', '검증'))
+
+
+def _now_post():
+    """지금 서비스의 후처리 단위."""
+    return 'fps' if config.PREDICT_FPS_SCALED_POSTPROC else 'frame'
 
 
 # ── 영상 목록 ──────────────────────────────────────────────────────────────
@@ -206,9 +214,9 @@ def _load_probs(wdir, set_key, mode):
 
 # ── 서비스 판정 다시 계산 ────────────────────────────────────────────────────
 
-def _events(pa, meta, t, *, coarse_prob=None, fps_scale=False, min_span=None, use_coarse=None):
-    """inference.predict_events_and_clips 의 이벤트 결정(창 간격 1). 반환: [(시작, 끝)] 원본 프레임, 평가한 창 수."""
-    coarse_step = config.PREDICT_COARSE_STEP
+def _events(pa, meta, t, *, coarse_prob=None, fps_scale=None, min_span=None, use_coarse=None):
+    """inference.predict_events_and_clips 의 이벤트 결정(창 간격 1). 반환: [(시작, 끝)] 원본 프레임, 평가한 창 수.
+    fps_scale None 이면 지금 서비스 설정(config.PREDICT_FPS_SCALED_POSTPROC)."""
     coarse_pad = config.PREDICT_COARSE_PAD
     min_span = config.PREDICT_MIN_EVENT_SPAN_FRAMES if min_span is None else min_span
     use_coarse = config.PREDICT_USE_COARSE_SCAN if use_coarse is None else use_coarse
@@ -216,10 +224,7 @@ def _events(pa, meta, t, *, coarse_prob=None, fps_scale=False, min_span=None, us
         coarse_prob = min(0.3, 0.6 * t)
     f = meta['factor']
     fps = meta['fps'] * f
-    if fps_scale:
-        s = fps / 30.0
-        coarse_step = max(1, int(round(coarse_step * s)))
-        min_span = max(1, int(round(min_span * s)))
+    coarse_step, min_span = fps_scaled_event_params(fps, config.PREDICT_COARSE_STEP, min_span, L, enabled=fps_scale)
     nw = len(pa)
     last = nw - 1
     n_real = meta['n_orig'] * f
@@ -287,7 +292,7 @@ def _service_check(model, wtag, sets, probs_root):
     from inference import predict_events_and_clips
     tmp = Path(tempfile.mkdtemp(prefix='postproc_check_'))
     print(f'\n[서비스 재현 확인] {wtag} — 지금 설정(기준 {config.A_THRESHOLD:g}, 거친 탐색 {config.PREDICT_COARSE_PROB:g}, '
-          f'최소 길이 {config.PREDICT_MIN_EVENT_SPAN_FRAMES})으로 실제 서비스 함수와 비교')
+          f'최소 길이 {config.PREDICT_MIN_EVENT_SPAN_FRAMES}, 후처리 {_now_post()})으로 실제 서비스 함수와 비교')
     bad = total = 0
     for set_key, vids in sets.items():
         data = _load_probs(probs_root / wtag, set_key, 'none')
@@ -323,11 +328,12 @@ def _grid():
 
 
 def _cfg_name(mode, post, ms, coarse, t):
+    """지금 설정과 다른 것만 이름에 붙인다."""
     parts = [f'기준 {t:g}']
-    if post == 'fps':
-        parts.append('fps맞춤')
+    if post != _now_post():
+        parts.append('fps맞춤' if post == 'fps' else '프레임고정')
     if ms != config.PREDICT_MIN_EVENT_SPAN_FRAMES:
-        parts.append(f'최소 {ms}')
+        parts.append(f'최소 {ms}(연속 {ms - (L - 2)}창)' if ms > L - 1 else f'최소 {ms}(끔)')
     if not coarse:
         parts.append('거친탐색 끔')
     if mode != 'none':
@@ -381,10 +387,10 @@ def _aggregate(out_dir, probs_root, suffix=''):
 
 
 def _videos_csv(path, wdir, cache, write_header):
-    """영상별 — P(A) 최대·위치, 충돌 구간 창/바깥 창 최대, 지금 설정·fps 맞춤 후처리의 이벤트."""
+    """영상별 — P(A) 최대·위치, 충돌 구간 창/바깥 창 최대, 지금 기준·최소 길이에서 프레임 고정·fps 맞춤 후처리의 이벤트."""
     cols = ['weights', 'set', 'resample', 'file', 'gt', 'fps', 'factor', 'width', 'height', 'box_w', 'box_h',
             'gt_start', 'gt_end', 'n_windows', 'p_max', 'p_max_frame', 'p_max_gt', 'p_max_outside',
-            'events_now', 'caught_now', 'events_fps', 'caught_fps']
+            'events_frame', 'caught_frame', 'events_fps', 'caught_fps']
     with open(path, 'w' if write_header else 'a', newline='', encoding='utf-8') as f:
         w = csv.writer(f)
         if write_header:
@@ -417,7 +423,8 @@ def _videos_csv(path, wdir, cache, write_header):
 
 def _wrong_now(wtag, cache):
     """지금 설정에서 틀린 영상 — 모델이 못 본 것(P(A) 낮음)인지 후처리가 지운 것인지 가르려고 P(A) 최대를 함께."""
-    print(f'\n[{wtag}] 지금 설정(기준 {config.A_THRESHOLD:g})에서 틀린 영상 — fps · 박스 · P(A) 최대(사고는 충돌 구간 창 / 그 밖 창)')
+    print(f'\n[{wtag}] 지금 설정(기준 {config.A_THRESHOLD:g}, 후처리 {_now_post()})에서 틀린 영상 — fps · 박스 · '
+          f'P(A) 최대(사고는 충돌 구간 창 / 그 밖 창)')
     for set_key, set_name in SETS:
         data = cache.get((set_key, 'none')) or {}
         if not data:
@@ -441,7 +448,8 @@ def _wrong_now(wtag, cache):
 
 
 def _report(results, wtags):
-    now = (config.PREDICT_MIN_EVENT_SPAN_FRAMES, True)
+    post, ms_now = _now_post(), config.PREDICT_MIN_EVENT_SPAN_FRAMES
+    other = 'frame' if post == 'fps' else 'fps'
     for wtag in wtags:
         print(f'\n{"=" * 100}\n[{wtag}]\n{"=" * 100}')
         for set_key, set_name in SETS:
@@ -452,17 +460,16 @@ def _report(results, wtags):
             print(f'\n── {set_name} 영상 {n["n"]}개 (사고 {n["n_A"]} · 정상 {n["n_S"]}) ──')
             show = []
             for t in (0.3, 0.4, 0.5, 0.6, 0.7):
-                show.append(('none', 'frame', *now, t))
+                show.append(('none', post, ms_now, True, t))
             for t in (0.4, 0.5, 0.6):
-                show.append(('none', 'fps', *now, t))
-            for ms in (25, 15):
-                show.append(('none', 'fps', ms, True, 0.5))
-            show.append(('none', 'frame', now[0], False, 0.5))
-            show.append(('none', 'fps', now[0], False, 0.5))
+                show.append(('none', other, ms_now, True, t))
+            for ms in MIN_SPANS:
+                if ms != ms_now:
+                    show.append(('none', post, ms, True, 0.5))
+            show.append(('none', post, ms_now, False, 0.5))
             for mode in ('repeat', 'blend'):
                 for t in (0.4, 0.5):
-                    show.append((mode, 'frame', *now, t))
-                show.append((mode, 'fps', *now, 0.5))
+                    show.append((mode, post, ms_now, True, t))
             for cfg in show:
                 tot = results.get((wtag, *cfg), {}).get(set_key)
                 if tot:
@@ -471,7 +478,7 @@ def _report(results, wtags):
         both = [(k, v) for k, v in results.items() if k[0] == wtag and 'val' in v and 'eval' in v]
         if not both:
             continue
-        cur = results.get((wtag, 'none', 'frame', *now, config.A_THRESHOLD), {})
+        cur = results.get((wtag, 'none', post, ms_now, True, config.A_THRESHOLD), {})
         print(f'\n── 검증 영상으로 고른 설정 상위 8 (놓침 → 오탐영상 → 오탐이벤트 순, 같으면 지금 설정에 가까운 쪽) → 평가 영상 결과 ──')
         if cur:
             print(f'  {"지금 설정":<38} 검증 {_fmt(cur["val"])}\n  {"":<38} 평가 {_fmt(cur["eval"])}')
@@ -479,7 +486,7 @@ def _report(results, wtags):
         def _rank(kv):
             k, v = kv
             t = v['val']
-            change = (k[1] != 'none') + (k[2] != 'frame') + (k[3] != now[0]) + (not k[4]) + abs(k[5] - config.A_THRESHOLD)
+            change = (k[1] != 'none') + (k[2] != post) + (k[3] != ms_now) + (not k[4]) + abs(k[5] - config.A_THRESHOLD)
             return (t['miss'], t['fa'], t['false_ev'], change)
         for k, v in sorted(both, key=_rank)[:8]:
             print(f'  {_cfg_name(*k[1:]):<38} 검증 {_fmt(v["val"])}\n  {"":<38} 평가 {_fmt(v["eval"])}  {_lists(v["eval"])}')
@@ -526,7 +533,8 @@ def _run(args, out_dir, suffix):
     print(f'[판정 기준·후처리 점검] {datetime.now():%Y-%m-%d %H:%M}')
     print(f'지금 설정: 판정 기준 {config.A_THRESHOLD:g} · 거친 탐색 간격 {config.PREDICT_COARSE_STEP}·기준 '
           f'{config.PREDICT_COARSE_PROB:g}·주변 ±{config.PREDICT_COARSE_PAD} · 병합 {config.PREDICT_EVENT_MERGE_GAP_SEC:g}초 · '
-          f'최소 길이 {config.PREDICT_MIN_EVENT_SPAN_FRAMES}프레임 · r {config.R_VALUE:g}')
+          f'최소 길이 {config.PREDICT_MIN_EVENT_SPAN_FRAMES}프레임 · 후처리 fps 맞춤 '
+          f'{"켬" if config.PREDICT_FPS_SCALED_POSTPROC else "끔"} · r {config.R_VALUE:g}')
     probs_root = out_dir / 'probs'
     if not args.again:
         sets = {'eval': _folder_videos(args.folder)}

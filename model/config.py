@@ -407,7 +407,7 @@ PREDICT_CLIP_PAD_FRAMES = 30
 #    경우뿐이다. 0.3 은 A 판정(0.5)보다 낮춰 약한 신호도 줍기 위한 값.
 # ⚠️ 긴 영상에서 실제로 몇 %를 보는지는 서버 로그의 '[2단계] 거친 탐색 … N%' 줄로 확인.
 PREDICT_USE_COARSE_SCAN = True
-PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임). stride 의 배수로 맞춰 쓴다
+PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임, 30fps 기준 — PREDICT_FPS_SCALED_POSTPROC). stride 의 배수로 맞춰 쓴다
 # 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다(A_THRESHOLD 보다 낮게). 기본 0.3 = 판정 기준 0.5 의 0.6배.
 # 판정 기준을 0.5 아래로 내리면 같은 비율로 함께 내린다(0.4 → 0.24, 0.3 → 0.18). 0.5 이상이면 0.3 그대로라
 # 기준을 올려 볼 때 보는 창은 지금과 같다. 직접 정하려면 환경변수 PREDICT_COARSE_PROB.
@@ -434,8 +434,18 @@ PREDICT_EVENT_MERGE_GAP_SEC = 3.0
 #     35(연속 7창)와 40(12창)은 이 데이터에서 결과가 같았다. 약하게 잡힌 미세 충돌은
 #     연속 창이 30보다 짧을 수 있어, 놓치지 않는 쪽으로 여유를 둔 35를 쓴다.
 #   · 초가 아니라 프레임으로 둔다 — 창 길이가 fps와 무관하게 30프레임이기 때문.
+#     단 '연속 창 수' 부분(35 − 28 = 7)은 30fps 기준이라 아래 PREDICT_FPS_SCALED_POSTPROC 가 fps 에 맞춘다.
 #   (이전 값 40: 옛 모델로 stride 1 에서 '단발 29f / 지속 48f 이상' 사이를 자른 값)
 PREDICT_MIN_EVENT_SPAN_FRAMES = 35
+# 거친 탐색 간격·최소 길이를 영상 fps 에 맞출지 (2026-10-30, inference.fps_scaled_event_params)
+# PREDICT_COARSE_STEP(10)과 최소 길이의 연속 A 창 수(7)는 30fps 기준이다. 프레임 수 그대로면 10fps 영상에선
+# 거친 탐색 간격이 1초가 되고, 모델이 반응한 충돌도 연속 창이 모자라 지워졌다(TA_0001: A 창 3개).
+# 켜면 둘을 fps/30 배로 바꾼다(최소 길이의 창 길이 몫 28은 창이 늘 30프레임이라 그대로):
+#   10fps 간격 3·연속 2창(최소 길이 30) · 15fps 5·4창(32) · 24·25fps 8·6창(34) · 30fps 그대로 · 60fps 20·14창(42)
+# 병합 간격은 이미 초 단위(PREDICT_EVENT_MERGE_GAP_SEC). postproc_check 저장 P(A)로 확인(10-30): 기본 ep53·bal30·scratch
+# ep25·앙상블 모두 검증·평가 오탐 증가 없음, 기본 ep53 평가 TA_0001 회복. 끄면 예전(프레임 고정)과 같다.
+PREDICT_FPS_SCALED_POSTPROC = True
+PREDICT_POSTPROC_REF_FPS = 30.0    # 위 프레임 값들의 기준 fps
 
 # ---------- 추론 실행 방식 (서비스·평가 공통, infer_runtime.py) ----------
 # 서버 컴퓨터 사양이 정해져 있지 않아, 그 컴퓨터에서 쓸 수 있는 방식을 처음 한 번 자가 검사해
