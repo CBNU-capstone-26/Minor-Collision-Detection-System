@@ -1,4 +1,6 @@
 """영상 업로드 / 목록 / 상세 / 스트리밍 라우터."""
+import json
+import logging
 import math
 import shutil
 import tempfile
@@ -7,7 +9,7 @@ from uuid import uuid4
 from pathlib import Path
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, UploadFile, Query,
+    APIRouter, Depends, File, Form, HTTPException, UploadFile, Query, Request, Response,
 )
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session, selectinload
@@ -17,6 +19,7 @@ from app import db_models, api_schemas
 from app.auth_guard import get_current_user, get_media_user
 from app.settings import settings
 from app.object_storage import LocalObjectStorage, get_storage, materialize
+from app.thumbnails import ensure_thumbnail, thumbnail_key, delete_thumbnail_cache
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
@@ -60,9 +63,13 @@ def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
         end_frame_number=ev.end_frame_number,
         crash_prob=ev.crash_prob,
         has_clip=bool(ev.clip_path),
-        has_raw_clip=bool(raw_clip_key(ev)) and get_storage().exists(raw_clip_key(ev)),
+        # 목록을 만드는 동안 원격 객체 저장소에 HEAD 요청을 보내면, R2 지연 하나가
+        # 영상 목록 전체를 멈춘다. 원본 클립은 분석 결과의 이름 규칙으로 생성되므로
+        # 여기서는 DB 메타데이터만으로 노출 여부를 판단한다.
+        has_raw_clip=bool(raw_clip_key(ev)),
         analyzed_at=_utc(ev.created_at),
         analysis_no=analysis_no(ev),
+        clip_start_sec=ev.clip_start_sec,
     )
 
 
@@ -183,6 +190,10 @@ def upload_video(
         if total_frames <= 0:
             raise HTTPException(status_code=400, detail="영상을 읽을 수 없습니다.")
         storage.upload_path(temp_path, object_key, content_type=file.content_type or "video/mp4")
+        try:
+            ensure_thumbnail(storage, object_key, settings.THUMBNAIL_DIR, source_video=temp_path)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Thumbnail preparation failed: %s", type(exc).__name__)
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -254,6 +265,32 @@ def delete_video(
     return {"deleted": video_id}
 
 
+@router.delete("/{video_id}/analysis-history")
+def clear_video_analysis_history(
+    video_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    """해당 영상의 분석 이력·사고 이벤트·클립을 지운다. 원본 영상은 보존한다."""
+    video = _get_owned_video(video_id, db, user)
+    tasks = db.query(db_models.AnalysisTask).filter(
+        db_models.AnalysisTask.video_id == video.id
+    ).all()
+    if any(task.status in ("PENDING", "PROCESSING") for task in tasks):
+        raise HTTPException(status_code=409, detail="분석이 진행 중인 동안에는 이력을 초기화할 수 없습니다.")
+
+    events = db.query(db_models.CrashEvent).filter(
+        db_models.CrashEvent.video_id == video.id
+    ).all()
+    _unlink_event_clips(events, db)
+    for event in events:
+        db.delete(event)
+    for task in tasks:
+        db.delete(task)
+    db.commit()
+    return {"deleted_history_count": len(tasks), "deleted_event_count": len(events)}
+
+
 def purge_video(video: db_models.Video, db: Session) -> None:
     """영상·클립·이력·원본을 제거한다. 보관 기간 정리와 수동 삭제가 함께 쓴다."""
     # 1) 관련 CAM 클립 파일 삭제 + crash_events 행 삭제
@@ -268,10 +305,25 @@ def purge_video(video: db_models.Video, db: Session) -> None:
             db_models.AnalysisTask.video_id == video.id).all():
         db.delete(task)
 
+    # Vehicle-detection history has a required FK to videos. Remove these rows
+    # explicitly so both Supabase/Postgres and MySQL can delete the video.
+    detection_tasks = db.query(db_models.VehicleDetectionTask).filter(
+        db_models.VehicleDetectionTask.video_id == video.id).all()
+    for task in detection_tasks:
+        if task.celery_task_id and task.status in VEHICLE_DETECTION_ACTIVE_STATUSES:
+            try:
+                from app.worker import celery_app
+                celery_app.control.revoke(task.celery_task_id, terminate=True)
+            except Exception:
+                pass
+        db.delete(task)
+
     # 3) 원본 영상 + 썸네일 파일 삭제
     storage = get_storage()
     storage.delete(video.video_path)
     storage.delete(f"thumbnails/{Path(video.video_path).stem}.jpg")
+    storage.delete(thumbnail_key(video.video_path))
+    delete_thumbnail_cache(video.video_path, settings.THUMBNAIL_DIR)
 
     # 4) 영상 행 삭제
     db.delete(video)
@@ -335,38 +387,27 @@ def stream_video(video_id: int, db: Session = Depends(get_db), user: db_models.U
 
 
 @router.get("/{video_id}/thumbnail")
-def video_thumbnail(video_id: int, db: Session = Depends(get_db), user: db_models.User = Depends(get_media_user)):
+def video_thumbnail(video_id: int, request: Request, db: Session = Depends(get_db), user: db_models.User = Depends(get_media_user)):
     video = _get_owned_video(video_id, db, user)
-
-    storage = get_storage()
-    thumb_key = f"thumbnails/{Path(video.video_path).stem}.jpg"
-    if storage.exists(thumb_key):
-        if not isinstance(storage, LocalObjectStorage):
-            return RedirectResponse(storage.presigned_url(
-                thumb_key, settings.S3_PRESIGNED_URL_EXPIRES))
-        return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
-
-    if not storage.exists(video.video_path):
-        raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
-    with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as src:
-        import cv2  # 지연 임포트
-        cap = cv2.VideoCapture(str(src))
-        ok, frame = cap.read()  # 첫 프레임 (BGR)
-        cap.release()
-        if not ok:
-            raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
-        with tempfile.NamedTemporaryFile(suffix=".jpg") as temp_thumb:
-            if not cv2.imwrite(temp_thumb.name, frame):
-                raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
-            storage.upload_path(temp_thumb.name, thumb_key, content_type="image/jpeg")
-
-    if not isinstance(storage, LocalObjectStorage):
-        return RedirectResponse(storage.presigned_url(
-            thumb_key, settings.S3_PRESIGNED_URL_EXPIRES))
-    return FileResponse(str(storage.local_path(thumb_key)), media_type="image/jpeg")
+    try:
+        path = ensure_thumbnail(get_storage(), video.video_path, settings.THUMBNAIL_DIR)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(status_code=404, detail="썸네일을 생성할 수 없습니다.")
+    response = FileResponse(str(path), media_type="image/jpeg", stat_result=path.stat(),
+                            headers={"Cache-Control": "private, no-cache",
+                                     "Vary": "Cookie, Authorization"})
+    # Always authorize before revalidating a browser's private cached image.
+    tags = {value.strip().removeprefix("W/")
+            for value in request.headers.get("if-none-match", "").split(",")}
+    if response.headers["etag"] in tags or "*" in tags:
+        return Response(status_code=304, headers={
+            name: response.headers[name]
+            for name in ("etag", "last-modified", "cache-control", "vary")
+        })
+    return response
 
 
-@router.post("/{video_id}/detect-vehicles", response_model=api_schemas.VehicleDetectionResponse)
+@router.post("/{video_id}/detect-vehicles-sync", response_model=api_schemas.VehicleDetectionResponse)
 def detect_vehicles_in_video(
     video_id: int,
     timestamp_sec: float | None = Query(0.0),
@@ -456,4 +497,101 @@ def detect_vehicles_in_video(
         detected_vehicles=[
             api_schemas.DetectedVehicleBox(**item) for item in detected_list
         ],
+    )
+
+
+VEHICLE_DETECTION_ACTIVE_STATUSES = ("PENDING", "PROCESSING")
+
+
+def _vehicle_detection_progress(task: db_models.VehicleDetectionTask) -> dict:
+    if task.status != "PROCESSING" or not task.celery_task_id:
+        return {"progress": None, "stage": None}
+    from app.worker import celery_app
+    result = celery_app.AsyncResult(task.celery_task_id)
+    if result.state == "PROGRESS" and isinstance(result.info, dict):
+        return {"progress": result.info.get("percent"), "stage": result.info.get("stage")}
+    return {"progress": None, "stage": None}
+
+
+def _vehicle_detection_rows(task: db_models.VehicleDetectionTask) -> list[dict]:
+    if not task.result_json:
+        return []
+    try:
+        rows = json.loads(task.result_json)
+    except json.JSONDecodeError:
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def _enqueue_vehicle_detection(video: db_models.Video, timestamp_sec: float, db: Session):
+    existing = (db.query(db_models.VehicleDetectionTask)
+                .filter(db_models.VehicleDetectionTask.video_id == video.id,
+                        db_models.VehicleDetectionTask.status.in_(VEHICLE_DETECTION_ACTIVE_STATUSES))
+                .order_by(db_models.VehicleDetectionTask.id).first())
+    if existing is not None:
+        return api_schemas.VehicleDetectionTaskOut(
+            task_id=existing.id,
+            celery_task_id=existing.celery_task_id,
+            status=existing.status,
+            already_running=True,
+        )
+
+    task = db_models.VehicleDetectionTask(
+        video_id=video.id,
+        timestamp_sec=max(0.0, timestamp_sec),
+        status="PENDING",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    from app.vehicle_job import run_vehicle_detection_task
+    try:
+        async_result = run_vehicle_detection_task.delay(task.id)
+    except Exception as exc:
+        task.status = "FAILURE"
+        task.error_message = f"탐지 작업을 큐에 넣지 못했습니다: {exc}"[:2000]
+        task.finished_at = datetime.utcnow()
+        db.commit()
+        raise HTTPException(status_code=503, detail="탐지 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.") from exc
+    task.celery_task_id = async_result.id
+    db.commit()
+    return api_schemas.VehicleDetectionTaskOut(
+        task_id=task.id,
+        celery_task_id=task.celery_task_id,
+        status=task.status,
+    )
+
+
+@router.post("/{video_id}/detect-vehicles", response_model=api_schemas.VehicleDetectionTaskOut)
+def enqueue_vehicle_detection(
+    video_id: int,
+    timestamp_sec: float | None = Query(0.0),
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    """GPU 워커에 차량 탐지를 맡기고, UI가 추적할 작업 ID를 반환한다."""
+    video = _get_owned_video(video_id, db, user)
+    return _enqueue_vehicle_detection(video, timestamp_sec or 0.0, db)
+
+
+@router.get("/{video_id}/vehicle-detection-tasks/{task_id}",
+            response_model=api_schemas.VehicleDetectionTaskStatusOut)
+def get_vehicle_detection_task(
+    video_id: int,
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    video = _get_owned_video(video_id, db, user)
+    task = db.get(db_models.VehicleDetectionTask, task_id)
+    if task is None or task.video_id != video.id:
+        raise HTTPException(status_code=404, detail="차량 탐지 작업을 찾을 수 없습니다.")
+    return api_schemas.VehicleDetectionTaskStatusOut(
+        task_id=task.id,
+        status=task.status,
+        error_message=task.error_message,
+        detected_vehicles=[api_schemas.DetectedVehicleBox(**row)
+                           for row in _vehicle_detection_rows(task)],
+        **_vehicle_detection_progress(task),
     )

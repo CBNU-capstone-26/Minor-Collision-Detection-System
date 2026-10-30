@@ -10,7 +10,7 @@ FP16 을 켜도 되는 기준 (셋 다):
   ① 실제 창에서 판정(P(A) 0.5)·거친 탐색(0.3) 기준이 바뀐 창이 없다
   ② --full-eval 에서 기존 판정·서비스 판정 지표가 FP32 와 같다
   ③ 속도 이득이 있다
-켜는 법: 서비스(워커)를 띄우는 환경에 INFER_FP16=1  (config.INFER_FP16)
+config.INFER_FP16 은 기본 켬(2026-10-28 RTX 3080 확인). 다른 GPU 에서 결과가 다르면 서비스 환경에 INFER_FP16=0
 """
 import argparse
 import os
@@ -96,6 +96,10 @@ def _run(args):
     if cap < (7, 0):
         print('⚠️ 연산능력 7.0 미만(Tensor Core 없음) — FP16 이 빠르지 않을 수 있고 서비스는 이 GPU 에서 FP16 을 켜지 않습니다.')
     cl = is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST
+    # 서비스·평가처럼 cuDNN 이 가장 빠른 방식을 재서 고르게 한다. 꺼진 채 속도표를 먼저 돌리면 그때 정한
+    # (느릴 수 있는) 방식이 입력 모양마다 기억돼, 뒤의 --full-eval 이 benchmark 를 켜도 그대로 쓰인다.
+    torch.backends.cudnn.benchmark = True
+    print(f'cuDNN benchmark 켬 · channels_last {"켬" if cl else "끔"}')
 
     def run(x, fp16, tf32=True):
         old = torch.backends.cudnn.allow_tf32
@@ -203,7 +207,7 @@ def _run(args):
         print('  ② 평가 지표: --full-eval 로 확인하세요')
     print('  ③ 속도 이득: 위 [속도] 표의 서비스 배치 줄을 보세요')
     if ok1 and same:
-        print('  → FP16 을 켜도 됩니다(속도 이득이 있다면). 서비스 환경에 INFER_FP16=1')
+        print('  → FP16 을 켜도 됩니다(속도 이득이 있다면). 기본 켬이라 그대로 두면 됩니다(INFER_FP16=0 이면 끔)')
     elif not ok1 or same is False:
         print('  → FP16 은 보류하세요(결과가 달라지는 경우가 있음).')
 

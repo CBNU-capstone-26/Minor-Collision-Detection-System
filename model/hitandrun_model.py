@@ -2,7 +2,7 @@ import os
 
 import torch.nn as nn
 from pytorchvideo.models.hub import x3d_m
-from torch.utils.checkpoint import checkpoint_sequential
+from torch.utils.checkpoint import checkpoint, checkpoint_sequential
 
 
 # X3D-M의 마지막 res 스테이지 출력 채널 수(구조 확인으로 검증한 값).
@@ -30,6 +30,14 @@ GRAD_CHECKPOINT = os.getenv("GRAD_CHECKPOINT", "1").strip().lower() not in ("0",
 # 재계산해야 한다. 그 피크가 features[1] 에서 8.67GB(batch 15)로 10GB에 빠듯하다.
 # 블록 수보다 크게 잡으면 checkpoint_sequential 이 블록 내부까지 쪼개 피크가 낮아진다.
 GRAD_CHECKPOINT_SEGMENTS = int(os.getenv("GRAD_CHECKPOINT_SEGMENTS", "5"))
+# 체크포인팅할 앞쪽 블록 수(features 의 줄기·res2·res3·res4·res5 중 앞에서 몇 개). 비우면 지금까지와 같은
+# checkpoint_sequential(세그먼트 5 → 줄기~res4 를 backward 때 다시 계산, res5 는 그대로 = 4 와 같다).
+# 메모리가 남으면 줄여서 재계산을 덜 한다 — python -m model.speed_check ⑤로 RTX 3080 시간·메모리를 재고 고른다.
+# ⚠️ 체크포인팅한 블록은 다시 계산할 때 BN 이동평균(평가 때 쓰는 값)도 같은 묶음 통계로 한 번 더 갱신한다
+#    (2026-10-28 확인 — momentum 0.1 두 번 = 0.19 한 번. 기울기는 같다). 지금까지 학습이 그렇게 돼 왔으므로
+#    범위가 바뀌는 블록은 BN momentum 을 맞춰 예전과 같은 이동평균이 되게 한다(_match_bn_momentum).
+_ckpt_blocks_env = os.getenv("GRAD_CHECKPOINT_BLOCKS", "").strip()
+GRAD_CHECKPOINT_BLOCKS = int(_ckpt_blocks_env) if _ckpt_blocks_env else None
 
 class HitAndRun3DCNN(nn.Module):
     """X3D-M 백본 기반 물피도주 감지 모델.
@@ -56,6 +64,7 @@ class HitAndRun3DCNN(nn.Module):
       - 입력 (B, 3, T, 224, 224) → 출력 (B, num_classes) logits
       - `head_conv`   : 1×1×1 Conv3d 분류 헤드 (CAM 가중치로 사용)
       - `cam_layer`   : CAM forward hook 대상 (2048채널 공간 특징맵)
+      - `forward_with_cam` : logits + 칸별 클래스 지도(CAM) — 서비스 사고 클립 히트맵용
 
     Args:
         num_classes: 분류 클래스 수 (기본 2: S/A)
@@ -83,6 +92,28 @@ class HitAndRun3DCNN(nn.Module):
         # 원본 헤드의 Linear(2048→C)와 같은 연산이라 가중치를 reshape해 이식할 수 있다.
         self.head_conv = nn.Conv3d(
             X3D_HEAD_CHANNELS, num_classes, kernel_size=1)
+        self._match_bn_momentum()
+
+    def default_checkpoint_blocks(self):
+        """GRAD_CHECKPOINT_BLOCKS 를 비웠을 때(checkpoint_sequential) 다시 계산하는 앞쪽 블록 수 — 기본 4."""
+        n = len(self.features)
+        seg = max(1, min(GRAD_CHECKPOINT_SEGMENTS, n))
+        return (n // seg) * (seg - 1)
+
+    def _match_bn_momentum(self):
+        """체크포인팅 범위가 기본과 달라지는 블록의 BN momentum 을 맞춘다(위 GRAD_CHECKPOINT_BLOCKS 주석).
+
+        같은 묶음 통계로 momentum m 을 두 번 = 1-(1-m)² 를 한 번. 기본에선 다시 계산하던 블록이 빠지면
+        올리고, 기본에선 안 하던 블록이 들어가면 1-√(1-m) 로 내린다. momentum 은 가중치 파일에 없어 추론과 무관.
+        """
+        if not GRAD_CHECKPOINT or GRAD_CHECKPOINT_BLOCKS is None:
+            return
+        k, d = GRAD_CHECKPOINT_BLOCKS, self.default_checkpoint_blocks()
+        for i in range(min(k, d), min(max(k, d), len(self.features))):
+            for m in self.features[i].modules():
+                if isinstance(m, nn.modules.batchnorm._BatchNorm) and m.momentum is not None:
+                    m.momentum = (1 - (1 - m.momentum) ** 2 if i >= k
+                                  else 1 - (1 - m.momentum) ** 0.5)
 
     @property
     def cam_layer(self):
@@ -96,7 +127,12 @@ class HitAndRun3DCNN(nn.Module):
         return self.head_pool
 
     def forward(self, x):
-        if self.training and GRAD_CHECKPOINT:
+        if self.training and GRAD_CHECKPOINT and GRAD_CHECKPOINT_BLOCKS is not None:
+            # 앞쪽 GRAD_CHECKPOINT_BLOCKS 개만 블록마다 체크포인팅(checkpoint_sequential 과 같은 계산)
+            for i, block in enumerate(self.features):
+                x = (checkpoint(block, x, use_reentrant=False)
+                     if i < GRAD_CHECKPOINT_BLOCKS else block(x))
+        elif self.training and GRAD_CHECKPOINT:
             # 백본만 체크포인팅. head_pool 은 CAM hook 대상이라 밖에 둔다.
             x = checkpoint_sequential(
                 self.features, GRAD_CHECKPOINT_SEGMENTS, x, use_reentrant=False)
@@ -107,3 +143,17 @@ class HitAndRun3DCNN(nn.Module):
         x = self.dropout(x)
         x = self.head_conv(x)
         return x.squeeze(-1).squeeze(-1).squeeze(-1)
+
+    def forward_with_cam(self, x):
+        """forward 와 같은 logits (B, C) + 칸별 클래스 지도(CAM) (B, C, 7, 7) — 추론 전용.
+
+        CAM 은 분류 헤드(1×1×1 Conv)를 공간 평균 '전에' 7×7 칸마다 적용한 것이다. 평균과 1×1 Conv 는
+        순서를 바꿔도 같아서 칸 평균이 곧 logits 이고, 칸마다 'A − S' 를 보면 그 칸이 사고 쪽으로 얼마나
+        기울였는지가 된다. 판정에 이미 계산하는 특징맵을 쓰므로 추가 비용은 칸 49개의 1×1 곱셈뿐이라,
+        빠른 실행기(ONNX·OpenVINO)도 이 두 출력을 함께 내보내 CAM 을 거의 공짜로 얻는다(infer_runtime.py).
+        logits 는 forward 와 같은 경로(평균 → Conv)로 계산해 판정 결과가 바뀌지 않게 한다.
+        """
+        x = self.head_pool(self.features(x))            # (B, 2048, 1, 7, 7)
+        cam = self.head_conv(x)[:, :, 0]                # (B, C, 7, 7)
+        x = self.head_conv(self.dropout(self.avg_pool(x)))
+        return x.squeeze(-1).squeeze(-1).squeeze(-1), cam

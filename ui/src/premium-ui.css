@@ -99,7 +99,6 @@ body.dark-mode .premium-review-art span { background: #233640; color: #9bcbc6; }
   .dashboard-layout :is(.calendar-day,.pagination-btn):not(:disabled):hover { transform: translateY(-2px); border-color: var(--incident-accent); box-shadow: 0 4px 12px #087f8318; }
   .dashboard-layout :is(.auto-detect-btn,.bbox-designate-btn):not(:disabled):not(.active):hover { background: #087f8312; box-shadow: 0 5px 15px #087f8318; transform: translateY(-2px); }
   .dashboard-layout .detect-run-btn:not(:disabled):hover { background: #096b70; transform: translateY(-2px); box-shadow: 0 8px 20px #087f8330; }
-  .dashboard-layout .event-delete-item-btn:hover { background: #fef0ec; color: #bc4d31; border-radius: 6px; }
 }
 .premium-feature, .public-hero-panel { transition: transform .6s cubic-bezier(.2,.7,.2,1), box-shadow .6s, border-color .3s, opacity .8s; }
 .premium-feature:nth-child(2) { transition-delay: .07s; }
@@ -316,12 +315,14 @@ body.dark-mode .dashboard-layout .event-item.analysis-highlight { border-color: 
 .history-video-action { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--incident-line); color: var(--incident-accent); font-size: 10px; }
 /* 사고 의심 클립 목록 — 클립 수와 상관없이 달력 위치가 그대로 (예전엔 최대 180px 까지 늘어나며 달력을 밀었다).
    좁은 화면(한 줄 배치)은 목록 높이를 180px 로 고정, 넓은 화면은 왼쪽 칸을 화면 높이에 맞추고
-   목록이 남는 높이를 채운다 — 넘치면 목록 안에서만 스크롤, 달력은 맨 아래에 고정 */
+   목록이 남는 높이를 채운다 — 넘치면 목록 안에서만 스크롤, 달력은 맨 아래에 고정.
+   다만 왼쪽 칸 높이에 상한(--watch-side-max-h)을 둔다 — 세로로 긴 화면·브라우저 축소에서 칸이 화면 끝까지
+   늘어나 목록과 달력 사이가 크게 비던 것을 막는다(1080p 100% 는 상한 아래라 그대로) */
 .dashboard-layout .event-list { flex: 0 0 auto; min-height: 0; height: 180px; }
 @media (min-width: 1025px) {
-  .dashboard-layout .watch-side { height: var(--watch-avail-h); }
+  .dashboard-layout .watch-side { height: min(var(--watch-avail-h), var(--watch-side-max-h)); }
   .dashboard-layout .watch-side > .event-sidebar { flex: 1 1 0; min-height: 0; }
-  .dashboard-layout .event-sidebar:not(.collapsed) { overflow-y: auto; }
+  .dashboard-layout .event-sidebar { overflow-y: auto; }
   .dashboard-layout .event-list { flex: 1 1 auto; height: auto; min-height: 120px; }
 }
 .dashboard-layout .event-empty-hint { padding: 20px 10px; font-size: 12px; }
@@ -374,10 +375,13 @@ body.dark-mode .video-dialog-thumb { background: #10151b; }
 .video-dialog-actions button:disabled { opacity: .5; cursor: wait; }
 .video-delete-error { font-size: 12px; color: #b45445; margin-top: 15px; }
 /* Larger library previews and the shared teal analysis palette. */
-.dashboard-layout .home-view { max-width: 1760px; padding-inline: 24px; }
-/* 영상 목록: 한 줄에 3개 — 창이 좁아지면 2개(1200px 이하) → 1개(900px 이하) */
-.dashboard-layout .video-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
-@media (max-width: 1200px) { .dashboard-layout .video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* 폭 상한 없음 — 브라우저를 축소(예: 50%)하거나 큰 모니터면 넓어진 화면을 그대로 쓴다(예전엔 1760px 에서 멈춰 양옆이 비었다) */
+.dashboard-layout .home-view { max-width: none; padding-inline: 24px; }
+/* 영상 목록: 열 수는 화면 폭에 맞춰 저절로 — 카드 최소 폭 = 화면 폭의 24%(360~520px).
+   100% 배율 기준 1280~1920 은 3열, 1024 는 2열, 768 이하 1열이고, 축소하면 열이 늘어난다(1920 창 67% 5열, 50% 6열).
+   한 페이지 개수는 App.jsx 가 이 열 수를 읽어 맞춘다(두 줄 이상, 최소 6개) */
+.dashboard-layout .video-grid { grid-template-columns: repeat(auto-fill, minmax(min(clamp(360px, 24vw, 520px), 100%), 1fr)); gap: 28px; }
+.dashboard-layout .video-grid > .empty-state { grid-column: 1 / -1; }
 .dashboard-layout .video-thumbnail { margin-bottom: 0; border-radius: 6px 6px 0 0; }
 .dashboard-layout .video-info { padding-top: 24px; padding-bottom: 24px; }
 .dashboard-layout .video-info h3 { font-size: 19px; } /* 카드 제목 — 목록에서 잘 읽히게 키움 */
@@ -397,7 +401,7 @@ body.dark-mode .dashboard-layout .analysis-status-label, body.dark-mode .dashboa
 body.dark-mode .dashboard-layout .analysis-progress-track { background: #22484a; }
 body.dark-mode .dashboard-layout .analysis-progress-fill { background: linear-gradient(90deg,#138d8f,#5bd4be); }
 body.dark-mode .dashboard-layout .analysis-jobs-toggle { background: #193b3e; border-color: #245152; color: #6cdbca; }
-@media (max-width: 900px) { .dashboard-layout .video-grid { grid-template-columns: 1fr; gap: 24px; } }
+@media (max-width: 900px) { .dashboard-layout .video-grid { gap: 24px; } }
 @media (max-width: 720px) { .dashboard-layout .home-view { padding-inline: 12px; } }
 /* Review video stays within the initial viewport, including its controls. */
 /* 영상 칸 높이 = 화면 - 상단 바(76) - 위아래 여백(14×2) - 작은 작업 헤더(약 105) - 플레이어 테두리 */

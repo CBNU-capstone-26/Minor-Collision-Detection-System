@@ -1,8 +1,9 @@
 """추론 실행기 — 서버 컴퓨터에서 쓸 수 있는 가장 빠른 방식으로 3D-CNN 을 돌린다.
 
 서비스와 평가는 모델을 직접 부르지 않고 get_runner(model) 이 돌려주는 실행기로 추론한다.
-실행기는 logits 만 돌려준다(CAM 은 쓰지 않는다. CAM 히트맵 설정을 켜면 inference.py 가
-예전처럼 PyTorch 로 돈다).
+실행기는 logits 를 돌려주고, runner.with_cam(clips) 는 logits 와 칸별 클래스 지도(CAM)를 함께
+돌려준다. 변환 모델(ONNX·OpenVINO)이 두 출력을 한 번의 추론에서 함께 내므로 CAM 을 켜도 빠른 방식을
+그대로 쓴다(예전엔 logits 만 내보내 CAM 을 켜면 전체 탐색이 PyTorch 로 돌아 CPU 에서 약 4배 느렸다).
 
 방식 (config.INFER_BACKEND):
   auto        : 쓸 수 있는 방식을 처음 한 번 자가 검사하고, 통과한 것 중 가장 빠른 것(기본)
@@ -12,7 +13,7 @@
 모델이 GPU(CUDA)에 있으면 auto 는 PyTorch GPU 를 쓴다(CPU 방식들보다 빠르다). FP16 은
 config.INFER_FP16 을 켰을 때만, Tensor Core 가 있는 NVIDIA GPU 에서 자가 검사를 거쳐 쓴다.
 
-자가 검사: 같은 입력으로 PyTorch(FP32) 와 P(A)·logits 를 비교한다. 설치 안 됨·변환 실패·
+자가 검사: 같은 입력으로 PyTorch(FP32) 와 P(A)·logits·CAM 을 비교한다. 설치 안 됨·변환 실패·
 검사 불통과면 그 방식은 버리고 다음 방식(최후엔 PyTorch)으로 넘어간다. 그래서 어느 OS·
 하드웨어에서든 기능은 동작하고, 결과는 PyTorch 와 같다(정밀도는 FP32 그대로).
 
@@ -38,22 +39,28 @@ import torch
 import torch.nn.functional as F
 
 import config
-from device_utils import predict_batch_size
+from device_utils import is_cuda_like, predict_batch_size
 
 # 검사·변환 방식이 바뀌면 올린다 → 저장된 결과·변환 파일을 새로 만든다
-RUNTIME_VERSION = 1
+# (2: 변환 모델이 logits 와 함께 칸별 클래스 지도(CAM)도 내보낸다)
+RUNTIME_VERSION = 2
 
 
 class Runner:
-    """추론 실행기. runner(clips (B, 3, T, H, W)) → logits (B, C) float32."""
+    """추론 실행기. runner(clips (B, 3, T, H, W)) → logits (B, C) float32.
+    runner.with_cam(clips) → (logits, cam (B, C, 7, 7)) — 같은 한 번의 추론에서 함께 나온다."""
 
-    def __init__(self, name, fn, detail=''):
+    def __init__(self, name, fn, detail='', cam_fn=None):
         self.name = name        # 'torch' | 'torch-fp16' | 'openvino' | 'onnxruntime'
         self.detail = detail
         self._fn = fn
+        self._cam_fn = cam_fn
 
     def __call__(self, clips):
         return self._fn(clips)
+
+    def with_cam(self, clips):
+        return self._cam_fn(clips)
 
     def __repr__(self):
         return f'Runner({self.name}{", " + self.detail if self.detail else ""})'
@@ -128,6 +135,19 @@ def _compare(ref, out):
     return d_prob, float((ref - out).abs().max())
 
 
+def _check_against(ref_runner, runner, x):
+    """PyTorch 기준과 결과 비교 → (P(A) 최대 차이, logits·CAM 중 큰 최대 차이). 통과 여부는 _passes."""
+    ref, ref_cam = ref_runner.with_cam(x)
+    out, cam = runner.with_cam(x)
+    d_prob, d_logit = _compare(ref, out)
+    d_cam = float((ref_cam.float().cpu() - cam.float().cpu()).abs().max())
+    return d_prob, max(d_logit, d_cam)
+
+
+def _passes(d_prob, d_logit):
+    return d_prob <= config.INFER_CHECK_MAX_PROB_DIFF and d_logit <= 1e-2
+
+
 def _time_per_clip(runner, x, reps=2):
     runner(x)                                   # 첫 호출(초기화) 제외
     sync = torch.cuda.synchronize if x.is_cuda else (lambda: None)
@@ -147,7 +167,12 @@ def _torch_runner(model, fp16=False):
     def run(x):
         with torch.inference_mode(), torch.autocast(dev.type, dtype=torch.float16, enabled=fp16):
             return model(x).float()
-    return Runner('torch-fp16' if fp16 else 'torch', run, str(dev))
+
+    def run_cam(x):
+        with torch.inference_mode(), torch.autocast(dev.type, dtype=torch.float16, enabled=fp16):
+            logits, cam = model.forward_with_cam(x)
+            return logits.float(), cam.float()
+    return Runner('torch-fp16' if fp16 else 'torch', run, str(dev), run_cam)
 
 
 class _TimeMean(torch.nn.Module):
@@ -157,14 +182,25 @@ class _TimeMean(torch.nn.Module):
         return x.mean(dim=2, keepdim=True)
 
 
+class _WithCam(torch.nn.Module):
+    """변환용 — forward_with_cam 을 forward 로 내보낸다(출력 두 개: logits, cam)."""
+
+    def __init__(self, m):
+        super().__init__()
+        self.m = m
+
+    def forward(self, x):
+        return self.m.forward_with_cam(x)
+
+
 def _export_copy(model):
-    """변환용 CPU 복사본 — 모델 객체를 복제하지 않고 가중치만 옮겨 새로 만든다."""
+    """변환용 CPU 복사본 — 모델 객체를 복제하지 않고 가중치만 옮겨 새로 만든다(출력 logits, cam)."""
     from hitandrun_model import HitAndRun3DCNN
     m = HitAndRun3DCNN(num_classes=model.head_conv.out_channels)
     m.load_state_dict({k: v.detach().cpu() for k, v in model.state_dict().items()})
     m.eval()
     m.head_pool.pool = _TimeMean()
-    return m
+    return _WithCam(m).eval()
 
 
 def _onnx_path(state_hash):
@@ -179,8 +215,8 @@ def _ensure_onnx(model, state_hash, clip_shape):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f'{path.stem}.tmp{os.getpid()}.onnx')
     sample = torch.zeros((1, *clip_shape))
-    kw = dict(input_names=['x'], output_names=['logits'], opset_version=17,
-              dynamic_axes={'x': {0: 'b'}, 'logits': {0: 'b'}})
+    kw = dict(input_names=['x'], output_names=['logits', 'cam'], opset_version=17,
+              dynamic_axes={'x': {0: 'b'}, 'logits': {0: 'b'}, 'cam': {0: 'b'}})
     with warnings.catch_warnings(), torch.inference_mode():
         warnings.simplefilter('ignore')
         try:
@@ -205,12 +241,16 @@ def _openvino_runner(model, state_hash, clip_shape):
     cm = core.compile_model(om, 'CPU', {'PERFORMANCE_HINT': 'LATENCY',
                                         'INFERENCE_PRECISION_HINT': 'f32'})
     req = cm.create_infer_request()
-    out = cm.outputs[0]
+    out, out_cam = cm.outputs[0], cm.outputs[1]     # 변환 순서대로 logits, cam
+
+    def run_cam(x):
+        r = req.infer({0: x.detach().cpu().float().contiguous().numpy()})
+        # 결과 버퍼는 다음 호출에서 덮어쓰이니 복사
+        return torch.from_numpy(np.array(r[out])), torch.from_numpy(np.array(r[out_cam]))
 
     def run(x):
-        r = req.infer({0: x.detach().cpu().float().contiguous().numpy()})
-        return torch.from_numpy(np.array(r[out]))   # 결과 버퍼는 다음 호출에서 덮어쓰이니 복사
-    return Runner('openvino', run, 'CPU f32')
+        return run_cam(x)[0]    # CAM 도 같은 추론에서 이미 계산된다(1×1 곱셈 49칸이라 비용은 거의 없음)
+    return Runner('openvino', run, 'CPU f32', run_cam)
 
 
 def _onnxruntime_runner(model, state_hash, clip_shape):
@@ -222,7 +262,11 @@ def _onnxruntime_runner(model, state_hash, clip_shape):
 
     def run(x):
         return torch.from_numpy(sess.run(['logits'], {'x': x.detach().cpu().float().contiguous().numpy()})[0])
-    return Runner('onnxruntime', run, 'CPU')
+
+    def run_cam(x):
+        logits, cam = sess.run(['logits', 'cam'], {'x': x.detach().cpu().float().contiguous().numpy()})
+        return torch.from_numpy(logits), torch.from_numpy(cam)
+    return Runner('onnxruntime', run, 'CPU', run_cam)
 
 
 _CPU_BUILDERS = {'openvino': _openvino_runner, 'onnxruntime': _onnxruntime_runner}
@@ -284,6 +328,11 @@ def _fp16_supported(dev):
 
 def _select_gpu(model, clip_shape, batch):
     dev = next(model.parameters()).device
+    # cuDNN 은 입력 모양마다 처음 정한 계산 방식을 기억해 두고, benchmark 를 나중에 켜도 다시 재지 않는다.
+    # 아래 FP16 자가 검사가 서비스 묶음 크기로 모델을 처음 돌리므로 그 전에 켜야 서비스가 빠른 방식을 쓴다
+    # (2026-10-22 fp16_check: 꺼진 채 먼저 돌려 FP32 가 41.6 → 28.1창/초로 묶였다).
+    if is_cuda_like(dev):
+        torch.backends.cudnn.benchmark = True
     base = _torch_runner(model)
     if not config.INFER_FP16:
         _log(f'PyTorch GPU ({torch.cuda.get_device_name(dev)}) — FP32')
@@ -325,9 +374,9 @@ def _select_cpu(model, clip_shape, batch, force=False):
             else:
                 runner = _CPU_BUILDERS[name](model, state_hash, clip_shape)
                 x1 = _check_input(clip_shape, 1)
-                d_prob, d_logit = _compare(_torch_runner(model)(x1), runner(x1))
-                if d_prob > config.INFER_CHECK_MAX_PROB_DIFF or d_logit > 1e-2:
-                    raise RuntimeError(f'빠른 확인 불통과(P(A) 차이 {d_prob:.1e})')
+                d_prob, d_logit = _check_against(_torch_runner(model), runner, x1)
+                if not _passes(d_prob, d_logit):
+                    raise RuntimeError(f'빠른 확인 불통과(P(A) 차이 {d_prob:.1e}, logits·CAM 차이 {d_logit:.1e})')
                 note = f', 빠른 확인 통과(P(A) 차이 {d_prob:.1e})'
             _log(f"{name} — 저장된 자가 검사 결과 사용({saved.get('checked_at', '?')}, "
                  f"{saved.get('summary', '')}){note}")
@@ -339,15 +388,14 @@ def _select_cpu(model, clip_shape, batch, force=False):
     _log(f'이 컴퓨터에서 처음 쓰는 조합이라 자가 검사를 합니다(한 번만) — CPU: {cpu_brand()}')
     x = _check_input(clip_shape, batch)
     ref_runner = _torch_runner(model)
-    ref = ref_runner(x)
     results = {'torch': {'ok': True, 'sec_per_clip': _time_per_clip(ref_runner, x)}}
     names = _cpu_candidates() if cfg == 'auto' else [cfg]
     built = {'torch': ref_runner}
     for name in names:
         try:
             runner = _CPU_BUILDERS[name](model, state_hash, clip_shape)
-            d_prob, d_logit = _compare(ref, runner(x))
-            ok = d_prob <= config.INFER_CHECK_MAX_PROB_DIFF and d_logit <= 1e-2
+            d_prob, d_logit = _check_against(ref_runner, runner, x)
+            ok = _passes(d_prob, d_logit)
             res = {'ok': ok, 'prob_diff': d_prob, 'logit_diff': d_logit}
             if ok:
                 res['sec_per_clip'] = _time_per_clip(runner, x)
@@ -376,7 +424,7 @@ def _select_cpu(model, clip_shape, batch, force=False):
             extra = (f", P(A) 차이 {r['prob_diff']:.1e}" if 'prob_diff' in r else ' (기준)')
             _log(f"  {n:12s} 통과  창 1개 {r['sec_per_clip']:.3f}초{extra}")
         else:
-            why = r.get('error') or f"결과가 다름(P(A) 차이 {r['prob_diff']:.1e}, logits 차이 {r['logit_diff']:.1e})"
+            why = r.get('error') or f"결과가 다름(P(A) 차이 {r['prob_diff']:.1e}, logits·CAM 차이 {r['logit_diff']:.1e})"
             _log(f'  {n:12s} 제외  {why}')
     t = results[choice]['sec_per_clip']
     summary = f"창 1개 {t:.3f}초, PyTorch 대비 ×{results['torch']['sec_per_clip'] / t:.2f}"

@@ -1,4 +1,5 @@
 import csv
+import functools
 import json
 import math
 import os
@@ -12,8 +13,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 
 import config
-from dataset import HitAndRunDataset, span_collate
+from dataset import HitAndRunDataset, limit_cv2_threads, span_collate
 from device_utils import get_device, is_cuda_like, is_channels_last_3d_supported
+import hitandrun_model
 from hitandrun_model import HitAndRun3DCNN
 from runlog import make_run_dir, write_run_info
 from train_balance import build as build_balance, resolve_csv
@@ -65,11 +67,21 @@ def _unique_path(path):
     return out
 
 
-def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sampler=None):
+def loader_prefetch(workers):
+    """작업자마다 미리 만들어 둘 묶음 수 — 작업자 수와 상관없이 모두 합쳐 약 32묶음이 되게 한다.
+
+    묶음 하나가 공유 메모리 약 0.27GB(묶음 15)라, 작업자를 24개로 늘리고 4묶음씩 두면 96묶음(약 26GB)까지
+    쌓일 수 있다. 작업자 8개면 지금까지와 같은 4, 24개면 1.
+    """
+    return max(1, 32 // max(1, workers))
+
+
+def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sampler=None, workers=None):
     # CUDA: 멀티워커 + prefetch 활성화 (① Ryzen 7 5700X 16스레드 기준)
     # CPU : Windows 멀티프로세싱 충돌 방지 및 디바이스 컨텍스트 공유 불가 문제로 단일 프로세스 사용
+    # workers: 작업자 수(None = min(8, CPU)). 학습 로더만 config.TRAIN_NUM_WORKERS 를 넘긴다.
     if is_cuda_like(device):
-        num_workers = min(8, os.cpu_count() or 2)
+        num_workers = workers or min(8, os.cpu_count() or 2)
     else:
         num_workers = 0
     kwargs = {
@@ -84,8 +96,15 @@ def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sa
     if collate_fn is not None:
         kwargs['collate_fn'] = collate_fn
     if num_workers > 0:
-        # ② prefetch_factor 증가 — GPU 연산 중 다음 배치를 더 많이 미리 준비
-        kwargs.update({'persistent_workers': True, 'prefetch_factor': 4})
+        # ② prefetch — GPU 연산 중 다음 배치를 미리 준비(작업자 8개면 4, 전체 약 32묶음 — loader_prefetch)
+        kwargs.update({'persistent_workers': True, 'prefetch_factor': loader_prefetch(num_workers)})
+        # ③ 작업자마다 OpenCV 스레드 수(config.TRAIN_CV2_THREADS, 기본 None = OpenCV 기본).
+        #    부모에서 먼저 정해 작업자가 물려받게 한다(작업자 안에서 처음 바꾸면 멈춤 — dataset.py 주석).
+        #    영상 풀기 스레드는 dataset.py 가 같은 값으로 연다.
+        threads = getattr(config, 'TRAIN_CV2_THREADS', None)
+        if threads:
+            limit_cv2_threads(threads)
+            kwargs['worker_init_fn'] = functools.partial(limit_cv2_threads, threads)
     return DataLoader(dataset, **kwargs)
 
 
@@ -126,9 +145,11 @@ def train_model(
         data_dir=data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=True,
     )
+    # 검증 클립은 매 에포크 같으므로 처음 만든 것을 저장해 두고 읽는다(config.TRAIN_VAL_CACHE, 결과 같음)
     val_dataset = HitAndRunDataset(
         data_dir=data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=False,
+        cache_dir=config.TRAIN_VAL_CACHE_DIR if getattr(config, 'TRAIN_VAL_CACHE', False) else None,
     )
     # 계층적 분할(stratified): 그룹을 세분화해 각 그룹을 train_split_ratio(8:2)로 나눈다.
     #   rc  : 방향(N/S/L/R) × 클래스(A/S) → 최대 8그룹 (각 방향·클래스가 train/val에 고루 분포)
@@ -188,6 +209,20 @@ def train_model(
     print("  그룹별 개수: " + ", ".join(
         f"{d}{'' if dr == '-' else '-' + dr}-{sc}:{len(v)}"
         for (d, dr, sc), v in sorted(groups.items())))
+    if val_dataset.cache_dir is not None:
+        have, n_val, gb = val_dataset.cache_status(val_rc_idx + val_real_idx)
+        print(f"[검증 저장본] {val_dataset.cache_dir} — 클립 {n_val}개 중 {have}개 있음 · 전체 약 {gb:.1f}GB "
+              f"({'모두 있어 첫 검증부터 읽음' if have == n_val else '없는 클립은 첫 검증 때 만들어 저장'})")
+    else:
+        print("[검증 저장본] 끔(config.TRAIN_VAL_CACHE) — 매 에포크 영상에서 검증 클립을 만든다")
+    if getattr(config, 'TRAIN_NUM_WORKERS', None):
+        print(f"[로더] 학습 작업자 {config.TRAIN_NUM_WORKERS}개(config.TRAIN_NUM_WORKERS) · 작업자마다 미리 "
+              f"{loader_prefetch(config.TRAIN_NUM_WORKERS)}묶음")
+    if getattr(config, 'TRAIN_CV2_THREADS', None):
+        print(f"[로더] 작업자마다 OpenCV 스레드 {config.TRAIN_CV2_THREADS}개(config.TRAIN_CV2_THREADS)")
+    if hitandrun_model.GRAD_CHECKPOINT and hitandrun_model.GRAD_CHECKPOINT_BLOCKS is not None:
+        print(f"[체크포인팅] 앞 블록 {hitandrun_model.GRAD_CHECKPOINT_BLOCKS}개만 다시 계산"
+              f"(GRAD_CHECKPOINT_BLOCKS, 기본 4) — 바뀐 블록은 BN momentum 을 맞춰 결과 같음")
 
     # ── A 클립 방식 (config.TRAIN_A_MODE) ──
     # 'span' 이면 충돌 샘플 하나가 '접근~충돌 종료'를 덮는 창들이다. 창을 전부 A로 학습하되
@@ -246,6 +281,15 @@ def train_model(
         print(f"[묶음] 기본(무작위) — 에포크당 충돌 {n_a} · 정상 {n_s} = 1:{n_s / max(n_a, 1):.1f} · "
               f"묶음 {nb}개 · 충돌 없는 묶음 기대 {nb * (n_s / len(train_idx)) ** batch_size:.0f}개")
 
+    # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
+    lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
+    if lq_p > 0:
+        run_tag = f"{run_tag}_lq"
+        lo, hi = config.TRAIN_LQ_SIZE_RANGE
+        c_lo, c_hi = config.TRAIN_LQ_CRF_RANGE
+        print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
+              f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
+
     if dry_run:
         if batch_sampler is not None:
             for ep in range(3):
@@ -259,7 +303,8 @@ def train_model(
 
     train_loader = _make_loader(
         Subset(train_dataset, train_idx), batch_size=batch_size,
-        shuffle=True, device=device, collate_fn=collate, batch_sampler=batch_sampler)
+        shuffle=True, device=device, collate_fn=collate, batch_sampler=batch_sampler,
+        workers=getattr(config, 'TRAIN_NUM_WORKERS', None))
     val_rc_loader = _make_loader(
         Subset(val_dataset, val_rc_idx), batch_size=batch_size,
         shuffle=False, device=device, collate_fn=collate) if val_rc_idx else None

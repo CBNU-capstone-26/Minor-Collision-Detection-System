@@ -3,10 +3,26 @@
 워커 실행: cd backend && celery -A app.worker worker --loglevel=info
 (워커 환경에는 torch/opencv 등 ML 의존성이 설치돼 있어야 한다.)
 """
+import os
+from datetime import datetime
+
 from celery import Celery
 from celery.signals import worker_ready
 
 from app.settings import settings
+
+
+def build_task_routes(gpu_queue: str) -> dict[str, dict[str, str]]:
+    """ML 사고 분석 태스크를 지정한 큐로만 보낸다.
+
+    기본 큐(``celery``)를 쓰면 기존 CPU 워커와 완전히 호환된다. GPU VM을
+    준비한 뒤에만 ``GPU_TASK_QUEUE=gpu``를 지정한다.
+    """
+    queue = gpu_queue.strip() or "celery"
+    return {
+        "app.prediction_job.run_prediction_task": {"queue": queue},
+        "app.vehicle_job.run_vehicle_detection_task": {"queue": queue},
+    }
 
 celery_app = Celery(
     "hitandrun",
@@ -19,10 +35,11 @@ celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
+    task_routes=build_task_routes(os.getenv("GPU_TASK_QUEUE", "celery")),
 )
 
 # 태스크 등록 (import 시 데코레이터가 celery_app에 바인딩)
-from app import prediction_job  # noqa: E402,F401
+from app import prediction_job, vehicle_job  # noqa: E402,F401
 
 
 @worker_ready.connect
@@ -47,5 +64,14 @@ def _fail_interrupted_tasks(**_):
         db.commit()
         if n:
             print(f"[worker] 재시작으로 중단된 분석 {n}건을 실패로 정리")
+        detection_n = (db.query(db_models.VehicleDetectionTask)
+                       .filter(db_models.VehicleDetectionTask.status == "PROCESSING")
+                       .update({"status": "FAILURE",
+                                "error_message": "탐지 서버가 재시작되어 작업이 중단되었습니다. 다시 실행해 주세요.",
+                                "finished_at": datetime.utcnow()},
+                               synchronize_session=False))
+        db.commit()
+        if detection_n:
+            print(f"[worker] 재시작으로 중단된 차량 탐지 {detection_n}건을 실패로 정리")
     finally:
         db.close()

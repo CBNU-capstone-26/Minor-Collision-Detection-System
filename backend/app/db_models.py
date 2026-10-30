@@ -6,7 +6,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date, ForeignKey, Text,
+    Column, Integer, String, Float, DateTime, Date, ForeignKey, Index, Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -30,6 +30,7 @@ class User(Base):
 
 class Video(Base):
     __tablename__ = "videos"
+    __table_args__ = (Index("idx_videos_user_id_fk", "user_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -49,11 +50,13 @@ class Video(Base):
 
     owner = relationship("User", back_populates="videos")
     analysis_tasks = relationship("AnalysisTask", back_populates="video")
+    vehicle_detection_tasks = relationship("VehicleDetectionTask", back_populates="video")
     crash_events = relationship("CrashEvent", back_populates="video")
 
 
 class AnalysisTask(Base):
     __tablename__ = "analysis_tasks"
+    __table_args__ = (Index("idx_analysis_tasks_video_id_fk", "video_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     video_id = Column(Integer, ForeignKey("videos.id"), nullable=False)
@@ -75,9 +78,31 @@ class AnalysisTask(Base):
     crash_events = relationship("CrashEvent", back_populates="task")
 
 
+class VehicleDetectionTask(Base):
+    """GPU 워커가 실행하는 프레임별 차량 탐지 작업."""
+    __tablename__ = "vehicle_detection_tasks"
+    __table_args__ = (Index("idx_vehicle_detection_tasks_video_id_fk", "video_id"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False)
+    celery_task_id = Column(String(255), unique=True, index=True, nullable=True)
+    timestamp_sec = Column(Float, nullable=False, default=0.0)
+    status = Column(String(50), nullable=False, default="PENDING")
+    error_message = Column(Text, nullable=True)
+    result_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+
+    video = relationship("Video", back_populates="vehicle_detection_tasks")
+
+
 class CrashEvent(Base):
     """사고 의심 구간(이벤트) 1건. 구간별 CAM 클립 1개."""
     __tablename__ = "crash_events"
+    __table_args__ = (
+        Index("idx_crash_events_task_id_fk", "task_id"),
+        Index("idx_crash_events_video_id_fk", "video_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer, ForeignKey("analysis_tasks.id"), nullable=False)
@@ -93,6 +118,8 @@ class CrashEvent(Base):
     crash_prob = Column(Float, nullable=True)          # 구간 대표 확률 (0~1)
     # DB 컬럼명은 기존 cam_heatmap_path 를 유지하고, 코드에서는 실제 역할인 clip_path 로 쓴다.
     clip_path = Column("cam_heatmap_path", String(500), nullable=True)
+    # 생성된 CAM 클립이 원본 영상에서 시작하는 시각. 이전 분석 결과는 NULL.
+    clip_start_sec = Column(Float, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

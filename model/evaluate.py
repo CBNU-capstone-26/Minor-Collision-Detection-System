@@ -698,9 +698,10 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     tag = next((t for t in ('ptY', 'ptN') if f'_{t}_' in weights),
                getattr(config, 'PRETRAIN_TAG', '?'))
     # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다.
-    # 묶음 구성(--balance)으로 학습한 가중치는 _bal 도 붙인다.
+    # 묶음 구성(--balance)으로 학습한 가중치는 _bal, 저화질 증강(TRAIN_LQ_AUG_PROB)은 _lq 도 붙인다.
     name_tag = (tag + ('_span' if '_span_' in weights else '')
-                + ('_bal' if '_bal_' in weights else ''))
+                + ('_bal' if '_bal_' in weights else '')
+                + ('_lq' if '_lq_' in weights else ''))
     # 크롭 r 을 바꿔 평가하면(main --r) 이름에 _r<값> 을 붙인다 — 요약 표의 run 열로 구분된다
     r_value = float(kwargs.get('r_value', config.R_VALUE))
     if abs(r_value - 1.0) > 1e-9:
@@ -715,6 +716,8 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
         ('평가 폴더', str(folder_path)),
         ('크롭 r', f'{r_value:g}'),
+        ('후처리 fps 맞춤(거친 탐색 간격·최소 길이)',
+         '켬' if config.PREDICT_FPS_SCALED_POSTPROC else '끔'),
         # 속도 지표는 이 설정이 같은 평가끼리만 비교한다(2026-10-22 부터 기본 끔 — GPU 추론 약 2.6배 빠름).
         # 정확도 지표는 켬/끔 차이가 P(A) 1e-6 수준이라 그대로 비교해도 된다.
         ('GPU 메모리 배치 channels_last',

@@ -90,6 +90,7 @@ function normalizeEvent(e) {
     endSec: e.end_timestamp_sec ?? null,
     analyzedAt: e.analyzed_at || null, // 분석이 끝나 클립이 만들어진 시각(ISO, UTC)
     analysisNo: e.analysis_no ?? null, // 이 영상의 몇 번째 분석에서 나온 클립인지 (한 번의 분석 = 같은 번호)
+    clipStartSec: e.clip_start_sec ?? null, // 클립이 원본 영상에서 시작하는 시각
     prob: e.crash_prob,
     hasClip: !!e.has_clip,
     hasRawClip: !!e.has_raw_clip, // 합성 없는 원본 사고 클립을 내려받을 수 있는지
@@ -161,6 +162,7 @@ export const api = {
   streamUrl: (id) => `/api/videos/${id}/stream`,
   thumbnailUrl: (id) => `/api/videos/${id}/thumbnail`,
   deleteVideo: (id) => request(`/videos/${id}`, { method: "DELETE" }),
+  clearAnalysisHistory: (id) => request(`/videos/${id}/analysis-history`, { method: "DELETE" }),
   deleteEvent: (videoId, eventId) =>
     request(`/videos/${videoId}/events/${eventId}`, { method: "DELETE" }),
   clearEvents: (videoId) =>
@@ -172,6 +174,8 @@ export const api = {
       method: "POST",
       signal,
     }),
+  getVehicleDetectionTask: (videoId, taskId, signal) =>
+    request(`/videos/${videoId}/vehicle-detection-tasks/${taskId}`, { signal }),
   analyze: (videoId, bbox, signal) =>
     request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox, signal }),
   getTaskStatus: (taskId) => request(`/tasks/${taskId}`),
