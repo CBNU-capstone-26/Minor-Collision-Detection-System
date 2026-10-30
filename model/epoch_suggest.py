@@ -96,7 +96,10 @@ def suggest(run_dir, k=None, gap=None):
                      f"{fp.name if fp else '(없음 — 에포크별 저장 전 학습)'}")
     have = [p for p in files if p]
     if have:
-        lines.append("  평가 명령(하나씩 차례로):")
-        lines.append("    for w in " + " ".join(str(p) for p in have) + "; do")
-        lines.append("      python -u -m model.main --mode eval --weights \"$w\"; done")
+        # 화면 로그도 남긴다 — tee 는 폴더가 없으면 말없이 실패해서 먼저 만든다(프로젝트 루트에서 실행)
+        lines.append("  평가 명령(하나씩 차례로 · 화면 로그는 outputs/console/):")
+        lines.append("    mkdir -p outputs/console && for w in \\")
+        lines += [f"      {p} \\" for p in have[:-1]] + [f"      {have[-1]}; do"]
+        lines.append("      python -u -m model.main --mode eval --weights \"$w\"; done 2>&1 "
+                     f"| tee outputs/console/eval_{run_dir.name}_$(date +%y%m%d_%H%M).log")
     return pick, lines
