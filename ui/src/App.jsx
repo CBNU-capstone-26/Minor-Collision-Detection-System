@@ -254,6 +254,30 @@ const cameFromExpiredLogin = () => new URLSearchParams(window.location.search).h
 const MODAL_EXIT_MS = 200;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
+function animateFullscreenRect(element, fromRect, toRect) {
+  if (!element || !fromRect || !toRect || prefersReducedMotion()) return;
+  if (!fromRect.width || !fromRect.height || !toRect.width || !toRect.height) return;
+  const x = fromRect.left - toRect.left;
+  const y = fromRect.top - toRect.top;
+  const scaleX = fromRect.width / toRect.width;
+  const scaleY = fromRect.height / toRect.height;
+  element.style.transformOrigin = "top left";
+  element.style.transition = "none";
+  element.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scaleX}, ${scaleY})`;
+  element.getBoundingClientRect();
+  requestAnimationFrame(() => {
+    element.style.transition = "transform 360ms cubic-bezier(0.22, 1, 0.36, 1)";
+    element.style.transform = "translate3d(0, 0, 0) scale(1, 1)";
+  });
+  window.setTimeout(() => {
+    element.style.transition = "none";
+    element.style.transform = "";
+    element.style.transformOrigin = "";
+    element.getBoundingClientRect();
+    element.style.transition = "";
+  }, 400);
+}
+
 function LoginPage({ onLogin }) {
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
@@ -702,7 +726,7 @@ const HISTORY_STATUS = {
 // 영상 재생 화면 오른쪽: 이 영상의 분석 이력 (최근 분석이 위)
 // history: 서버가 준 분석 이력, events: 지금 남아 있는 클립(분석 번호별로 셈),
 // progressText(taskId): 진행 중인 분석의 진행 문구(없으면 null)
-function AnalysisHistoryPanel({ history, events, progressText, onSelect, activeNo }) {
+function AnalysisHistoryPanel({ history, events, progressText, onSelect, activeNo, onClearHistory, clearingHistory }) {
   const remain = {};
   events.forEach((e) => {
     if (e.analysisNo != null) remain[e.analysisNo] = (remain[e.analysisNo] || 0) + 1;
@@ -723,12 +747,22 @@ function AnalysisHistoryPanel({ history, events, progressText, onSelect, activeN
     if (h.status === "CANCELLED") return { text: "사용자 요청으로 취소", cls: "muted" };
     return { text: progressText(h.taskId) || "분석 진행 중", cls: "active" };
   };
+  const hasActiveAnalysis = history.some((h) => h.status === "PENDING" || h.status === "PROCESSING");
 
   return (
     <aside className="analysis-history">
       <div className="analysis-history-header">
         <h3>분석 이력</h3>
         <span className="analysis-history-count">총 {history.length}회</span>
+        <button
+          className="analysis-history-clear"
+          type="button"
+          disabled={history.length === 0 || hasActiveAnalysis || clearingHistory}
+          title={hasActiveAnalysis ? "분석이 끝난 뒤 초기화할 수 있습니다" : "이 영상의 분석 이력과 사고 클립 초기화"}
+          onClick={onClearHistory}
+        >
+          {clearingHistory ? "초기화 중…" : "초기화"}
+        </button>
       </div>
       {history.length === 0 ? (
         <div className="event-empty-hint">아직 분석한 적이 없습니다.</div>
@@ -851,13 +885,22 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true); // 오른쪽 패널(진행 단계 + 분석 이력) — 기본은 열림(영상을 열 때마다)
   const [highlightAnalysisNo, setHighlightAnalysisNo] = useState(null); // 분석 이력에서 고른 분석 — 그 클립을 왼쪽 목록에서 강조
+  const [clearingHistory, setClearingHistory] = useState(false);
   const [clipView, setClipView] = useState("cam");
   const camChipRef = useRef(null);
   const eventListRef = useRef(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
   const playerContainerRef = useRef(null);
+  const fullscreenStartRectRef = useRef(null);
+  const fullscreenRectRef = useRef(null);
   const seekHoverRef = useRef(null); // 재생바 위 마우스 위치의 시각 말풍선 (마우스 움직임마다 다시 그리지 않게 직접 갱신)
   const isSeekingRef = useRef(false); // 끄는 중인지 — 이벤트 처리 중엔 다시 그리기 전이라 상태 대신 이걸 본다
+  const seekStartXRef = useRef(0);
+  const didDragSeekRef = useRef(false);
+  const seekCaptureTargetRef = useRef(null);
+  const pendingSeekTimeRef = useRef(null);
+  const lastSeekTargetRef = useRef(null);
+  const seekPreviewFrameRef = useRef(0);
   const detectAbortControllerRef = useRef(null);
   const analyzeAbortControllerRef = useRef(null);
 
@@ -1221,6 +1264,29 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
+  const handleClearAnalysisHistory = async () => {
+    if (!selectedVideo || clearingHistory || selectedVideo.analysisHistory?.length === 0) return;
+    const historyCount = selectedVideo.analysisHistory?.length || 0;
+    if (!window.confirm(`이 영상의 분석 이력 ${historyCount}회를 초기화할까요? 사고 클립도 함께 삭제되며 원본 영상은 유지됩니다.`)) return;
+    setClearingHistory(true);
+    try {
+      await api.clearAnalysisHistory(selectedVideo.id);
+      setSelectedVideo((current) => current?.id === selectedVideo.id
+        ? { ...current, analysisHistory: [], events: [], analyzedBefore: false, lastTask: null }
+        : current);
+      setVideos((current) => current.map((video) => video.id === selectedVideo.id
+        ? { ...video, events: [], analyzedBefore: false, lastTask: null }
+        : video));
+      setCurrentEventId(null);
+      setHighlightAnalysisNo(null);
+      showToast("이 영상의 분석 이력을 초기화했습니다.", "success");
+    } catch (err) {
+      showToast(`분석 이력 초기화 실패: ${err.message}`, "error");
+    } finally {
+      setClearingHistory(false);
+    }
+  };
+
 
   // 수동 차량 지정 모드 시작
   const handleStartManualDesignate = () => {
@@ -1555,36 +1621,46 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
-  const handleToggleFullscreen = () => {
+  const handleToggleFullscreen = useCallback(() => {
     const player = playerContainerRef.current;
     if (!player) return;
 
     if (document.fullscreenElement) {
+      fullscreenRectRef.current = player.getBoundingClientRect();
       document.exitFullscreen();
       return;
     }
 
     if (player.requestFullscreen) {
-      player.requestFullscreen();
+      fullscreenStartRectRef.current = player.getBoundingClientRect();
+      player.requestFullscreen().catch(() => {
+        fullscreenStartRectRef.current = null;
+      });
     } else if (player.webkitRequestFullscreen) {
+      fullscreenStartRectRef.current = player.getBoundingClientRect();
       player.webkitRequestFullscreen(); // 옛 Safari
     } else {
       // iPhone Safari 는 영상 영역(div) 전체화면을 허용하지 않는다 → 영상만이라도 기기 전체화면으로
       videoElRef.current?.webkitEnterFullscreen?.();
     }
-  };
+  }, []);
 
   // ── 실제 <video> 재생 제어 ──────────────────────────────
   // 차량 탐지 중엔 재생·이동을 막는다 — 탐지는 요청한 순간의 화면으로 하므로 화면이 바뀌면 박스가 어긋난다
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     const v = videoElRef.current;
     if (!v || isDetectingVehicles) return;
     if (v.paused) v.play();
     else v.pause();
-  };
+  }, [isDetectingVehicles]);
 
   // 재생바 길이 기준 — 실제 영상 길이(소수)를 쓰고, 영상 정보를 받기 전엔 서버가 준 길이(정수 초)
   const playerDuration = mediaDuration || selectedVideo?.duration || 0;
+  const isPlayingInEvent = isPlaying && selectedVideo?.events?.some((event) => {
+    const start = event.startSec ?? event.timestamp;
+    const end = Math.max(start, event.endSec ?? event.endTimestamp ?? start);
+    return currentTime >= start && currentTime <= end;
+  });
 
   // 재생바: 누르거나 누른 채 끌어서 탐색하고, 마우스를 올리면 그 위치의 시각을 말풍선으로 보여준다
   const seekRatioAt = (e) => {
@@ -1599,6 +1675,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setCurrentTime(v.currentTime);
   };
 
+  const queueSeekPreview = (time) => {
+    if (!Number.isFinite(time)) return;
+    pendingSeekTimeRef.current = time;
+    if (videoElRef.current?.seeking) return;
+    if (seekPreviewFrameRef.current) return;
+    seekPreviewFrameRef.current = requestAnimationFrame(() => {
+      seekPreviewFrameRef.current = 0;
+      const v = videoElRef.current;
+      if (!v || v.seeking || pendingSeekTimeRef.current == null) return;
+      const nextTime = pendingSeekTimeRef.current;
+      pendingSeekTimeRef.current = null;
+      if (Math.abs(v.currentTime - nextTime) < 0.04) return;
+      if (typeof v.fastSeek === "function") v.fastSeek(nextTime);
+      else v.currentTime = nextTime;
+      setCurrentTime(v.currentTime);
+    });
+  };
+
   const updateSeekBubble = (e, ratio) => {
     const bubble = seekHoverRef.current;
     if (!bubble) return;
@@ -1611,36 +1705,138 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   const handleSeekStart = (e) => {
     if (e.button !== 0 || isDetectingVehicles) return;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const captureTarget = e.target.closest?.(".event-range") || e.currentTarget;
+    captureTarget.setPointerCapture?.(e.pointerId);
+    seekCaptureTargetRef.current = captureTarget;
+    seekStartXRef.current = e.clientX;
+    didDragSeekRef.current = false;
     isSeekingRef.current = true;
     setIsSeeking(true);
     const ratio = seekRatioAt(e);
+    lastSeekTargetRef.current = videoElRef.current?.duration
+      ? ratio * videoElRef.current.duration : null;
     updateSeekBubble(e, ratio);
     seekToRatio(ratio);
   };
 
   const handleSeekMove = (e) => {
+    if (isSeekingRef.current && Math.abs(e.clientX - seekStartXRef.current) > 3) {
+      didDragSeekRef.current = true;
+    }
     const ratio = seekRatioAt(e);
     updateSeekBubble(e, ratio);
-    if (isSeekingRef.current) seekToRatio(ratio);
+    if (isSeekingRef.current) {
+      const v = videoElRef.current;
+      if (v?.duration) {
+        lastSeekTargetRef.current = ratio * v.duration;
+        queueSeekPreview(lastSeekTargetRef.current);
+      }
+    }
   };
 
   const handleSeekEnd = (e) => {
     if (!isSeekingRef.current) return;
     isSeekingRef.current = false;
-    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
+    const pendingTime = lastSeekTargetRef.current;
+    pendingSeekTimeRef.current = null;
+    lastSeekTargetRef.current = null;
+    if (seekPreviewFrameRef.current) {
+      cancelAnimationFrame(seekPreviewFrameRef.current);
+      seekPreviewFrameRef.current = 0;
     }
+    if (pendingTime != null) {
+      const v = videoElRef.current;
+      if (v) {
+        v.currentTime = pendingTime;
+        setCurrentTime(pendingTime);
+      }
+    }
+    const captureTarget = seekCaptureTargetRef.current;
+    if (captureTarget?.hasPointerCapture?.(e.pointerId)) {
+      captureTarget.releasePointerCapture(e.pointerId);
+    }
+    seekCaptureTargetRef.current = null;
     setIsSeeking(false);
   };
 
+  const handleSeeked = (e) => {
+    setCurrentTime(e.currentTarget.currentTime);
+    if (isSeekingRef.current && pendingSeekTimeRef.current != null) {
+      queueSeekPreview(pendingSeekTimeRef.current);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedVideo) return undefined;
+    const onPlayerKeyDown = (e) => {
+      if (e.defaultPrevented || e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.target.closest?.("input, textarea, select, button, a, [contenteditable='true'], [role='slider']")) return;
+
+      const video = videoElRef.current;
+      const key = e.key.toLowerCase();
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        if (!video || isDetectingVehicles) return;
+        const delta = e.key === "ArrowLeft" ? -5 : 5;
+        const duration = Number.isFinite(video.duration) ? video.duration : playerDuration;
+        video.currentTime = Math.max(0, Math.min(duration, video.currentTime + delta));
+        setCurrentTime(video.currentTime);
+      } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = Math.max(0, Math.min(100, volume + (e.key === "ArrowUp" ? 5 : -5)));
+        setVolume(next);
+        setIsMuted((muted) => (e.key === "ArrowUp" ? false : next === 0 ? true : muted));
+      } else if (key === "m" || e.code === "KeyM") {
+        e.preventDefault();
+        if (isMuted || volume === 0) {
+          if (volume === 0) setVolume(50);
+          setIsMuted(false);
+        } else {
+          setIsMuted(true);
+        }
+      } else if (key === "t" || e.code === "KeyT") {
+        e.preventDefault();
+        if (selectionMode === "none" && !isDetectingVehicles) {
+          setIsTheaterMode((enabled) => !enabled);
+        }
+      } else if (key === "f" || e.code === "KeyF") {
+        e.preventDefault();
+        if ((selectionMode === "none" && !isDetectingVehicles) || isFullscreen) handleToggleFullscreen();
+      } else if (e.code === "Space" || e.key === " ") {
+        e.preventDefault();
+        togglePlay();
+      }
+    };
+    document.addEventListener("keydown", onPlayerKeyDown);
+    return () => document.removeEventListener("keydown", onPlayerKeyDown);
+  }, [selectedVideo, isDetectingVehicles, playerDuration, volume, isMuted, selectionMode, isFullscreen, togglePlay, handleToggleFullscreen]);
+
+  useEffect(() => {
+    const player = bboxOverlayRef.current;
+    if (!player) return undefined;
+    const onPlayerWheel = (e) => {
+      if (isBBoxMode || isDetectingVehicles || e.target.closest?.("button")) return;
+      e.preventDefault();
+      const direction = e.deltaY < 0 ? 1 : -1;
+      const next = Math.max(0, Math.min(100, volume + direction * 5));
+      setVolume(next);
+      if (direction > 0) setIsMuted(false);
+      else if (next === 0) setIsMuted(true);
+    };
+    player.addEventListener("wheel", onPlayerWheel, { passive: false });
+    return () => player.removeEventListener("wheel", onPlayerWheel);
+  }, [selectedVideo?.id, volume, isBBoxMode, isDetectingVehicles]);
+
   // 이벤트 구간 클릭 → 1초 앞부터 재생해 사고 직전 상황도 볼 수 있게 한다.
-  const seekToEvent = (event) => {
+  const seekToEvent = (event, exactTime = null) => {
     if (isDetectingVehicles) return;
     setCurrentEventId(event.id);
     const v = videoElRef.current;
     if (v) {
-      v.currentTime = Math.max(0, (event.startSec ?? event.timestamp) - EVENT_PREROLL_SEC);
+      const duration = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : playerDuration;
+      const eventStart = Math.max(0, (event.startSec ?? event.timestamp) - EVENT_PREROLL_SEC);
+      v.currentTime = exactTime == null ? eventStart : Math.max(0, Math.min(duration, exactTime));
+      setCurrentTime(v.currentTime);
       v.play().catch(() => {});
     }
   };
@@ -1693,8 +1889,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 전체화면 버튼 아이콘을 실제 상태에 맞춘다 (Esc 로 나가도 따라가게)
   useEffect(() => {
-    const onChange = () =>
-      setIsFullscreen(!!document.fullscreenElement && document.fullscreenElement === playerContainerRef.current);
+    const onChange = () => {
+      const player = playerContainerRef.current;
+      const fullscreen = !!document.fullscreenElement && document.fullscreenElement === player;
+      const fromRect = fullscreen ? fullscreenStartRectRef.current : fullscreenRectRef.current;
+      const toRect = player?.getBoundingClientRect();
+      if (fullscreen && toRect) fullscreenRectRef.current = toRect;
+      if (fromRect && toRect) animateFullscreenRect(player, fromRect, toRect);
+      fullscreenStartRectRef.current = null;
+      setIsFullscreen(fullscreen);
+    };
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
@@ -2667,6 +2871,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       ? `${selectedVideo.width} / ${selectedVideo.height}`
                       : "16 / 9",
                   }}
+                  onClick={(e) => {
+                    if (isBBoxMode || isDetectingVehicles || e.target.closest("button")) return;
+                    togglePlay();
+                  }}
                   /* 박스 그리기·차량 고르기는 pointer 이벤트 — 마우스·터치(폰·태블릿)·펜 모두 같은 코드로 동작 */
                   onPointerDown={(e) => {
                     if (!isBBoxMode) return;
@@ -2781,6 +2989,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     }}
                     onPause={() => setIsPlaying(false)}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                    onSeeked={handleSeeked}
                     onLoadedMetadata={(e) => {
                       const d = e.currentTarget.duration;
                       setMediaDuration(Number.isFinite(d) ? d : 0);
@@ -2930,7 +3139,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                 {/* 재생바 + 재생 컨트롤 (영상 화면을 가리지 않게 화면 바깥 하단) */}
                 <div className="custom-progress-bar">
                   <div
-                    className={`progress-track ${isSeeking ? "seeking" : ""} ${isDetectingVehicles ? "locked" : ""}`}
+                    className={`progress-track ${isSeeking ? "seeking" : ""} ${isDetectingVehicles ? "locked" : ""} ${isPlayingInEvent ? "event-playing" : ""}`}
                     title={isDetectingVehicles ? "차량 탐지 중에는 이동할 수 없습니다" : undefined}
                     onPointerDown={handleSeekStart}
                     onPointerMove={handleSeekMove}
@@ -2956,11 +3165,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                               key={event.id}
                               className={`event-range ${currentEventId === event.id ? "active" : ""}`}
                               style={{ left: `${left}%`, width: `${width}%` }}
-                              title={`${event.title} ${formatTime(Math.floor(start))} ~ ${formatTime(Math.ceil(end))}`}
-                              onPointerDown={(e) => e.stopPropagation()}
+                              title={`${event.title} ${formatTime(Math.floor(start))} ~ ${formatTime(Math.ceil(end))} · 드래그하여 이동`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                seekToEvent(event);
+                                if (didDragSeekRef.current) {
+                                  didDragSeekRef.current = false;
+                                  return;
+                                }
+                                seekToEvent(event, start);
                               }}
                             />
                           );
@@ -3093,6 +3305,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   return job ? `분석 중 · ${jobProgress(job).shortText}` : null;
                 }}
                 activeNo={highlightAnalysisNo}
+                clearingHistory={clearingHistory}
+                onClearHistory={handleClearAnalysisHistory}
                 onSelect={(history) => {
                   // 그 분석의 클립을 왼쪽 목록에서 강조(나머지는 흐리게). 같은 이력을 다시 누르면 해제
                   setHighlightAnalysisNo((cur) => (cur === history.no ? null : history.no));

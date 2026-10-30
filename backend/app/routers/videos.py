@@ -265,6 +265,32 @@ def delete_video(
     return {"deleted": video_id}
 
 
+@router.delete("/{video_id}/analysis-history")
+def clear_video_analysis_history(
+    video_id: int,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    """해당 영상의 분석 이력·사고 이벤트·클립을 지운다. 원본 영상은 보존한다."""
+    video = _get_owned_video(video_id, db, user)
+    tasks = db.query(db_models.AnalysisTask).filter(
+        db_models.AnalysisTask.video_id == video.id
+    ).all()
+    if any(task.status in ("PENDING", "PROCESSING") for task in tasks):
+        raise HTTPException(status_code=409, detail="분석이 진행 중인 동안에는 이력을 초기화할 수 없습니다.")
+
+    events = db.query(db_models.CrashEvent).filter(
+        db_models.CrashEvent.video_id == video.id
+    ).all()
+    _unlink_event_clips(events, db)
+    for event in events:
+        db.delete(event)
+    for task in tasks:
+        db.delete(task)
+    db.commit()
+    return {"deleted_history_count": len(tasks), "deleted_event_count": len(events)}
+
+
 def purge_video(video: db_models.Video, db: Session) -> None:
     """영상·클립·이력·원본을 제거한다. 보관 기간 정리와 수동 삭제가 함께 쓴다."""
     # 1) 관련 CAM 클립 파일 삭제 + crash_events 행 삭제

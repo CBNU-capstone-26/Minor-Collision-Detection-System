@@ -18,12 +18,13 @@ services:
     image: redis:alpine
     # AOF persistence; authenticate only when a password is configured.
     entrypoint: ["/bin/sh", "-c"]
-    command: >-
-      if [ -n "$$REDIS_PASSWORD" ]; then
-        exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD";
-      else
-        exec redis-server --appendonly yes;
-      fi
+    command:
+      - >-
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD";
+        else
+          exec redis-server --appendonly yes;
+        fi
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:

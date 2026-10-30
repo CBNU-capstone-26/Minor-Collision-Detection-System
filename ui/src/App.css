@@ -1032,11 +1032,7 @@ body.dark-mode .video-info-list dt {
   background: #111827;
 }
 
-.watch-view.theater-view .watch-header,
-.watch-view.theater-view .watch-side,
-.watch-view.theater-view .watch-right,
-.watch-view.theater-view .event-sidebar,
-.watch-view.theater-view .calendar-side-panel {
+.watch-view.theater-view .watch-header {
   display: none;
 }
 
@@ -1055,6 +1051,51 @@ body.dark-mode .video-info-list dt {
 /* 영화관 모드: 영상이 화면 높이에 맞춰 가운데에 온다 */
 .watch-view.theater-view .player-section {
   justify-self: center;
+}
+
+@media (min-width: 1280px) {
+  .watch-view.theater-view .watch-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, var(--player-max-w)) minmax(0, 1fr);
+  }
+
+  .watch-view .watch-layout > .watch-side,
+  .watch-view .watch-layout > .watch-right {
+    min-width: 0;
+    overflow: hidden;
+    transition: opacity 0.36s ease, transform 0.36s ease, margin 0.36s ease,
+      visibility 0s linear 0s;
+  }
+
+  .watch-view .watch-layout > .watch-side {
+    margin-right: 10px;
+  }
+
+  .watch-view.theater-view .watch-layout > .watch-side,
+  .watch-view.theater-view .watch-layout > .watch-right {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity 0.36s ease, transform 0.36s ease, margin 0.36s ease,
+      visibility 0s linear 0.36s;
+  }
+
+  .watch-view.theater-view .watch-layout > .watch-side {
+    margin-right: 0;
+    transform: translateX(-18px);
+  }
+
+  .watch-view.theater-view .watch-layout > .watch-right {
+    margin-left: 0;
+    transform: translateX(18px);
+  }
+}
+
+@media (max-width: 1279px) {
+  .watch-view.theater-view .watch-side,
+  .watch-view.theater-view .watch-right,
+  .watch-view.theater-view .event-sidebar {
+    display: none;
+  }
 }
 
 /* 좁은 화면(1024px 이하)에서만 쓰는 영상 위 헤더 — 버튼 묶음 */
@@ -1125,11 +1166,17 @@ body.dark-mode .video-info-list dt {
   /* '애니메이션 줄이기'(Windows '애니메이션 효과' 끔)면 incident-ui.css 가 모든 전환을 끄는데, 이 열기·닫기는
      사용자 요청(2026-10-27)으로 남긴다 — 이 개발 PC 가 그 설정이라 끄면 효과가 아예 안 보인다 */
   .dashboard-layout .watch-layout {
-    transition: grid-template-columns 0.3s ease !important;
+    transition: grid-template-columns 0.36s ease !important;
+  }
+
+  .dashboard-layout .watch-layout > .watch-side {
+    transition: opacity 0.36s ease, transform 0.36s ease, margin 0.36s ease,
+      visibility 0s linear 0s !important;
   }
 
   .dashboard-layout .watch-layout > .watch-right {
-    transition: margin-left 0.3s ease, opacity 0.2s ease !important;
+    transition: margin-left 0.36s ease, opacity 0.36s ease, transform 0.36s ease,
+      visibility 0s linear 0s !important;
   }
 
   .watch-right > .analysis-history {
@@ -1256,6 +1303,28 @@ body.dark-mode .video-info-list dt {
   font-size: 12px;
   color: #1d4ed8;
   margin-right: auto;
+}
+
+.analysis-history-clear {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+  color: #64748b;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.analysis-history-clear:hover:not(:disabled) {
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.analysis-history-clear:disabled {
+  opacity: .45;
+  cursor: not-allowed;
 }
 
 /* 이력이 많아지면 목록 안에서만 스크롤 */
@@ -1887,6 +1956,15 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 
 .progress-track:hover .progress-thumb,
 .progress-track.seeking .progress-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.progress-track.event-playing .progress-thumb {
+  width: 6px;
+  height: 22px;
+  border-radius: 0;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95), 0 0 8px rgba(239, 68, 68, 0.75);
   transform: translate(-50%, -50%) scale(1);
 }
 
