@@ -540,12 +540,18 @@ def _run(args, out_dir, suffix):
         sets = {'eval': _folder_videos(args.folder)}
         print(f'평가 영상: {args.folder} — {len(sets["eval"])}개')
         if not args.no_val:
-            split = _split_path(args.weights[0], args.split)
-            if split is None:
+            # 가중치마다 회차의 검증 영상이 다를 수 있어(TRAIN_FORCE_TRAIN_VIDEOS 등) 모두의 검증에 공통인 영상만 쓴다
+            splits = ([Path(args.split)] if args.split else
+                      list(dict.fromkeys(p for p in (_split_path(w, None) for w in args.weights) if p)))
+            if not splits:
                 print('검증 영상: split.json 을 못 찾아 건너뜀(--split 으로 지정)')
             else:
-                sets['val'] = _val_videos(split)
-                print(f'검증 영상: {split} 의 검증 중 실제 영상 {len(sets["val"])}개 (학습에 안 쓴 영상)')
+                per = [_val_videos(p) for p in splits]
+                common = set.intersection(*({str(v[0]) for v in vs} for vs in per))
+                sets['val'] = [v for v in per[0] if str(v[0]) in common]
+                dropped = sorted({v[0].stem for vs in per for v in vs} - {Path(c).stem for c in common})
+                print(f'검증 영상: {" · ".join(str(p) for p in splits)} 의 검증 중 실제 영상 {len(sets["val"])}개 '
+                      f'(학습에 안 쓴 영상' + (f' — 어느 회차에선 학습에 쓴 {", ".join(dropped)} 는 뺌)' if dropped else ')'))
         if args.videos:
             for k, vids in sets.items():
                 sets[k] = ([v for v in vids if v[2] is not None][:(args.videos + 1) // 2]

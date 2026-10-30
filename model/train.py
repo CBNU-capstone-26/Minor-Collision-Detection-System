@@ -345,6 +345,28 @@ def train_model(
         n_train_vid += cut
         n_val_vid += len(vkeys) - cut
 
+    # 검증 대신 학습에 넣을 영상(config.TRAIN_FORCE_TRAIN_VIDEOS) — 분할은 그대로 하고 검증에 뽑힌 것만 옮겨
+    # 다른 영상의 분할이 바뀌지 않게 한다
+    force = {str(n) for n in (getattr(config, 'TRAIN_FORCE_TRAIN_VIDEOS', ()) or ())}
+    forced = []
+    for vk in list(split_videos['val']):
+        if os.path.splitext(os.path.basename(vk))[0] in force:
+            idxs = [i for i, s in enumerate(train_dataset.samples) if s.get('video_key', s['mp4_path']) == vk]
+            moved = set(idxs)
+            val_rc_idx[:] = [i for i in val_rc_idx if i not in moved]
+            val_real_idx[:] = [i for i in val_real_idx if i not in moved]
+            train_idx += idxs
+            split_videos['val'].remove(vk)
+            split_videos['train'].append(vk)
+            n_train_vid += 1
+            n_val_vid -= 1
+            forced.append(os.path.splitext(os.path.basename(vk))[0])
+    if force:
+        missing = sorted(force - set(forced) - {os.path.splitext(os.path.basename(v))[0]
+                                                  for v in split_videos['train']})
+        print(f"[분할] 학습 쪽 고정(config.TRAIN_FORCE_TRAIN_VIDEOS): 검증에서 옮김 {', '.join(forced) or '없음'}"
+              + (f" · ⚠️ 데이터에 없음 {', '.join(missing)}" if missing else ''))
+
     print(f"[분할] 영상 {n_train_vid + n_val_vid}개 → train {n_train_vid} / "
           f"val {n_val_vid} (영상 단위, 누수 없음)")
     print(f"[분할] 클립 train {len(train_idx)} / val_rc {len(val_rc_idx)} / "
@@ -438,6 +460,11 @@ def train_model(
         c_lo, c_hi = config.TRAIN_LQ_CRF_RANGE
         print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
               f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
+
+    # ── 입력 크기 (config.INPUT_SIZE, 기본 224) ── 다르면 이름에 _s<크기> — 가중치를 읽을 때 이 표시로 크기를 맞춘다
+    if config.RESIZE[0] != 224:
+        run_tag = f"{run_tag}_s{config.RESIZE[0]}"
+        print(f"[입력 크기] {config.RESIZE[0]}×{config.RESIZE[1]} (기본 224) — 평가·서비스도 INPUT_SIZE={config.RESIZE[0]} 로")
 
     # ── fps 증강 (config.TRAIN_FPS_AUG_PROB, 기본 끔) ── 켜면 이름에 _fps 를 붙여 기존 학습과 구분한다
     fps_p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0) or 0)
@@ -537,6 +564,8 @@ def train_model(
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
         ('판정 기준 P(A)', f'{config.A_THRESHOLD:g} (검증 재현율·정밀도·suggest F1 — 판단 지표는 기준과 무관)'),
         ('유예 기간', f'{grace}에포크 (조기 종료·학습률 감소·best 선택 없음)' if grace else '없음'),
+        ('입력 크기', f'{config.RESIZE[0]}×{config.RESIZE[1]}'),
+        ('학습 쪽 고정 영상', ', '.join(forced) if forced else '없음'),
         ('저화질 증강', f'확률 {lq_p:g}' if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
     ]

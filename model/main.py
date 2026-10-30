@@ -5,7 +5,7 @@ import torch
 
 import config
 from device_utils import get_device, is_channels_last_3d_supported
-from hitandrun_model import HitAndRun3DCNN
+from hitandrun_model import HitAndRun3DCNN, check_input_size
 
 '''
 학습 시작
@@ -36,6 +36,7 @@ python3 -m model.main --mode predict
 
 def _load_model(weights_path):
     # _load_model은 predict/eval(추론)에서만 사용 → INFER 디바이스 사용
+    check_input_size(weights_path)           # 학습한 입력 크기(_s256 등)와 config.INPUT_SIZE 가 같아야 한다
     device = get_device(config.INFER_DEVICE_TYPE)
     model = HitAndRun3DCNN(num_classes=config.MODEL_NUM_CLASSES).to(device)
     if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:

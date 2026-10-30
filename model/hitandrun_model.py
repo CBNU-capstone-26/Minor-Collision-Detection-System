@@ -5,6 +5,23 @@ from pytorchvideo.models.hub import x3d_m
 from torch.utils.checkpoint import checkpoint, checkpoint_sequential
 
 
+def weights_input_size(path):
+    """가중치 파일 이름의 입력 크기 표시(_s256 등 — 224 아닌 크기로 학습하면 train.py 가 붙인다). 없으면 None."""
+    import re
+    m = re.search(r'_s(\d{3})(?=[_.])', os.path.basename(str(path)))
+    return int(m.group(1)) if m else None
+
+
+def check_input_size(path):
+    """가중치를 학습한 입력 크기와 지금 config.INPUT_SIZE 가 다르면 멈춘다 — 크기가 다르면 판정이 틀어진다.
+    이름에 표시가 없으면 224 로 학습한 것으로 본다."""
+    import config
+    n = weights_input_size(path) or 224
+    if n != config.RESIZE[0]:
+        raise RuntimeError(f"가중치 {os.path.basename(str(path))} 은(는) 입력 {n}×{n} 으로 학습했는데 지금 입력 크기는 "
+                           f"{config.RESIZE[0]} 입니다 — 환경변수 INPUT_SIZE={n} 으로 실행하세요(config.INPUT_SIZE)")
+
+
 # X3D-M의 마지막 res 스테이지 출력 채널 수(구조 확인으로 검증한 값).
 X3D_M_FEATURE_CHANNELS = 192
 # 헤드 확장부(post_conv)를 거친 뒤의 채널 수 — 분류/CAM은 이 차원에서 이뤄진다.

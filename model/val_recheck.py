@@ -32,7 +32,7 @@ import config
 from dataset import HitAndRunDataset, span_collate
 from device_utils import get_device, is_channels_last_3d_supported, is_cuda_like
 from evaluate import _Tee
-from hitandrun_model import HitAndRun3DCNN
+from hitandrun_model import HitAndRun3DCNN, check_input_size
 from train import _make_loader, validate
 
 # 검증 클립 구성에 영향을 주는 설정 — 학습 당시(config_snapshot.py)와 다르면 검산이 맞지 않을 수 있다
@@ -174,6 +174,7 @@ def _run(args, run_dir, th, out_base):
     out_rows, n_check, n_ok = [], 0, 0
     t0 = time.perf_counter()
     for k, (ep, path) in enumerate(weights):
+        check_input_size(path)               # 학습한 입력 크기(_s256 등)와 config.INPUT_SIZE 가 같아야 한다
         model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True))
         row = {'epoch': ep, 'weights': path.name}
         old = rows_csv.get(str(ep), {})
