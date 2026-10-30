@@ -266,6 +266,16 @@ TRAIN_BATCH_SIZE = 15  # 논문과 동일(Hwang&Lee 2024: batch 15). VRAM 부족
 TRAIN_NUM_EPOCHS = 100
 TRAIN_SPLIT_RATIO = 0.8
 TRAIN_EARLY_STOPPING_PATIENCE = 10
+# 유예 기간(에포크) — 처음 이만큼은 조기 종료를 세지 않고·학습률을 줄이지 않고·best·후보를 고르지 않는다
+# (에포크별 가중치·학습 CSV 는 그대로 남고, suggest 도 이 기간은 추천하지 않는다). 지나면 그때부터 새로 센다.
+# scratch(무작위 초기화)는 1:20 불균형 탓에 먼저 '전부 정상'을 배우며 판단 지표가 한동안 나빠진다.
+#   2026-10-30 scratch(1e-4): 아무것도 모르는 1에포크가 판단 지표 1.62 로 best, 이후 2.16 까지 나빠지는 동안
+#   rc 구분력은 0.81 → 0.89 로 오르고 있었는데 학습률이 두 번 줄고(→ 2.5e-5) 11에포크에 조기 종료될 상황이었다.
+# 사전학습 모델은 이 구간을 10에포크 안에 지나 0 이다(지금까지와 같다). X3D 공식 scratch 도 처음 35/300 에포크를 워밍업으로 둔다.
+# 바꾸려면 환경변수 TRAIN_GRACE_EPOCHS(비우면 scratch 면 TRAIN_SCRATCH_GRACE_EPOCHS, 사전학습이면 0).
+TRAIN_SCRATCH_GRACE_EPOCHS = 20
+_grace_env = os.getenv("TRAIN_GRACE_EPOCHS", "").strip()
+TRAIN_GRACE_EPOCHS = int(_grace_env) if _grace_env else None
 
 # ---------- best 판단 지표 / 후보 저장 ----------
 # best 저장·LR 감소(ReduceLROnPlateau)·조기종료가 모두 아래 '판단 지표' 하나로 움직인다.

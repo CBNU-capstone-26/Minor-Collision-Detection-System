@@ -56,7 +56,8 @@ def suggest(run_dir, k=None, gap=None):
         return [], [f"학습 곡선 CSV 가 없습니다: {run_dir}"]
     run_dir = csv_path.parent
     with open(csv_path, encoding='utf-8') as fh:
-        rows = [r for r in csv.DictReader(fh) if r.get('epoch')]
+        # 유예 기간(grace=1) 에포크는 추천하지 않는다 — best·조기 종료도 세지 않은 구간
+        rows = [r for r in csv.DictReader(fh) if r.get('epoch') and r.get('grace') != '1']
     if not rows:
         return [], ["학습 곡선이 아직 비어 있습니다"]
     # 실제 영상 검증이 있으면 그쪽, 없으면 RC 검증

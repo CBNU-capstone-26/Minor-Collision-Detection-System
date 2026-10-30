@@ -496,6 +496,14 @@ def train_model(
             'train': sorted(os.path.relpath(v, root) for v in split_videos['train']),
             'val': sorted(os.path.relpath(v, root) for v in split_videos['val']),
         }, _f, ensure_ascii=False, indent=2)
+    # 유예 기간(config.TRAIN_GRACE_EPOCHS — scratch 기본 20, 사전학습 0): 이 동안은 조기 종료·LR 감소·best 선택을 미룬다
+    grace = getattr(config, 'TRAIN_GRACE_EPOCHS', None)
+    if grace is None:
+        grace = 0 if config.PRETRAINED else int(getattr(config, 'TRAIN_SCRATCH_GRACE_EPOCHS', 0))
+    grace = max(0, min(int(grace), num_epochs - 1))     # 끝까지 유예면 best 가 없어 최종 가중치를 못 정한다
+    if grace:
+        print(f"[유예 기간] 처음 {grace}에포크는 조기 종료·학습률 감소·best 선택 없이 학습(에포크별 가중치는 저장) — "
+              f"그 뒤부터 조기 종료 {early_stopping_patience}·학습률 반감을 새로 센다")
     run_info = [
         ('종류', '학습'),
         ('모델', config.MODEL_NAME),
@@ -519,6 +527,7 @@ def train_model(
         ('데이터 폴더', str(data_dir)),
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
         ('판정 기준 P(A)', f'{config.A_THRESHOLD:g} (검증 재현율·정밀도·suggest F1 — 판단 지표는 기준과 무관)'),
+        ('유예 기간', f'{grace}에포크 (조기 종료·학습률 감소·best 선택 없음)' if grace else '없음'),
     ]
     write_run_info(run_dir, run_info)
 
@@ -539,6 +548,7 @@ def train_model(
             #   재현율·정밀도, 구분력. 학습 방식(pre/span)과 상관없이 같은 정의라 서로 비교된다.
             'val_rc_preRecA', 'val_rc_prePrecA', 'val_rc_spanRecA', 'val_rc_spanPrecA', 'val_rc_auc',
             'val_real_preRecA', 'val_real_prePrecA', 'val_real_spanRecA', 'val_real_spanPrecA', 'val_real_auc',
+            'grace',    # 1 = 유예 기간(조기 종료·LR 감소·best 선택 안 함 — suggest 가 추천하지 않음)
         ])
     print(f"[로그] 학습 곡선 CSV: {log_path}")
 
@@ -766,7 +776,9 @@ def train_model(
         bal_hist.append(ref['bal'] if ref['bal'] is not None else ref['loss'])
         window = bal_hist[-smooth_n:]
         monitor = sum(window) / len(window)
-        scheduler.step(monitor)
+        in_grace = epoch + 1 <= grace
+        if not in_grace:
+            scheduler.step(monitor)
         current_lr = optimizer.param_groups[-1]['lr']  # 헤드 LR 표시
 
         def _fmt(d):
@@ -781,12 +793,16 @@ def train_model(
               f'val_real(L/Acc/Arecall) {_fmt(real)} | '
               f'판단지표 {monitor:.4f} | LR {current_lr:.2e}')
 
-        # best 저장·조기종료 판단 → 후보 저장
-        prev_best = early_stopping.best_epoch
-        early_stopping(monitor, model, epoch + 1)
-        saved_best = (early_stopping.best_epoch == epoch + 1
-                      and prev_best != epoch + 1)
-        saved_cand = _update_candidates(epoch + 1, monitor)
+        # best 저장·조기종료 판단 → 후보 저장 (유예 기간엔 하지 않는다)
+        if in_grace:
+            saved_best = saved_cand = False
+            print(f'유예 기간 {epoch + 1}/{grace} — 조기 종료·학습률 감소·best 선택 안 함')
+        else:
+            prev_best = early_stopping.best_epoch
+            early_stopping(monitor, model, epoch + 1)
+            saved_best = (early_stopping.best_epoch == epoch + 1
+                          and prev_best != epoch + 1)
+            saved_cand = _update_candidates(epoch + 1, monitor)
         # 에포크별 가중치 — 끝난 뒤 로그를 보고 몇 개를 평가 영상으로 비교해 고른다
         if epochs_dir is not None:
             torch.save(model.state_dict(), epochs_dir / f"{epoch_prefix}_ep{epoch + 1:03d}.pth")
@@ -805,6 +821,7 @@ def train_model(
                 f'{monitor:.6f}', int(saved_best), int(saved_cand),
                 *[_csv(_g(d, k)) for d in (rc, real)
                   for k in ('preRec', 'prePrec', 'spanRec', 'spanPrec', 'auc')],
+                int(in_grace),
             ])
 
         # 학습 곡선 그래프 갱신 — 실패해도 학습은 계속한다
