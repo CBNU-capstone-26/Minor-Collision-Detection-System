@@ -468,6 +468,24 @@ def predict_full_video(
             out_video.release()
 
 
+def fps_scaled_event_params(fps, coarse_step=None, min_span=None, clip_length=None, enabled=None):
+    """30fps 기준 거친 탐색 간격과 이벤트 최소 길이를 영상 fps에 맞춘다."""
+    coarse_step = config.PREDICT_COARSE_STEP if coarse_step is None else coarse_step
+    min_span = config.PREDICT_MIN_EVENT_SPAN_FRAMES if min_span is None else min_span
+    clip_length = config.CLIP_LENGTH if clip_length is None else clip_length
+    enabled = config.PREDICT_FPS_SCALED_POSTPROC if enabled is None else enabled
+    if not enabled or not fps or fps <= 0:
+        return int(coarse_step), int(min_span)
+
+    scale = float(fps) / float(config.PREDICT_POSTPROC_REF_FPS)
+    coarse_step = max(1, int(round(coarse_step * scale)))
+    base_span = clip_length - 2
+    consecutive_windows = min_span - base_span
+    if consecutive_windows > 1:
+        min_span = base_span + max(1, int(round(consecutive_windows * scale)))
+    return coarse_step, int(min_span)
+
+
 def predict_events_and_clips(
     model,
     video_path,
@@ -551,6 +569,9 @@ def predict_events_and_clips(
     #   거친 창 - coarse_pad' 이후에만 생기므로, 그보다 앞선 창은 순서가 확정된다.
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    coarse_step, min_span = fps_scaled_event_params(
+        fps, coarse_step, config.PREDICT_MIN_EVENT_SPAN_FRAMES, clip_length
+    )
 
     ret, first_frame = cap.read()
     if not ret:
@@ -877,7 +898,7 @@ def predict_events_and_clips(
                 merged.append(ev)
         events = [e for e in merged
                   if (e['end_frame'] - e['start_frame'])
-                  >= config.PREDICT_MIN_EVENT_SPAN_FRAMES]
+                  >= min_span]
     if _n_raw != len(events):
         print(f"[이벤트 후처리] {_n_raw}개 → 병합·길이필터 후 {len(events)}개")
 

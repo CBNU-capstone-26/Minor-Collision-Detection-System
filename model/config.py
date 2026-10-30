@@ -386,7 +386,7 @@ PREDICT_CLIP_PAD_FRAMES = 30
 #    경우뿐이다. 0.3 은 A 판정(0.5)보다 낮춰 약한 신호도 줍기 위한 값.
 # ⚠️ 긴 영상에서 실제로 몇 %를 보는지는 서버 로그의 '[2단계] 거친 탐색 … N%' 줄로 확인.
 PREDICT_USE_COARSE_SCAN = True
-PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임). stride 의 배수로 맞춰 쓴다
+PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임, 30fps 기준). stride 의 배수로 맞춰 쓴다
 PREDICT_COARSE_PROB = 0.3      # 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다
 PREDICT_COARSE_PAD = CLIP_LENGTH  # 의심 창 주변 ±pad 프레임의 창을 모두 평가
 PREDICT_FLOW_SAMPLE_STEP = 2   # 충격 시점 판정용 광학흐름 계산 프레임 간격(속도)
@@ -412,6 +412,9 @@ PREDICT_EVENT_MERGE_GAP_SEC = 3.0
 #   · 초가 아니라 프레임으로 둔다 — 창 길이가 fps와 무관하게 30프레임이기 때문.
 #   (이전 값 40: 옛 모델로 stride 1 에서 '단발 29f / 지속 48f 이상' 사이를 자른 값)
 PREDICT_MIN_EVENT_SPAN_FRAMES = 35
+# 30fps 기준인 거친 탐색 간격과 최소 연속 A 창 수를 영상 fps에 맞춘다.
+PREDICT_FPS_SCALED_POSTPROC = True
+PREDICT_POSTPROC_REF_FPS = 30.0
 
 # ---------- 추론 실행 방식 (서비스·평가 공통, infer_runtime.py) ----------
 # 서버 컴퓨터 사양이 정해져 있지 않아, 그 컴퓨터에서 쓸 수 있는 방식을 처음 한 번 자가 검사해
