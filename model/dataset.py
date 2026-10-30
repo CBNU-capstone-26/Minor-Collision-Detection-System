@@ -163,6 +163,7 @@ class HitAndRunDataset(Dataset):
                     'bbox': target_bbox if car == target_id else bboxes[car],
                     'car_id': car,           # 크롭 기준 차량 번호
                     'fps': fps,              # 시간 지터를 '초' 기준으로 맞추기 위함
+                    'total': total,          # fps 증강이 k배로 읽을 수 있는지 확인용
                 }
                 if wins is not None:
                     sample['win_starts'] = wins  # span: 구간을 덮는 창들의 시작 프레임
@@ -448,6 +449,36 @@ class HitAndRunDataset(Dataset):
             size += n_read * self.resize[0] * self.resize[1] * 3
         return have, len(indices), size / 2 ** 30
 
+    def _fps_aug_stride(self, sample, starts):
+        """fps 증강(config.TRAIN_FPS_AUG_PROB, 학습 전용 — 주석은 config)으로 몇 장마다 한 장 고를지. 안 하면 1.
+        확률 0 이면 난수를 쓰지 않아 기존 학습과 같다."""
+        p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0.0) or 0.0)
+        if p <= 0 or len(starts) != 1 or random.random() >= p:
+            return 1
+        fps = float(sample.get('fps', 30.0))
+        ks = [k for k in getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3))
+              if k > 1 and fps / k >= getattr(config, 'TRAIN_FPS_AUG_MIN_FPS', 8.0)]
+        if not ks:
+            return 1
+        k = random.choice(ks)
+        total = int(sample.get('total', 0) or 0)
+        if total and total < (self.clip_length - 1) * k + 1:
+            return 1                           # 영상이 짧아 k배로 못 읽음 — 그대로
+        return k
+
+    def _read_strided(self, sample, start, k, bbox, r):
+        """start 근처에서 (clip_length − 1)·k + 1 프레임을 읽어 k장마다 한 장 → clip_length 장.
+        사고 클립은 충돌 시작이 원래처럼 TRAIN_A_PRE_FRAMES 번째에 오게 앞쪽을 k배로 늘린다."""
+        n = (self.clip_length - 1) * k + 1
+        s0 = start
+        if sample['label'] == 1:
+            s0 = start - int(getattr(config, 'TRAIN_A_PRE_FRAMES', 0)) * (k - 1)
+        total = int(sample.get('total', 0) or 0)
+        if total:
+            s0 = min(s0, total - n)            # 영상 끝을 넘지 않게
+        s0 = max(0, s0)
+        return self._read_frames(sample['mp4_path'], s0, n, bbox, r)[::k]
+
     def _frames_to_tensor(self, frames):
         arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
         video_tensor = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()
@@ -497,12 +528,16 @@ class HitAndRunDataset(Dataset):
         # 첫 창 시작부터 마지막 창 끝까지 한 번에 읽는다(창 1개면 clip_length 프레임).
         # 모든 창이 같은 박스·r·증강을 쓰게 되어, 같은 충돌의 다른 시점일 뿐이 된다.
         s0 = min(starts)
-        n_read = max(starts) - s0 + self.clip_length
-        cache = self._cache_path(sample['mp4_path'], s0, n_read, bbox, r)
-        frames = self._cache_load(cache, n_read)
-        if frames is None:
-            frames = self._read_frames(sample['mp4_path'], s0, n_read, bbox, r)
-            self._cache_save(cache, frames)
+        k = self._fps_aug_stride(sample, starts) if self.augment else 1
+        if k > 1:
+            frames = self._read_strided(sample, s0, k, bbox, r)
+        else:
+            n_read = max(starts) - s0 + self.clip_length
+            cache = self._cache_path(sample['mp4_path'], s0, n_read, bbox, r)
+            frames = self._cache_load(cache, n_read)
+            if frames is None:
+                frames = self._read_frames(sample['mp4_path'], s0, n_read, bbox, r)
+                self._cache_save(cache, frames)
 
         # 증강은 학습 세트에만 적용 (검증 세트는 결정적이어야 val loss가 안정됨)
         if self.augment:

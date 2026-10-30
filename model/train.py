@@ -439,6 +439,15 @@ def train_model(
         print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
               f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
 
+    # ── fps 증강 (config.TRAIN_FPS_AUG_PROB, 기본 끔) ── 켜면 이름에 _fps 를 붙여 기존 학습과 구분한다
+    fps_p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0) or 0)
+    fps_ks = tuple(getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3)))
+    if fps_p > 0:
+        run_tag = f"{run_tag}_fps"
+        print(f"[fps 증강] 켬 — 확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장(30fps 원본이면 "
+              f"{'·'.join(f'{30 / k:g}' for k in fps_ks)}fps 처럼) · 결과 {config.TRAIN_FPS_AUG_MIN_FPS:g}fps 미만·"
+              f"짧은 영상·창 묶음 샘플은 그대로")
+
     if dry_run:
         if batch_sampler is not None:
             for ep in range(3):
@@ -528,6 +537,8 @@ def train_model(
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
         ('판정 기준 P(A)', f'{config.A_THRESHOLD:g} (검증 재현율·정밀도·suggest F1 — 판단 지표는 기준과 무관)'),
         ('유예 기간', f'{grace}에포크 (조기 종료·학습률 감소·best 선택 없음)' if grace else '없음'),
+        ('저화질 증강', f'확률 {lq_p:g}' if lq_p > 0 else '끔'),
+        ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
     ]
     write_run_info(run_dir, run_info)
 
