@@ -38,7 +38,9 @@ R_VALUE = 1.0
 #            ② PREDICT_COARSE_PROB 은 이 값보다 낮아야 한다(거친 탐색이 약한 신호를 줍는 값).
 #            ③ PREDICT_MIN_EVENT_SPAN_FRAMES 도 다시 본다(0.5 기준 연속 창 수로 정한 값).
 #            ④ 평가 결과 이름에 _th<값> 이 붙어 0.5 결과와 구분된다. 이미 분석된 영상(DB)은 옛 기준 그대로다.
-A_THRESHOLD = 0.5
+# 코드를 고치지 않고 바꿔 보려면 환경변수: A_THRESHOLD=0.4 python -m model.main --mode eval --weights …
+#   (기준을 바꿔 가며 같은 가중치의 놓침·오탐을 비교할 때. 거친 탐색 기준은 아래에서 함께 맞춰진다)
+A_THRESHOLD = float(os.getenv("A_THRESHOLD", "0.5") or 0.5)
 # r 증강(학습 전용): 논문은 r∈{1,1.5,2,2.33,3}로 클립을 확장(833→1457, 약 1.75배).
 # 우리는 인덱스를 늘리면 train/val 분할이 깨지거나 같은 영상이 양쪽에 들어가므로,
 # 학습 시 클립마다 r을 확률적으로 뽑아 같은 효과를 낸다(검증/추론은 항상 r=1.0).
@@ -396,7 +398,10 @@ PREDICT_CLIP_PAD_FRAMES = 30
 # ⚠️ 긴 영상에서 실제로 몇 %를 보는지는 서버 로그의 '[2단계] 거친 탐색 … N%' 줄로 확인.
 PREDICT_USE_COARSE_SCAN = True
 PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임). stride 의 배수로 맞춰 쓴다
-PREDICT_COARSE_PROB = 0.3      # 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다(A_THRESHOLD 보다 낮게)
+# 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다(A_THRESHOLD 보다 낮게). 기본 0.3 = 판정 기준 0.5 의 0.6배.
+# 판정 기준을 0.5 아래로 내리면 같은 비율로 함께 내린다(0.4 → 0.24, 0.3 → 0.18). 0.5 이상이면 0.3 그대로라
+# 기준을 올려 볼 때 보는 창은 지금과 같다. 직접 정하려면 환경변수 PREDICT_COARSE_PROB.
+PREDICT_COARSE_PROB = float(os.getenv("PREDICT_COARSE_PROB", "") or min(0.3, 0.6 * A_THRESHOLD))
 PREDICT_COARSE_PAD = CLIP_LENGTH  # 의심 창 주변 ±pad 프레임의 창을 모두 평가
 PREDICT_FLOW_SAMPLE_STEP = 2   # 충격 시점 판정용 광학흐름 계산 프레임 간격(속도)
 

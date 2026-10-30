@@ -720,6 +720,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('평가 폴더', str(folder_path)),
         ('크롭 r', f'{r_value:g}'),
         ('판정 기준 P(A)', f'{config.A_THRESHOLD:g}'),
+        ('거친 탐색 기준 P(A)', f'{config.PREDICT_COARSE_PROB:g}'),
         # 속도 지표는 이 설정이 같은 평가끼리만 비교한다(2026-10-22 부터 기본 끔 — GPU 추론 약 2.6배 빠름).
         # 정확도 지표는 켬/끔 차이가 P(A) 1e-6 수준이라 그대로 비교해도 된다.
         ('GPU 메모리 배치 channels_last',
