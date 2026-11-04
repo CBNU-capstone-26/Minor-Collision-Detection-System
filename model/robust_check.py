@@ -11,6 +11,10 @@
     흑백 · 흐림(3×3) · 노이즈 σ8
   · 학습하지 않은 변형: 저해상도(차량 크롭을 64·40px 로 줄였다 다시 키움 = 화면 속 작은 차) · 압축(JPEG 화질 25) ·
     저해상도 64px + 압축(작은 차를 압축이 심한 CCTV 로 본 것)
+  · H.264 키프레임(2026-11-05): 크롭 30프레임을 H.264(CRF 35)로 압축했다 푼다. 키프레임(화면 통째 저장)을 창 처음에만
+    두면 '압축만', 15·10프레임마다 두면 창 안에서 화질이 한순간 튄다(멈춘 장면에서 키프레임마다 잔무늬가 한꺼번에 바뀜 —
+    ReS_0018 오탐 원인). '압축만'과 비교해 튐 때문에 P(A)가 오르는지 본다(헤드 상위 3개 풀링은 이런 짧은 튐에 더 예민할 수 있음).
+    실제 영상은 화면 전체를 압축한 뒤 자르지만 여기선 자른 크롭을 압축한다(dataset 저화질 증강과 같은 근사). PyAV 가 없으면 건너뛴다.
 학습한 증강에는 판단이 덜 흔들리고 학습하지 않은 변형에 크게 흔들리면 증강이 모델에 반영된 것이다. 저해상도에서
 정상 창의 P(A)가 오르면 '흐리면 사고' 지름길을 의심한다(학습 데이터의 저화질 영상이 사고 쪽에 몰려 있음).
 판정은 창 단위 P(A)>기준(config.A_THRESHOLD, 기본 0.5) 과, 영상의 고른 창 중 하나라도 기준을 넘으면 '사고'로 보는 축약 판정이다(서비스 판정과
@@ -90,7 +94,16 @@ def _jpeg_one(f, q):
     return cv2.cvtColor(cv2.imdecode(buf, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
 
 
-TRAINED, UNTRAINED = '학습한 증강', '학습 안 한 변형'
+TRAINED, UNTRAINED, KEYFRAME = '학습한 증강', '학습 안 한 변형', 'H.264 키프레임(화질 튐)'
+H264_CRF = 35
+
+
+def _h264(crf, gop):
+    """크롭 30프레임을 H.264 로 압축했다 푼다 — 키프레임은 gop 프레임마다(창 길이 이상이면 창 처음에만 = 튐 없음)."""
+    def fn(frames, seed):
+        from dataset import h264_roundtrip
+        return h264_roundtrip(list(frames), crf, gop)
+    return fn
 CONDITIONS = [
     ('orig', '원본', None, lambda frames, seed: frames),
     ('flip', '좌우 뒤집기', TRAINED, _pil(TF.hflip)),
@@ -107,6 +120,17 @@ CONDITIONS = [
     ('jpeg25', 'JPEG 화질 25', UNTRAINED, lambda frames, seed: [_jpeg_one(f, 25) for f in frames]),
     ('low64j', '저해상도 64px+압축', UNTRAINED, _low(64, jpeg=25)),
 ]
+try:
+    import av  # noqa: F401 — H.264 변형에 필요(dataset.h264_roundtrip)
+    CONDITIONS += [
+        ('h264g30', f'H.264 압축만(CRF {H264_CRF})', KEYFRAME, _h264(H264_CRF, 300)),
+        ('h264g15', '+ 15프레임마다 키프레임', KEYFRAME, _h264(H264_CRF, 15)),
+        ('h264g10', '+ 10프레임마다 키프레임', KEYFRAME, _h264(H264_CRF, 10)),
+        ('h264g15q', '+ 15프레임마다·CRF 42', KEYFRAME, _h264(42, 15)),
+    ]
+    KEYFRAME_NOTE = ''
+except ImportError:
+    KEYFRAME_NOTE = 'PyAV(av) 가 없어 H.264 키프레임 변형은 건너뜀 — pip install av'
 
 
 # ───────────────────────── 창 고르기·읽기 ─────────────────────────
@@ -215,6 +239,8 @@ def _run(args, out_dir):
         vids = a + s
     n_a = sum(v[2] is not None for v in vids)
     print(f'영상: {folder} — 사고 {n_a}개 · 정상 {len(vids) - n_a}개 · 변형 {len(CONDITIONS) - 1}가지 + 원본')
+    if KEYFRAME_NOTE:
+        print(f'  ⚠️ {KEYFRAME_NOTE}')
 
     rows = []                                    # (영상, gt, 창 시작, 변형, P(A))
     t0 = time.perf_counter()
@@ -310,6 +336,31 @@ def _report(rows):
         print('     → 화질이 나빠지면 사고 창을 놓치는 쪽입니다(지름길보다는 저해상도에서 정보가 부족한 것).')
     else:
         print('     → 화질이 나빠져도 판단이 크게 기울지 않습니다 — 지름길 징후는 약합니다.')
+    if 'h264g30' in stats:
+        _report_keyframe(rows, stats, th)
+
+
+def _report_keyframe(rows, stats, th):
+    """3) 키프레임 화질 튐: '압축만'(h264g30) 대비 키프레임을 창 안에 둔 변형에서 P(A)가 오르는지."""
+    ref = {(v, s): p for v, gt, s, k, p in rows if k == 'h264g30'}
+    c = stats['h264g30']
+    print(f'  3) 키프레임 화질 튐(같은 H.264 압축에 키프레임만 더 둔 것) — 압축만: 정상 창 {c["ps"]:.3f} · 사고 창 {c["pa"]:.3f}')
+    worst = None
+    for key in ('h264g15', 'h264g10', 'h264g15q'):
+        sub = [(v, gt, s, p) for v, gt, s, k, p in rows if k == key]
+        ds = [p - ref[(v, s)] for v, gt, s, p in sub if gt == 'S']
+        da = [p - ref[(v, s)] for v, gt, s, p in sub if gt == 'A']
+        new_fa = sum(gt == 'S' and ref[(v, s)] <= th < p for v, gt, s, p in sub)
+        print(f'     {stats[key]["name"]:<18} 정상 창 P(A) 변화 평균 {np.mean(ds):+.3f}(최대 {max(ds):+.3f}) · '
+              f'사고 창 {np.mean(da):+.3f} · 압축만에선 아니던 정상 오탐 창 {new_fa}개')
+        if worst is None or np.mean(ds) > worst[1]:
+            worst = (stats[key]['name'], float(np.mean(ds)), new_fa)
+    n_s = stats['orig']['n_s']
+    if worst[1] > 0.03 or worst[2] >= max(2, 0.05 * n_s):
+        print(f'     → 키프레임 화질 튐만으로 정상 창이 사고 쪽으로 기웁니다({worst[0]}) — 멈춘 장면의 압축 튐을 흔들림으로 '
+              '읽는 경향(ReS_0018 같은 오탐). 헤드 풀링을 바꿨다면 이 값이 늘었는지 대조군과 비교하세요.')
+    else:
+        print('     → 키프레임 화질 튐에 판단이 거의 흔들리지 않습니다.')
 
 
 if __name__ == '__main__':
