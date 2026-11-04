@@ -519,13 +519,8 @@ class HitAndRunDataset(Dataset):
             hw, hh = int(bw * s / 2), int(bh * s / 2)
             bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
 
-        # r 증강(학습 전용): 클립마다 r을 하나 뽑아 '모든 프레임에 동일 적용'한다.
-        # 검증/추론은 항상 self.r_value(=1.0) → 서비스 추론 조건과 일치.
+        # 크롭 배율은 학습·검증·서비스 모두 self.r_value(=config.R_VALUE, 1.0). 학습 중 r 을 넓히던 r 증강은 2026-11-05 삭제
         r = self.r_value
-        if (self.augment
-                and getattr(config, 'TRAIN_R_AUGMENT_VALUES', ())
-                and random.random() < getattr(config, 'TRAIN_R_AUGMENT_PROB', 0.0)):
-            r = random.choice(config.TRAIN_R_AUGMENT_VALUES)
 
         # 첫 창 시작부터 마지막 창 끝까지 한 번에 읽는다(창 1개면 clip_length 프레임).
         # 모든 창이 같은 박스·r·증강을 쓰게 되어, 같은 충돌의 다른 시점일 뿐이 된다.

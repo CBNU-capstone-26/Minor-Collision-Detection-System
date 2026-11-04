@@ -681,6 +681,7 @@ def train_model(
         ('10fps 미만 제외', f"켬 (목록 {len(getattr(config, 'LOW_FPS_VIDEOS', ()))}개, 폴더에 남아 있어 뺀 것 {len(excluded)}개)"
                           if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('학습 쪽 고정 영상', ', '.join(forced) if forced else '없음'),
+        ('크롭 r', f'{r_value:g} (학습 중 r 을 넓히던 r 증강은 2026-11-05 삭제 — 그 전 학습은 40% 를 r 1.5~3)'),
         ('저화질 증강', (f'확률 {lq_p:g} · 줄이기 {config.TRAIN_LQ_SIZE_PROB:g} · CRF {config.TRAIN_LQ_CRF_RANGE[0]}~'
                     f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
