@@ -39,6 +39,14 @@ CLIP_LENGTH = 30
 #    (hitandrun_model.check_input_size) 크기가 다르면 멈춘다. 검증 클립 저장본은 크기별로 따로 만든다(약 1.3배 용량).
 INPUT_SIZE = int(os.getenv("INPUT_SIZE", "224") or 224)
 RESIZE = (INPUT_SIZE, INPUT_SIZE)
+# 헤드 시간 풀링(2026-11-05, TODO '헤드 시간 풀링 실험' 2·3번). 헤드는 백본 특징(30시점)을 시점마다 432채널로 넓힌 뒤
+# 시간 축을 하나로 모은다. avg = 30시점 평균(지금까지 전부, 기본) / top3 = 채널·칸마다 가장 큰 3시점 평균 /
+# avgtop3 = 둘의 평균. 0번 진단(outputs/analysis/head_diag_261105/): 약하게 반응한 충돌 다수가 2~6프레임짜리 짧은
+# 증거를 갖는데 평균에 묻힌다 — 상위 3개는 이걸 살리려는 실험. 짧은 오탐(야간 전조등 ReS_0026)도 같은 모양이라 오탐이 늘 수 있다.
+# 계산량은 셋 다 같다. 학습 가중치 이름에 _top3·_avgtop3 이 붙고, 평가·서비스에서 이름과 이 값이 다르면 멈춘다
+# (hitandrun_model.check_weights). 켜기: 환경변수 HEAD_TEMPORAL_POOL=top3 (서버 .env 에도 같은 칸).
+HEAD_TEMPORAL_POOL = (os.getenv("HEAD_TEMPORAL_POOL", "avg") or "avg").strip().lower()
+HEAD_TEMPORAL_TOPK = 3
 R_VALUE = 1.0
 # 창 하나를 충돌(A)로 보는 P(A) 기준. 0.5 = 두 클래스 중 큰 쪽(argmax)과 똑같다(지금까지의 모든 결과).
 # 학습 검증 지표(재현율·정밀도·구간 재현율)·suggest F1·평가 ①②·서비스 이벤트·클립 A/S 띠·robust_check 가

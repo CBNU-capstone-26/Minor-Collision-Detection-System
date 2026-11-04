@@ -563,6 +563,13 @@ def train_model(
         run_tag = f"{run_tag}_s{config.RESIZE[0]}"
         print(f"[입력 크기] {config.RESIZE[0]}×{config.RESIZE[1]} (기본 224) — 평가·서비스도 INPUT_SIZE={config.RESIZE[0]} 로")
 
+    # ── 헤드 시간 풀링 (config.HEAD_TEMPORAL_POOL, 기본 avg) ── 다르면 이름에 _top3·_avgtop3 — 가중치를 읽을 때 이 표시로 맞춘다
+    pool = getattr(config, 'HEAD_TEMPORAL_POOL', 'avg')
+    if pool != 'avg':
+        run_tag = f"{run_tag}_{pool}"
+        print(f"[헤드 시간 풀링] {pool}(채널·칸마다 시간 축 상위 {config.HEAD_TEMPORAL_TOPK}개"
+              f"{' 평균' if pool == 'top3' else ' 평균과 30시점 평균의 평균'}) — 평가·서비스도 HEAD_TEMPORAL_POOL={pool} 로")
+
     # ── fps 증강 (config.TRAIN_FPS_AUG_PROB, 기본 끔) ── 켜면 이름에 _fps 를 붙여 기존 학습과 구분한다
     fps_p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0) or 0)
     fps_ks = tuple(getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3)))
@@ -666,6 +673,11 @@ def train_model(
         ('판정 기준 P(A)', f'{config.A_THRESHOLD:g} (검증 재현율·정밀도·suggest F1 — 판단 지표는 기준과 무관)'),
         ('유예 기간', f'{grace}에포크 (조기 종료·학습률 감소·best 선택 없음)' if grace else '없음'),
         ('입력 크기', f'{config.RESIZE[0]}×{config.RESIZE[1]}'),
+        ('헤드 시간 풀링', pool if pool == 'avg' else f'{pool} (상위 {config.HEAD_TEMPORAL_TOPK}개)'),
+        ('검증 영상', f'검증 폴더 {val_dir}' if use_val_dir else
+                    (f'고정 목록 {lock_path.name}' if lock_path is not None else 'seed 42 분할')),
+        ('10fps 미만 제외', f"켬 (목록 {len(getattr(config, 'LOW_FPS_VIDEOS', ()))}개, 폴더에 남아 있어 뺀 것 {len(excluded)}개)"
+                          if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('학습 쪽 고정 영상', ', '.join(forced) if forced else '없음'),
         ('저화질 증강', f'확률 {lq_p:g}' if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),

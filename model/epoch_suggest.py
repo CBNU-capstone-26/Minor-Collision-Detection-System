@@ -98,9 +98,10 @@ def suggest(run_dir, k=None, gap=None):
     have = [p for p in files if p]
     if have:
         # 224 아닌 입력 크기로 학습한 회차(_s256 등)는 평가도 같은 크기로 — 다르면 가중치를 읽을 때 멈춘다
-        from hitandrun_model import weights_input_size
+        from hitandrun_model import weights_head_pool, weights_input_size
         size = weights_input_size(have[0].name)
-        env = f"INPUT_SIZE={size} " if size else ""
+        pool = weights_head_pool(have[0].name)      # avg 아닌 헤드 풀링(_top3 등)도 같은 값으로
+        env = (f"INPUT_SIZE={size} " if size else "") + (f"HEAD_TEMPORAL_POOL={pool} " if pool != 'avg' else "")
         # 화면 로그도 남긴다 — tee 는 폴더가 없으면 말없이 실패해서 먼저 만든다(프로젝트 루트에서 실행)
         lines.append("  평가 명령(하나씩 차례로 · 화면 로그는 outputs/console/):")
         lines.append("    mkdir -p outputs/console && for w in \\")
