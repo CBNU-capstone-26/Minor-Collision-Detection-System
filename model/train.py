@@ -551,8 +551,10 @@ def train_model(
 
     # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
     lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
+    lq_default = (abs(float(config.TRAIN_LQ_SIZE_PROB) - 0.5) < 1e-9 and tuple(config.TRAIN_LQ_CRF_RANGE) == (28, 42))
     if lq_p > 0:
-        run_tag = f"{run_tag}_lq"
+        # 10-29 의 설정 그대로면 _lq, 줄이기 비율·CRF 상한을 바꾼 약한 설정이면 _lqw(섞이지 않게)
+        run_tag = f"{run_tag}_{'lq' if lq_default else 'lqw'}"
         lo, hi = config.TRAIN_LQ_SIZE_RANGE
         c_lo, c_hi = config.TRAIN_LQ_CRF_RANGE
         print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
@@ -679,7 +681,8 @@ def train_model(
         ('10fps 미만 제외', f"켬 (목록 {len(getattr(config, 'LOW_FPS_VIDEOS', ()))}개, 폴더에 남아 있어 뺀 것 {len(excluded)}개)"
                           if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('학습 쪽 고정 영상', ', '.join(forced) if forced else '없음'),
-        ('저화질 증강', f'확률 {lq_p:g}' if lq_p > 0 else '끔'),
+        ('저화질 증강', (f'확률 {lq_p:g} · 줄이기 {config.TRAIN_LQ_SIZE_PROB:g} · CRF {config.TRAIN_LQ_CRF_RANGE[0]}~'
+                    f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
     ]
     write_run_info(run_dir, run_info)

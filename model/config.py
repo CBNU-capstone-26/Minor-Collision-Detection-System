@@ -83,8 +83,11 @@ TRAIN_R_AUGMENT_VALUES = (1.5, 2.0, 2.33, 3.0)
 TRAIN_LQ_AUG_PROB = float(os.getenv("TRAIN_LQ_AUG_PROB", "0") or 0)
 TRAIN_LQ_MIN_CROP = 128              # 원본 프레임 크롭 한 변(px)이 이보다 작으면 적용하지 않음
 TRAIN_LQ_SIZE_RANGE = (48, 128)      # 줄일 때 크기(px). 원래 크롭의 3/4 보다 작은 값만 쓴다
-TRAIN_LQ_SIZE_PROB = 0.5             # 압축할 때 먼저 줄이는 비율
-TRAIN_LQ_CRF_RANGE = (28, 42)        # H.264 CRF(클수록 압축 심함). 224px 30프레임 PSNR 약 30 ~ 22dB
+# 약한 저화질 증강(2026-11-05): 10-29 확률 0.3 학습은 압축 지름길은 없앴지만 저해상도 사고(TA_0002·0011 등)를 더 놓쳤다.
+# 줄이기를 끄고(TRAIN_LQ_SIZE_PROB=0) CRF 상한을 낮춰(TRAIN_LQ_CRF_MAX=36) 다시 본다 — 키프레임 간격 무작위 압축은 그대로라
+# '압축 화질 튐은 사고가 아니다'(ReS_0018 오탐)를 가르친다. 기본값(0.5·42)이 아니면 이름에 _lq 대신 _lqw.
+TRAIN_LQ_SIZE_PROB = float(os.getenv("TRAIN_LQ_SIZE_PROB", "0.5") or 0)   # 압축할 때 먼저 줄이는 비율
+TRAIN_LQ_CRF_RANGE = (28, int(os.getenv("TRAIN_LQ_CRF_MAX", "42") or 42))  # H.264 CRF(클수록 압축 심함). 224px 30프레임 PSNR 약 30 ~ 22dB
 
 # ---------- fps 증강 (실험용, 기본 끔, 2026-10-30) ----------
 # RC 833개는 전부 30fps 이고 실제 사고 중 10fps 는 3개뿐인데, 평가 영상은 30개 중 6개가 10fps 다. 모델은 늘 30프레임을

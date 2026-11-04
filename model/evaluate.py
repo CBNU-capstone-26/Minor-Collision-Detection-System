@@ -711,7 +711,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     # fps 증강(TRAIN_FPS_AUG_PROB)은 _fps, 224 아닌 입력 크기(INPUT_SIZE)는 _s<크기>, 헤드 시간 풀링(HEAD_TEMPORAL_POOL)은 _top3 등.
     name_tag = (tag + ('_span' if '_span_' in weights else '')
                 + ('_bal' if '_bal_' in weights else '')
-                + ('_lq' if '_lq_' in weights else '')
+                + ('_lq' if '_lq_' in weights else '_lqw' if '_lqw_' in weights else '')
                 + ('_fps' if '_fps_' in weights else '')
                 + (f'_s{config.RESIZE[0]}' if config.RESIZE[0] != 224 else '')
                 + (f"_{config.HEAD_TEMPORAL_POOL}" if getattr(config, 'HEAD_TEMPORAL_POOL', 'avg') != 'avg' else ''))
