@@ -335,25 +335,30 @@ class HitAndRunDataset(Dataset):
         return cv2.resize(cropped_frame, self.resize, interpolation=cv2.INTER_LINEAR)
 
     def _apply_augmentation(self, frames):
-        # 실제 주차장 CCTV 환경 대응 데이터 증강
+        # 실제 주차장 CCTV 환경 대응 데이터 증강 — 세기·확률 근거는 config '기본 영상 증강 세기'(2026-11-05 조정)
         # 변환 파라미터는 클립당 1회 샘플링해 모든 프레임에 동일 적용 (시간적 일관성 유지)
-        # ※ 센서 노이즈만 프레임별로 새로 샘플링 (실제 노이즈는 프레임마다 다름)
+        # 노이즈도 클립 내내 같은 잔무늬다(프레임마다 새로 뽑으면 픽셀이 깜빡여 미세한 흔들림을 덮는다 — 실제 압축 영상엔 없음)
 
         do_hflip = random.random() > 0.5
 
         # 밝기·대비·채도·색조: 조명 변화, 날씨, 카메라 색감 차이 시뮬레이션
         do_jitter = random.random() > 0.5
-        brightness = random.uniform(0.6, 1.4)   # 어두운 지하주차장 ~ 밝은 외부
+        brightness = random.uniform(*getattr(config, 'TRAIN_AUG_BRIGHTNESS', (0.4, 1.4)))   # 야간·지하주차장 ~ 밝은 외부
         contrast = random.uniform(0.7, 1.3)   # 저대비(흐린 날) ~ 고대비(직사광)
         saturation = random.uniform(0.7, 1.3)   # 카메라별 채도 특성 차이
         hue = random.uniform(-0.1, 0.1)  # 카메라 화이트밸런스·조명 색온도 차이
 
         # 야간 적외선(IR) CCTV: 사실상 무채색 영상 → 색 없이도 동작 판별하도록 학습
-        do_gray = random.random() < 0.15
-        # 저화질 CCTV: 초점 흐림/압축 열화(블러), 센서 노이즈(야간 게인↑) 시뮬레이션
+        do_gray = random.random() < getattr(config, 'TRAIN_AUG_GRAY_PROB', 0.3)
+        # 저화질 CCTV: 초점 흐림/압축 열화(블러), 야간 게인으로 생긴 잔무늬(압축돼 멈춰 있는 잡음) 시뮬레이션
         do_blur = random.random() < 0.2
-        do_noise = random.random() < 0.2
-        noise_sigma = random.uniform(2.0, 8.0)
+        do_noise = random.random() < getattr(config, 'TRAIN_AUG_NOISE_PROB', 0.2)
+        noise_sigma = random.uniform(*getattr(config, 'TRAIN_AUG_NOISE_SIGMA', (2.0, 8.0)))
+        grain = None
+        if do_noise:
+            # 클립 내내 같은 잔무늬 — 흑백 클립은 밝기 잡음만(색 잡음이 끼면 적외선 영상답지 않다)
+            h, w = frames[0].shape[:2]
+            grain = np.random.normal(0.0, noise_sigma, (h, w, 1 if do_gray else 3)).astype(np.float32)
 
         aug_frames = []
         for frame in frames:
@@ -370,10 +375,8 @@ class HitAndRunDataset(Dataset):
             if do_blur:
                 img = TF.gaussian_blur(img, kernel_size=3)
             arr = np.array(img)
-            if do_noise:
-                noise = np.random.normal(0.0, noise_sigma, arr.shape)
-                arr = np.clip(arr.astype(np.float32) + noise,
-                              0, 255).astype(np.uint8)
+            if grain is not None:
+                arr = np.clip(arr.astype(np.float32) + grain, 0, 255).astype(np.uint8)
             aug_frames.append(arr)
 
         return aug_frames

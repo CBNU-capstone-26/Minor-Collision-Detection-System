@@ -8,7 +8,8 @@
 정상 영상은 영상 전체에 고르게 12개. 창마다 30프레임을 학습·서비스와 같이 자르고 줄인 뒤(0번 차량 박스, r=1.0)
 변형별로 P(A)를 잰다. 변형은 클립 전체에 같은 값이다(노이즈만 프레임마다, 시드 고정).
   · 학습한 증강(dataset.py 와 같은 연산): 좌우 뒤집기 · 밝게 1.4 · 어둡게 0.6 · 대비 0.7 · 채도 0.7 · 색조 +0.1 ·
-    흑백 · 흐림(3×3) · 노이즈 σ8
+    흑백 · 흐림(3×3) · 잔무늬 노이즈 σ8(클립 내내 같은 무늬 — 2026-11-05 학습 노이즈를 이렇게 바꿈)
+  · 참고: 예전 학습 노이즈 σ8(프레임마다 새로 뽑아 깜빡임 — 실제 압축 영상엔 없는 형태). 그 전 결과와 비교용, 평균엔 안 넣음
   · 학습하지 않은 변형: 저해상도(차량 크롭을 64·40px 로 줄였다 다시 키움 = 화면 속 작은 차) · 압축(JPEG 화질 25) ·
     저해상도 64px + 압축(작은 차를 압축이 심한 CCTV 로 본 것)
   · H.264 키프레임(2026-11-05): 크롭 30프레임을 H.264(CRF 35)로 압축했다 푼다. 키프레임(화면 통째 저장)을 창 처음에만
@@ -70,10 +71,17 @@ def _pil(fn):
 
 
 def _noise(frames, seed):
-    # 학습과 같이 프레임마다 새로 뽑는다(창마다 시드 고정 → 다시 돌려도 같다)
+    # 예전 학습 노이즈 — 프레임마다 새로 뽑는다(창마다 시드 고정 → 다시 돌려도 같다). 11-05 부터 학습엔 없음(참고용)
     rng = np.random.default_rng(seed)
     return [np.clip(f.astype(np.float32) + rng.normal(0.0, NOISE_SIGMA, f.shape), 0, 255).astype(np.uint8)
             for f in frames]
+
+
+def _grain(frames, seed):
+    # 지금 학습 노이즈(dataset._apply_augmentation) — 클립 내내 같은 잔무늬(창마다 시드 고정)
+    rng = np.random.default_rng(seed)
+    g = rng.normal(0.0, NOISE_SIGMA, frames[0].shape).astype(np.float32)
+    return [np.clip(f.astype(np.float32) + g, 0, 255).astype(np.uint8) for f in frames]
 
 
 def _low(size, jpeg=None):
@@ -95,6 +103,7 @@ def _jpeg_one(f, q):
 
 
 TRAINED, UNTRAINED, KEYFRAME = '학습한 증강', '학습 안 한 변형', 'H.264 키프레임(화질 튐)'
+REF = '참고: 예전 학습 노이즈(매 프레임 깜빡임)'
 LIGHT = '불빛(야간)'
 
 
@@ -124,11 +133,12 @@ CONDITIONS = [
     ('hue', '색조 +0.1', TRAINED, _pil(lambda im: TF.adjust_hue(im, 0.1))),
     ('gray', '흑백', TRAINED, _pil(lambda im: TF.rgb_to_grayscale(im, num_output_channels=3))),
     ('blur', '흐림 3×3', TRAINED, _pil(lambda im: TF.gaussian_blur(im, kernel_size=3))),
-    ('noise', f'노이즈 σ{NOISE_SIGMA:g}', TRAINED, _noise),
+    ('grain', f'잔무늬 노이즈 σ{NOISE_SIGMA:g}', TRAINED, _grain),
     ('low64', '저해상도 64px', UNTRAINED, _low(64)),
     ('low40', '저해상도 40px', UNTRAINED, _low(40)),
     ('jpeg25', 'JPEG 화질 25', UNTRAINED, lambda frames, seed: [_jpeg_one(f, 25) for f in frames]),
     ('low64j', '저해상도 64px+압축', UNTRAINED, _low(64, jpeg=25)),
+    ('noise', f'깜빡이는 노이즈 σ{NOISE_SIGMA:g}', REF, _noise),
 ]
 try:
     import av  # noqa: F401 — H.264 변형에 필요(dataset.h264_roundtrip)
