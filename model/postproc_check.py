@@ -65,9 +65,16 @@ def _label(mp4):
     return bboxes.get(config.TARGET_ID, next(iter(bboxes.values()))), sf, ef
 
 
+def _excluded(name):
+    """10fps 미만 영상(config.EXCLUDE_VIDEOS)인가 — 폴더에 남아 있어도·저장한 P(A)를 다시 집계해도 뺀다."""
+    return name in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
+
+
 def _folder_videos(folder):
     out = []
     for mp4 in sorted(Path(folder).glob('*.mp4')):
+        if _excluded(mp4.stem):
+            continue
         lab = _label(mp4) if mp4.with_suffix('.txt').exists() else None
         if lab:
             out.append((mp4, *lab))
@@ -93,7 +100,11 @@ def _val_videos(split):
         rel = rel.replace('\\', '/')
         if not rel.startswith('realdata/'):
             continue
-        mp4 = Path(config.DATA_DIR) / rel
+        # 검증 폴더(config.VAL_DATA_DIR, 11-04~)로 옮긴 영상도, 예전처럼 학습 폴더에 있는 영상도 찾는다
+        roots = [Path(r) for r in (getattr(config, 'VAL_DATA_DIR', None), config.DATA_DIR) if r]
+        mp4 = next((r / rel for r in roots if (r / rel).exists()), Path(config.DATA_DIR) / rel)
+        if _excluded(mp4.stem):
+            continue
         lab = _label(mp4) if mp4.exists() and mp4.with_suffix('.txt').exists() else None
         if lab:
             out.append((mp4, *lab))
@@ -206,7 +217,7 @@ def _load_probs(wdir, set_key, mode):
     out = {}
     for m in ([mode, 'none'] if mode != 'none' else ['none']):
         for p in sorted((wdir / f'{set_key}_{m}').glob('*.npz')):
-            if p.stem not in out:
+            if p.stem not in out and not _excluded(p.stem):
                 z = np.load(p)
                 out[p.stem] = (z['pa'], json.loads(str(z['meta'])))
     return dict(sorted(out.items()))

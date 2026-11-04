@@ -204,8 +204,8 @@ def _run(args, out_dir):
     vids = []
     for mp4 in sorted(folder.glob('*.mp4')):
         txt = mp4.with_suffix('.txt')
-        if not txt.exists():
-            continue
+        if not txt.exists() or mp4.stem in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ()):
+            continue   # 10fps 미만 영상(config.LOW_FPS_VIDEOS)은 뺀다
         bboxes, gt_sf, _ = _read_label(str(txt))
         if bboxes:
             vids.append((mp4, bboxes.get(config.TARGET_ID, next(iter(bboxes.values()))), gt_sf))

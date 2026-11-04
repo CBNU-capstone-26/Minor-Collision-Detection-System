@@ -72,6 +72,12 @@ def _evaluate_folder_impl(
     mp4_files = [f for f in all_files if f.endswith('.mp4')]
     valid_pairs = [
         mp4 for mp4 in mp4_files if f"{mp4.rsplit('.', 1)[0]}.txt" in all_files_set]
+    # 10fps 미만 영상(config.EXCLUDE_VIDEOS)은 평가에서 뺀다 — 보통은 lowfps_move 로 이미 폴더 밖에 있다
+    excl = set(getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
+    skipped = sorted(m.rsplit('.', 1)[0] for m in valid_pairs if m.rsplit('.', 1)[0] in excl)
+    if skipped:
+        valid_pairs = [m for m in valid_pairs if m.rsplit('.', 1)[0] not in excl]
+        print(f"[제외] 10fps 미만(config.LOW_FPS_VIDEOS) {len(skipped)}개 평가 안 함: {', '.join(skipped)}")
 
     if not valid_pairs:
         print("평가할 수 있는 영상-텍스트 짝이 없습니다.")
@@ -435,10 +441,13 @@ def _training_video_names():
     분할) 수 있어 성능이 부풀려진다. 실제로 eval 24개 중 18개가 학습에 들어간 채로
     평가한 적이 있어, 파일명으로 겹침을 잡아 경고하고 깨끗한 영상만 따로 집계한다.
     """
-    root = pathlib.Path(str(config.DATA_DIR))
-    if not root.exists():
-        return set()
-    return {p.name for p in root.rglob('*.mp4')}
+    # 검증 폴더(config.VAL_DATA_DIR, 2026-11-04~)도 학습 중 쓰는 영상이라 함께 본다
+    names = set()
+    for r in (config.DATA_DIR, getattr(config, 'VAL_DATA_DIR', None)):
+        root = pathlib.Path(str(r)) if r else None
+        if root is not None and root.exists():
+            names |= {p.name for p in root.rglob('*.mp4')}
+    return names
 
 
 def _summarize(rows):
@@ -721,6 +730,8 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('시작', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
         ('평가 폴더', str(folder_path)),
+        # 2026-11-04 부터 실효 10fps 미만 평가 영상 7개를 뺌(폴더 밖으로 옮김 + 목록) — 그 전 평가는 30개, 이후 23개
+        ('10fps 미만 영상 제외(config.LOW_FPS_VIDEOS)', '켬' if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('크롭 r', f'{r_value:g}'),
         ('판정 기준 P(A)', f'{config.A_THRESHOLD:g}'),
         ('거친 탐색 기준 P(A)', f'{config.PREDICT_COARSE_PROB:g}'),

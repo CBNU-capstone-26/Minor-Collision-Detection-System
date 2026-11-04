@@ -116,8 +116,10 @@ class HitAndRunDataset(Dataset):
 
         # data_dir 하위 폴더(rcdata/realdata 등)까지 재귀적으로 mp4를 수집한다.
         # → 최상위에 파일이 있어도(기존 방식) 하위 폴더에 있어도 모두 포함.
+        # data_dir 은 폴더 여러 개(목록)여도 된다 — val_recheck 가 검증 폴더 + 학습 폴더를 함께 읽을 때.
+        dirs = data_dir if isinstance(data_dir, (list, tuple)) else [data_dir]
         self.mp4_paths = sorted(
-            glob.glob(os.path.join(str(data_dir), '**', '*.mp4'), recursive=True))
+            p for d in dirs for p in glob.glob(os.path.join(str(d), '**', '*.mp4'), recursive=True))
         self.samples = self._build_index()
 
     def __len__(self):

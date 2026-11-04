@@ -24,6 +24,9 @@ INFER_DEVICE_TYPE = "cuda"    # 예측·평가(추론) 전용 디바이스
 
 # ---------- 공통 설정 ----------
 DATA_DIR = _ROOT / "data" / "train"
+# 검증 영상 폴더(2026-11-04~). 이 폴더에 영상이 있으면 학습 = DATA_DIR 전부, 검증 = 이 폴더 전부(분할 계산 없음).
+# 옮기기: python -m model.val_move --apply (model/split_lock.json 의 189개를 같은 상대경로로). 없으면 아래 TRAIN_SPLIT_LOCK.
+VAL_DATA_DIR = _ROOT / "data" / "val"
 # 이 폴더가 학습/추론하는 백본 이름. 가중치 파일명에 붙어 모델을 구분한다.
 MODEL_NAME = "x3d"
 MODEL_NUM_CLASSES = 2
@@ -95,6 +98,39 @@ TRAIN_FPS_AUG_MIN_FPS = 8.0          # 결과 fps 가 이보다 낮아지는 k �
 # scratch 는 못 잡는다(0.00). 이 날부터 검증 실제 사고는 12 → 11개 — 그 전 학습과 검증 지표를 비교할 땐 감안한다
 # (postproc_check 는 넣은 가중치들의 검증에 공통인 영상만 쓴다).
 TRAIN_FORCE_TRAIN_VIDEOS = ('260827_ReA_0044',)
+
+# ---------- 검증 영상 고정 (2026-11-04) ----------
+# 예전엔 데이터 폴더 내용으로 그때그때 분할(seed 42, 그룹마다 8:2)해서, 영상을 하나라도 더하거나 빼면 검증이 다시 섞였다.
+# 지금은 검증 영상을 VAL_DATA_DIR 로 옮겨 폴더로 나눈다. 이 파일은 ① 옮길 목록(val_move) ② 아직 안 옮긴 컴퓨터용이다:
+# VAL_DATA_DIR 가 비어 있으면 검증 = 파일에 적힌 영상(데이터 폴더 기준 상대경로), 학습 = 데이터 폴더의 나머지 전부.
+# 내용: 10-22~10-30 학습 6회의 분할(모두 같은 검증 191개) − ReA_0044(학습으로) − ReA_0005(10fps 미만 제외) = 189개.
+# 새로 넣은 영상은 자동으로 학습 쪽. 예전 방식으로 돌리려면 환경변수 TRAIN_SPLIT_LOCK= (빈 값).
+TRAIN_SPLIT_LOCK = (Path(os.environ["TRAIN_SPLIT_LOCK"]) if os.environ.get("TRAIN_SPLIT_LOCK")
+                    else None if "TRAIN_SPLIT_LOCK" in os.environ
+                    else _ROOT / "model" / "split_lock.json")
+
+# ---------- 실제 화면 갱신이 10fps 미만인 영상 제외 (2026-11-04, 사용자 결정) ----------
+# 파일 이름(확장자 없이). 영상에 적힌 fps 가 아니라 '실제로 화면이 바뀌는 횟수'로 잰 값이다 — 30fps 로 적혀 있어도
+# 같은 장면을 3~10번씩 반복하는 영상이 있다(outputs/analysis/effective_fps_261104/, 측정 eff_fps.py).
+# 영상 파일은 LOW_FPS_EXCLUDED_DIR 로 옮긴다: python -m model.lowfps_move --apply (서버에서도 한 번).
+# 아직 안 옮긴 컴퓨터에서도 같은 결과가 나오게 학습·평가·postproc_check·robust_check·fp16_check·val_recheck 가
+# 이 목록을 한 번 더 뺀다. 검증은 위 TRAIN_SPLIT_LOCK 으로 고정돼 다른 영상의 분할은 바뀌지 않는다(ReA_0005 만 빠짐).
+# 딱 10fps 인 영상(ReA_0007·0011·0024·0033, ReS_0028, TA_0004·0011·0015, TS_0007)은 남긴다.
+# 서버 RC 817개는 아직 안 쟀다(로컬 RC 16개는 모두 30fps). 목록으로 빼는 것만 끄기: 환경변수 EXCLUDE_LOW_FPS=0
+LOW_FPS_EXCLUDED_DIR = _ROOT / "data" / "excluded_lowfps"   # 안에 train/·eval/ — 원래 폴더 구조 그대로
+LOW_FPS_VIDEOS = (
+    # 학습(9)
+    '260827_ReA_0029', '260827_ReA_0030',
+    '260909_ReS_0002', '260909_ReS_0003', '260909_ReS_0004', '260909_ReS_0010',
+    '260909_ReS_0016', '260909_ReS_0022', '260909_ReS_0025',
+    # 검증(1)
+    '260827_ReA_0005',
+    # 평가(7)
+    '260828_TA_0001', '260828_TA_0002', '260828_TA_0005',
+    '260909_TS_0003', '260909_TS_0004', '260909_TS_0006', '260909_TS_0008',
+)
+EXCLUDE_LOW_FPS = os.getenv("EXCLUDE_LOW_FPS", "1").strip() != "0"
+EXCLUDE_VIDEOS = frozenset(LOW_FPS_VIDEOS) if EXCLUDE_LOW_FPS else frozenset()
 
 # ---------- 비충돌(S) 클립 슬라이싱 ----------
 # 기존 구현은 S 영상당 '맨 앞 30프레임' 1개만 학습에 넣었다(start_f=0 고정).

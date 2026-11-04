@@ -83,10 +83,17 @@ def _val_indices(dataset, split, data_dir):
     def _key(p):
         return str(p).replace('\\', '/')     # 다른 OS(Windows)에서 학습한 회차도 읽게
 
-    want = {_key(v) for v in split['val']}
+    # 10fps 미만 영상(config.EXCLUDE_VIDEOS)은 뺀다 — 2026-11-04 전 회차의 검증(ReA_0005 포함)도
+    # 지금 검증(model/split_lock.json)과 같은 영상으로 재게 된다. 학습 CSV 와의 검산은 그만큼 다를 수 있다.
+    excl = set(getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
+    want = {_key(v) for v in split['val']
+            if os.path.splitext(os.path.basename(_key(v)))[0] not in excl}
     rc, real, seen = [], [], set()
+    roots = [Path(r).resolve() for r in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
     for i, s in enumerate(dataset.samples):
-        key = _key(os.path.relpath(s.get('video_key', s['mp4_path']), data_dir))
+        vk = Path(s.get('video_key', s['mp4_path'])).resolve()
+        root = next((r for r in roots if r in vk.parents), roots[-1])
+        key = _key(os.path.relpath(vk, root))
         if key in want:
             seen.add(key)
             (real if 'realdata' in Path(s['mp4_path']).parts else rc).append(i)
@@ -149,14 +156,29 @@ def _run(args, run_dir, th, out_base):
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
     channels_last = bool(config.USE_CHANNELS_LAST) and is_channels_last_3d_supported(device)
+    # 검증 영상 찾을 곳: 검증 폴더(config.VAL_DATA_DIR, 11-04~ 옮김) → 회차의 학습 폴더(그 전 회차는 여기서 나눔).
+    # 회차의 검증 영상이 모두 검증 폴더에 있으면 학습 폴더는 읽지 않는다(빠름).
+    roots = []
+    vdir = Path(split.get('val_dir') or getattr(config, 'VAL_DATA_DIR', '') or '')
+    if str(vdir) not in ('', '.') and not vdir.exists():
+        vdir = Path(getattr(config, 'VAL_DATA_DIR', '') or '')
+    if str(vdir) not in ('', '.') and vdir.exists():
+        roots.append(vdir)
+    if not roots or any(not (roots[0] / v.replace('\\', '/')).exists() for v in split['val']):
+        roots.append(data_dir)
     dataset = HitAndRunDataset(
-        data_dir=data_dir, augment=False, span_windows=True,
+        data_dir=roots, augment=False, span_windows=True,
         cache_dir=config.TRAIN_VAL_CACHE_DIR if getattr(config, 'TRAIN_VAL_CACHE', False) else None)
-    rc_idx, real_idx, missing = _val_indices(dataset, split, data_dir)
-    print(f'[검증 영상] {data_dir} — 회차의 검증 영상 {len(split["val"])}개 중 못 찾음 {missing}개 · '
+    rc_idx, real_idx, missing = _val_indices(dataset, split, roots)
+    print(f'[검증 영상] {" + ".join(str(r) for r in roots)} — 회차의 검증 영상 {len(split["val"])}개 중 못 찾음 {missing}개 · '
           f'클립 rc {len(rc_idx)} / real {len(real_idx)}')
     if missing:
         print('⚠️ 없는 검증 영상이 있어 학습 때와 검증 세트가 다릅니다(검산이 맞지 않을 수 있음)')
+    n_ex = sum(os.path.splitext(os.path.basename(v.replace('\\', '/')))[0]
+               in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ()) for v in split['val'])
+    if n_ex:
+        print(f'⚠️ 회차 검증 중 10fps 미만(config.LOW_FPS_VIDEOS) {n_ex}개를 빼고 잽니다 — 학습 CSV 검산은 diff 로 '
+              f'나올 수 있습니다(당시 그대로 재려면 EXCLUDE_LOW_FPS=0, 영상이 폴더에 있어야 함)')
     doms = [d for d in ('rc', 'real') if args.domain in ('all', d)]
     idx = {'rc': rc_idx, 'real': real_idx}
     loaders = {d: _make_loader(Subset(dataset, idx[d]), batch_size=config.TRAIN_BATCH_SIZE, shuffle=False,
