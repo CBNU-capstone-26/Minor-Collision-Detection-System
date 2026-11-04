@@ -442,6 +442,13 @@ def _wrong_now(wtag, cache):
             continue
         _, rows = _score(data, config.A_THRESHOLD, coarse_prob=config.PREDICT_COARSE_PROB)
         wrong = [r for r in rows if (r['gt'] == 'A' and not r['caught']) or (r['gt'] == 'S' and r['events'])]
+        night = getattr(config, 'NIGHT_VIDEOS', ()) or ()
+        nr = [r for r in rows if r['name'] in night]
+        if nr:     # 야간 영상만 따로(불빛 오탐 추적, config.NIGHT_VIDEOS)
+            na = [r for r in nr if r['gt'] == 'A']
+            ns = [r for r in nr if r['gt'] == 'S']
+            print(f'  {set_name} 야간 {len(nr)}개: 사고 {len(na)}개 중 잡음 {sum(1 for r in na if r["caught"])}개 · '
+                  f'정상 {len(ns)}개 중 오탐 {sum(1 for r in ns if r["events"])}개')
         for r in wrong:
             pa, m = data[r['name']]
             box = f"{m['bbox'][2] - m['bbox'][0]}x{m['bbox'][3] - m['bbox'][1]}"
@@ -451,10 +458,10 @@ def _wrong_now(wtag, cache):
                 p_gt = pa[in_gt].max() if in_gt.any() else float('nan')
                 p_out = pa[~in_gt].max() if (~in_gt).any() else float('nan')
                 why = '모델이 못 봄' if p_gt <= config.A_THRESHOLD else '모델은 반응 — 후처리·거친 탐색에서 빠짐'
-                print(f'  {set_name} 놓침 {_short(r["name"]):<9} {m["fps"]:5.1f}fps 박스 {box:<8} 충돌 구간 최대 {p_gt:.2f} '
+                print(f'  {set_name} 놓침 {_short(r["name"]):<9}{"[야간]" if r["name"] in night else ""} {m["fps"]:5.1f}fps 박스 {box:<8} 충돌 구간 최대 {p_gt:.2f} '
                       f'· 그 밖 {p_out:.2f} · 이벤트 {r["events"] or "-"} — {why}')
             else:
-                print(f'  {set_name} 오탐 {_short(r["name"]):<9} {m["fps"]:5.1f}fps 박스 {box:<8} 최대 {pa.max():.2f}'
+                print(f'  {set_name} 오탐 {_short(r["name"]):<9}{"[야간]" if r["name"] in night else ""} {m["fps"]:5.1f}fps 박스 {box:<8} 최대 {pa.max():.2f}'
                       f'(창 {int(pa.argmax())}) · 이벤트 {r["events"]}')
 
 

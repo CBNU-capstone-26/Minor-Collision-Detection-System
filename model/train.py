@@ -560,6 +560,13 @@ def train_model(
         print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
               f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
 
+    # ── 불빛 증강 (config.TRAIN_LIGHT_AUG_PROB, 기본 끔) ── 켜면 이름에 _light
+    light_p = float(getattr(config, 'TRAIN_LIGHT_AUG_PROB', 0) or 0)
+    if light_p > 0:
+        run_tag = f"{run_tag}_light"
+        print(f"[불빛 증강] 켬 — 확률 {light_p:g} · 사고·정상 같은 확률 · 훑기 60%/비추기 40% · "
+              f"{config.TRAIN_LIGHT_DARK_PROB:.0%}는 먼저 어둡게(0.25~0.6)")
+
     # ── 입력 크기 (config.INPUT_SIZE, 기본 224) ── 다르면 이름에 _s<크기> — 가중치를 읽을 때 이 표시로 크기를 맞춘다
     if config.RESIZE[0] != 224:
         run_tag = f"{run_tag}_s{config.RESIZE[0]}"
@@ -685,6 +692,7 @@ def train_model(
         ('저화질 증강', (f'확률 {lq_p:g} · 줄이기 {config.TRAIN_LQ_SIZE_PROB:g} · CRF {config.TRAIN_LQ_CRF_RANGE[0]}~'
                     f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
+        ('불빛 증강', f'확률 {light_p:g} (사고·정상 같은 확률)' if light_p > 0 else '끔'),
     ]
     write_run_info(run_dir, run_info)
 

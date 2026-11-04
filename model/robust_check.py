@@ -95,6 +95,16 @@ def _jpeg_one(f, q):
 
 
 TRAINED, UNTRAINED, KEYFRAME = '학습한 증강', '학습 안 한 변형', 'H.264 키프레임(화질 튐)'
+LIGHT = '불빛(야간)'
+
+
+def _light(**kw):
+    """밤처럼 어둡게(×0.4) 한 뒤 움직이는 불빛을 더한다 — dataset.add_light(불빛 증강과 같은 함수), 값은 고정."""
+    def fn(frames, seed):
+        from dataset import add_light
+        return add_light(list(frames), **kw)
+    return fn
+
 H264_CRF = 35
 
 
@@ -131,6 +141,18 @@ try:
     KEYFRAME_NOTE = ''
 except ImportError:
     KEYFRAME_NOTE = 'PyAV(av) 가 없어 H.264 키프레임 변형은 건너뜀 — pip install av'
+
+
+# 불빛(2026-11-05): 같은 '밤(×0.4)'에 불빛만 더한 것과 비교해 불빛 때문에 P(A)가 오르는지(정상 창) · 떨어지는지(사고 창)
+CONDITIONS += [
+    ('night', '밤처럼 어둡게 ×0.4', LIGHT, _light(kind='none', dark=0.4)),
+    ('lsweep', '+ 흰 빛 훑기', LIGHT, _light(kind='sweep', dark=0.4, peak=160, radius=0.35, t0=8, dur=14,
+                                             direction=1, color='white')),
+    ('lramp', '+ 따뜻한 빛 비추기', LIGHT, _light(kind='ramp', dark=0.4, peak=120, t0=10, dur=8, direction=-1,
+                                              color='warm')),
+    ('lred', '+ 빨간 미등 훑기', LIGHT, _light(kind='sweep', dark=0.4, peak=140, radius=0.2, t0=8, dur=14,
+                                            direction=-1, color='red')),
+]
 
 
 # ───────────────────────── 창 고르기·읽기 ─────────────────────────
@@ -338,6 +360,35 @@ def _report(rows):
         print('     → 화질이 나빠져도 판단이 크게 기울지 않습니다 — 지름길 징후는 약합니다.')
     if 'h264g30' in stats:
         _report_keyframe(rows, stats, th)
+    if 'night' in stats:
+        _report_light(rows, stats, th)
+
+
+def _report_light(rows, stats, th):
+    """4) 불빛: 같은 '밤'(night)에 불빛만 더했을 때 정상 창 P(A)가 오르는지(오탐 경향)·사고 창이 떨어지는지(불빛에 가려 놓침)."""
+    ref = {(v, s): p for v, gt, s, k, p in rows if k == 'night'}
+    c = stats['night']
+    print(f'  4) 불빛(같은 밤 ×0.4 에 불빛만 더함) — 밤: 정상 창 {c["ps"]:.3f} · 사고 창 {c["pa"]:.3f}')
+    worst_s, worst_a = None, None
+    for key in ('lsweep', 'lramp', 'lred'):
+        sub = [(v, gt, s, p) for v, gt, s, k, p in rows if k == key]
+        ds = [p - ref[(v, s)] for v, gt, s, p in sub if gt == 'S']
+        da = [p - ref[(v, s)] for v, gt, s, p in sub if gt == 'A']
+        new_fa = sum(gt == 'S' and ref[(v, s)] <= th < p for v, gt, s, p in sub)
+        new_miss = sum(gt == 'A' and ref[(v, s)] > th >= p for v, gt, s, p in sub)
+        print(f'     {stats[key]["name"]:<16} 정상 창 P(A) 변화 평균 {np.mean(ds):+.3f}(최대 {max(ds):+.3f}) · 새 오탐 창 {new_fa}개 · '
+              f'사고 창 {np.mean(da):+.3f} · 새로 놓친 사고 창 {new_miss}개')
+        if worst_s is None or np.mean(ds) > worst_s[1]:
+            worst_s = (stats[key]['name'], float(np.mean(ds)), new_fa)
+        if worst_a is None or np.mean(da) < worst_a[1]:
+            worst_a = (stats[key]['name'], float(np.mean(da)), new_miss)
+    n_s = stats['orig']['n_s']
+    if worst_s[1] > 0.03 or worst_s[2] >= max(2, 0.05 * n_s):
+        print(f'     → 불빛만으로 정상 창이 사고 쪽으로 기웁니다({worst_s[0]}) — 야간 불빛 오탐 경향. 불빛 증강·야간 정상 영상으로 보완')
+    else:
+        print('     → 불빛에 정상 창 판단이 거의 흔들리지 않습니다.')
+    if worst_a[1] < -0.05:
+        print(f'     → 불빛이 있으면 사고 창 P(A)가 떨어집니다({worst_a[0]}) — 전조등을 켠 차의 야간 충돌을 놓칠 수 있음')
 
 
 def _report_keyframe(rows, stats, th):

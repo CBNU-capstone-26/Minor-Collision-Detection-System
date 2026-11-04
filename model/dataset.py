@@ -60,6 +60,44 @@ def h264_roundtrip(frames, crf, gop):
     return dec
 
 
+LIGHT_COLORS = {'white': (255, 255, 255), 'warm': (255, 236, 200), 'cool': (215, 232, 255), 'red': (255, 60, 50)}
+
+
+def add_light(frames, kind, dark=1.0, peak=150.0, radius=0.35, t0=8, dur=14, direction=1, color='white', y=0.55):
+    """크롭 프레임(RGB uint8, 같은 크기)에 움직이는 불빛을 더한다 — 불빛 증강·robust_check 불빛 변형 공용(2026-11-05).
+
+    dark     : 먼저 곱할 밝기 배율(밤처럼, 1 이면 그대로)
+    kind     : 'sweep' = 타원 빛 덩어리가 t0 부터 dur 프레임 동안 한쪽 끝에서 반대쪽으로 지나감(지나가는 차 전조등이 훑음)
+               'ramp'  = t0 부터 dur 프레임 동안 서서히 밝아져 그대로 유지, 한쪽이 더 밝은 기울기(다가오는 차가 비춤)
+    peak     : 더하는 밝기 최대(0~255), radius: 빛 덩어리 가로 반지름(크롭 한 변 대비), y: 빛 중심 높이(크롭 대비)
+    direction: 1 = 왼쪽→오른쪽(ramp 는 왼쪽이 밝음), -1 = 반대. color: LIGHT_COLORS 키
+    모양은 프레임마다 매끄럽게 이어지고(빛만 움직임) 차체 윤곽은 그대로다 — 밝기 변화 ≠ 흔들림을 가르치려는 것.
+    """
+    n = len(frames)
+    h, w = frames[0].shape[:2]
+    col = np.array(LIGHT_COLORS.get(color, LIGHT_COLORS['white']), np.float32) / 255.0
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    sx, sy = max(2.0, radius * w), max(2.0, radius * w * 0.6)
+    # 크롭이 화면 밖으로 나가 검게 채운 곳(모든 프레임에서 0)은 장면이 아니라 빛을 받지 않는다
+    keep = (~np.all(np.stack(frames) == 0, axis=(0, 3)))[..., None].astype(np.float32)
+    out = []
+    for t, f in enumerate(frames):
+        img = f.astype(np.float32) * dark
+        u = (t - t0) / max(1, dur)
+        if kind == 'sweep' and 0.0 <= u <= 1.0:
+            cx = (-sx + u * (w + 2 * sx)) if direction > 0 else (w + sx - u * (w + 2 * sx))
+            g = np.exp(-(((xx - cx) / sx) ** 2 + ((yy - y * h) / sy) ** 2) / 2.0)
+            amp = peak * math.sin(math.pi * u) ** 0.5           # 들어오고 나갈 때 부드럽게
+            img = img + amp * g[..., None] * col * keep
+        elif kind == 'ramp' and u >= 0.0:
+            s = min(1.0, u)
+            s = s * s * (3 - 2 * s)                               # 부드럽게 밝아짐
+            grad = (xx / max(1, w - 1)) if direction < 0 else (1.0 - xx / max(1, w - 1))
+            img = img + peak * s * (0.35 + 0.65 * grad)[..., None] * col * keep
+        out.append(np.clip(img, 0, 255).astype(np.uint8))
+    return out
+
+
 def limit_cv2_threads(n, _worker_id=None):
     """OpenCV 계산(색 변환·크기 줄이기) 스레드 수를 n 으로. 로더를 만들기 전에 부모 프로세스에서 한 번 부르고,
     DataLoader worker_init_fn 으로도 넘긴다(functools.partial(limit_cv2_threads, n)).
@@ -340,6 +378,21 @@ class HitAndRunDataset(Dataset):
 
         return aug_frames
 
+    def _apply_light(self, frames):
+        """불빛 증강(config.TRAIN_LIGHT_AUG_PROB, 학습 전용 — 주석은 config). 사고·정상 구분 없이 같은 확률로, 클립마다
+        훑기·비추기 중 하나와 세기·크기·방향·색·시점을 하나씩 뽑는다. 확률 0 이면 난수를 쓰지 않는다."""
+        p = float(getattr(config, 'TRAIN_LIGHT_AUG_PROB', 0.0) or 0.0)
+        if p <= 0 or random.random() >= p:
+            return frames
+        n = len(frames)
+        dur = random.randint(6, 30)
+        dark = random.uniform(0.25, 0.6) if random.random() < getattr(config, 'TRAIN_LIGHT_DARK_PROB', 0.7) else 1.0
+        return add_light(frames, 'sweep' if random.random() < 0.6 else 'ramp', dark=dark,
+                         peak=random.uniform(60, 200), radius=random.uniform(0.2, 0.6),
+                         t0=random.randint(-dur // 2, n - dur // 2), dur=dur, direction=random.choice((1, -1)),
+                         color=random.choices(('white', 'warm', 'cool', 'red'), weights=(4, 3, 2, 1))[0],
+                         y=random.uniform(0.3, 0.8))
+
     def _apply_low_quality(self, frames, crop_side):
         """저화질 증강(config.TRAIN_LQ_AUG_PROB, 학습 전용 — 주석은 config). 깨끗한 클립만 H.264 로 압축했다 풀고,
         TRAIN_LQ_SIZE_PROB 비율은 먼저 작게 줄였다 다시 키운다. 값은 클립마다 하나(모든 프레임이 같은 영상)."""
@@ -538,6 +591,8 @@ class HitAndRunDataset(Dataset):
 
         # 증강은 학습 세트에만 적용 (검증 세트는 결정적이어야 val loss가 안정됨)
         if self.augment:
+            # 불빛 증강은 장면에 비치는 빛이라 색·노이즈·저화질보다 먼저(기본 끔 — config.TRAIN_LIGHT_AUG_PROB)
+            frames = self._apply_light(frames)
             frames = self._apply_augmentation(frames)
             # 저화질 증강은 색·노이즈 뒤에(찍은 뒤 저장할 때 압축되는 순서). 원본 프레임 크롭 한 변으로 대상을 고른다
             frames = self._apply_low_quality(frames, max(bbox[2] - bbox[0], bbox[3] - bbox[1]) * r)
