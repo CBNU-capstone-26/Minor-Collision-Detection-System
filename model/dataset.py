@@ -349,7 +349,7 @@ class HitAndRunDataset(Dataset):
         hue = random.uniform(-0.1, 0.1)  # 카메라 화이트밸런스·조명 색온도 차이
 
         # 야간 적외선(IR) CCTV: 사실상 무채색 영상 → 색 없이도 동작 판별하도록 학습
-        do_gray = random.random() < getattr(config, 'TRAIN_AUG_GRAY_PROB', 0.3)
+        do_gray = random.random() < getattr(config, 'TRAIN_AUG_GRAY_PROB', 0.2)
         # 저화질 CCTV: 초점 흐림/압축 열화(블러), 야간 게인으로 생긴 잔무늬(압축돼 멈춰 있는 잡음) 시뮬레이션
         do_blur = random.random() < 0.2
         do_noise = random.random() < getattr(config, 'TRAIN_AUG_NOISE_PROB', 0.2)
