@@ -831,6 +831,15 @@ body.dark-mode .list-search-bar:focus-within .search-icon {
   white-space: nowrap;
 }
 
+@media (max-width: 640px) {
+  .pagination-info {
+    grid-column: 1;
+    justify-self: center;
+    margin-left: 0;
+    text-align: center;
+  }
+}
+
 .video-card {
   cursor: pointer;
   border-radius: 6px;
@@ -6057,10 +6066,6 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 
   .pagination-controls > .pagination-nav:first-child,
   .pagination-controls > .pagination-nav:last-of-type {
-    display: none;
-  }
-
-  .pagination-pages .pagination-num:not(.active) {
     display: none;
   }
 

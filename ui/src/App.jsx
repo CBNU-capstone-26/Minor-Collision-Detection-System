@@ -279,6 +279,7 @@ function animateFullscreenRect(element, fromRect, toRect) {
 }
 
 function LoginPage({ onLogin }) {
+  const isTouchDevice = useMediaQuery("(pointer: coarse)");
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [error, setError] = useState(() => (cameFromExpiredLogin() ? AUTH_EXPIRED_MSG : ""));
@@ -295,6 +296,10 @@ function LoginPage({ onLogin }) {
     setIsModalClosing(false);
     setIsSignupOpen(false);
     setIsLoginOpen(true);
+  };
+  const goToLoginHome = () => {
+    navigate("/login", { replace: true });
+    window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
   const closeModal = () => {
     const finish = () => {
@@ -335,9 +340,11 @@ function LoginPage({ onLogin }) {
     setError("");
     try {
       const res = await api.login({ username: id, password: pw });
+      document.activeElement?.blur?.();
       saveAuth(res.token, res.user);
       onLogin(res.user);
       navigate("/videos");
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
     } catch (e) {
       setError(e.message);
     }
@@ -346,7 +353,7 @@ function LoginPage({ onLogin }) {
   return (
     <div className="public-login-page">
       <header className="public-navbar">
-        <button className="public-brand" onClick={() => navigate("/login")} aria-label="SIOT 홈으로 이동">
+        <button className="public-brand" onClick={goToLoginHome} aria-label="SIOT 홈으로 이동">
           <span className="workspace-wordmark" translate="no">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span>
         </button>
         <div className="public-nav-meta">
@@ -446,7 +453,7 @@ function LoginPage({ onLogin }) {
                   value={id}
                   onChange={(e) => setId(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                  autoFocus
+                  autoFocus={!isTouchDevice}
                 />
               </div>
 
@@ -1138,6 +1145,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 3열 이하(보통 화면)는 예전처럼 6개, 화면이 넓거나 축소해 열이 늘면 줄을 꽉 채운다(예: 6열 → 12개)
   const [videoGridEl, setVideoGridEl] = useState(null);
   const gridCols = useGridColumns(videoGridEl);
+  const isMobilePagination = useMediaQuery("(max-width: 640px)");
   const VIDEOS_PER_PAGE = gridCols * Math.max(2, Math.ceil(6 / gridCols));
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -1164,8 +1172,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   const getPageNumbers = () => {
-    const maxButtons = 5;
-    let start = Math.max(1, visiblePage - 2);
+    const maxButtons = isMobilePagination ? 3 : 5;
+    let start = Math.max(1, visiblePage - Math.floor(maxButtons / 2));
     let end = Math.min(totalPages, start + maxButtons - 1);
     if (end - start + 1 < maxButtons) {
       start = Math.max(1, end - maxButtons + 1);
