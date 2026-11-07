@@ -39,6 +39,10 @@ def _get_model():
     if is_channels_last_3d_supported(device) and model_config.USE_CHANNELS_LAST:
         model = model.to(memory_format=torch.channels_last_3d)
     # 배포 가중치 경로는 model/config.py 에서 관리 (SERVICE_WEIGHTS_PATH)
+    # 224 아닌 입력 크기(_s256)·avg 아닌 헤드 풀링(_top3 등)으로 학습한 가중치면 서버 .env 에 INPUT_SIZE·
+    # HEAD_TEMPORAL_POOL 을 같이 맞춰야 한다 — 다르면 여기서 멈춘다
+    from hitandrun_model import check_weights
+    check_weights(model_config.SERVICE_WEIGHTS_PATH)
     state_dict = torch.load(
         str(model_config.SERVICE_WEIGHTS_PATH), map_location="cpu", weights_only=True)
     model.load_state_dict(state_dict)

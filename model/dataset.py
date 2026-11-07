@@ -60,6 +60,44 @@ def h264_roundtrip(frames, crf, gop):
     return dec
 
 
+LIGHT_COLORS = {'white': (255, 255, 255), 'warm': (255, 236, 200), 'cool': (215, 232, 255), 'red': (255, 60, 50)}
+
+
+def add_light(frames, kind, dark=1.0, peak=150.0, radius=0.35, t0=8, dur=14, direction=1, color='white', y=0.55):
+    """크롭 프레임(RGB uint8, 같은 크기)에 움직이는 불빛을 더한다 — 불빛 증강·robust_check 불빛 변형 공용(2026-11-05).
+
+    dark     : 먼저 곱할 밝기 배율(밤처럼, 1 이면 그대로)
+    kind     : 'sweep' = 타원 빛 덩어리가 t0 부터 dur 프레임 동안 한쪽 끝에서 반대쪽으로 지나감(지나가는 차 전조등이 훑음)
+               'ramp'  = t0 부터 dur 프레임 동안 서서히 밝아져 그대로 유지, 한쪽이 더 밝은 기울기(다가오는 차가 비춤)
+    peak     : 더하는 밝기 최대(0~255), radius: 빛 덩어리 가로 반지름(크롭 한 변 대비), y: 빛 중심 높이(크롭 대비)
+    direction: 1 = 왼쪽→오른쪽(ramp 는 왼쪽이 밝음), -1 = 반대. color: LIGHT_COLORS 키
+    모양은 프레임마다 매끄럽게 이어지고(빛만 움직임) 차체 윤곽은 그대로다 — 밝기 변화 ≠ 흔들림을 가르치려는 것.
+    """
+    n = len(frames)
+    h, w = frames[0].shape[:2]
+    col = np.array(LIGHT_COLORS.get(color, LIGHT_COLORS['white']), np.float32) / 255.0
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    sx, sy = max(2.0, radius * w), max(2.0, radius * w * 0.6)
+    # 크롭이 화면 밖으로 나가 검게 채운 곳(모든 프레임에서 0)은 장면이 아니라 빛을 받지 않는다
+    keep = (~np.all(np.stack(frames) == 0, axis=(0, 3)))[..., None].astype(np.float32)
+    out = []
+    for t, f in enumerate(frames):
+        img = f.astype(np.float32) * dark
+        u = (t - t0) / max(1, dur)
+        if kind == 'sweep' and 0.0 <= u <= 1.0:
+            cx = (-sx + u * (w + 2 * sx)) if direction > 0 else (w + sx - u * (w + 2 * sx))
+            g = np.exp(-(((xx - cx) / sx) ** 2 + ((yy - y * h) / sy) ** 2) / 2.0)
+            amp = peak * math.sin(math.pi * u) ** 0.5           # 들어오고 나갈 때 부드럽게
+            img = img + amp * g[..., None] * col * keep
+        elif kind == 'ramp' and u >= 0.0:
+            s = min(1.0, u)
+            s = s * s * (3 - 2 * s)                               # 부드럽게 밝아짐
+            grad = (xx / max(1, w - 1)) if direction < 0 else (1.0 - xx / max(1, w - 1))
+            img = img + peak * s * (0.35 + 0.65 * grad)[..., None] * col * keep
+        out.append(np.clip(img, 0, 255).astype(np.uint8))
+    return out
+
+
 def limit_cv2_threads(n, _worker_id=None):
     """OpenCV 계산(색 변환·크기 줄이기) 스레드 수를 n 으로. 로더를 만들기 전에 부모 프로세스에서 한 번 부르고,
     DataLoader worker_init_fn 으로도 넘긴다(functools.partial(limit_cv2_threads, n)).
@@ -109,8 +147,10 @@ class HitAndRunDataset(Dataset):
 
         # data_dir 하위 폴더(rcdata/realdata 등)까지 재귀적으로 mp4를 수집한다.
         # → 최상위에 파일이 있어도(기존 방식) 하위 폴더에 있어도 모두 포함.
+        # data_dir 은 폴더 여러 개(목록)여도 된다 — val_recheck 가 검증 폴더 + 학습 폴더를 함께 읽을 때.
+        dirs = data_dir if isinstance(data_dir, (list, tuple)) else [data_dir]
         self.mp4_paths = sorted(
-            glob.glob(os.path.join(str(data_dir), '**', '*.mp4'), recursive=True))
+            p for d in dirs for p in glob.glob(os.path.join(str(d), '**', '*.mp4'), recursive=True))
         self.samples = self._build_index()
 
     def __len__(self):
@@ -156,6 +196,7 @@ class HitAndRunDataset(Dataset):
                     'bbox': target_bbox if car == target_id else bboxes[car],
                     'car_id': car,           # 크롭 기준 차량 번호
                     'fps': fps,              # 시간 지터를 '초' 기준으로 맞추기 위함
+                    'total': total,          # fps 증강이 k배로 읽을 수 있는지 확인용
                 }
                 if wins is not None:
                     sample['win_starts'] = wins  # span: 구간을 덮는 창들의 시작 프레임
@@ -287,25 +328,30 @@ class HitAndRunDataset(Dataset):
         return cv2.resize(cropped_frame, self.resize, interpolation=cv2.INTER_LINEAR)
 
     def _apply_augmentation(self, frames):
-        # 실제 주차장 CCTV 환경 대응 데이터 증강
+        # 실제 주차장 CCTV 환경 대응 데이터 증강 — 세기·확률 근거는 config '기본 영상 증강 세기'(2026-11-05 조정)
         # 변환 파라미터는 클립당 1회 샘플링해 모든 프레임에 동일 적용 (시간적 일관성 유지)
-        # ※ 센서 노이즈만 프레임별로 새로 샘플링 (실제 노이즈는 프레임마다 다름)
+        # 노이즈도 클립 내내 같은 잔무늬다(프레임마다 새로 뽑으면 픽셀이 깜빡여 미세한 흔들림을 덮는다 — 실제 압축 영상엔 없음)
 
         do_hflip = random.random() > 0.5
 
         # 밝기·대비·채도·색조: 조명 변화, 날씨, 카메라 색감 차이 시뮬레이션
         do_jitter = random.random() > 0.5
-        brightness = random.uniform(0.6, 1.4)   # 어두운 지하주차장 ~ 밝은 외부
+        brightness = random.uniform(*getattr(config, 'TRAIN_AUG_BRIGHTNESS', (0.4, 1.4)))   # 야간·지하주차장 ~ 밝은 외부
         contrast = random.uniform(0.7, 1.3)   # 저대비(흐린 날) ~ 고대비(직사광)
         saturation = random.uniform(0.7, 1.3)   # 카메라별 채도 특성 차이
         hue = random.uniform(-0.1, 0.1)  # 카메라 화이트밸런스·조명 색온도 차이
 
         # 야간 적외선(IR) CCTV: 사실상 무채색 영상 → 색 없이도 동작 판별하도록 학습
-        do_gray = random.random() < 0.15
-        # 저화질 CCTV: 초점 흐림/압축 열화(블러), 센서 노이즈(야간 게인↑) 시뮬레이션
+        do_gray = random.random() < getattr(config, 'TRAIN_AUG_GRAY_PROB', 0.2)
+        # 저화질 CCTV: 초점 흐림/압축 열화(블러), 야간 게인으로 생긴 잔무늬(압축돼 멈춰 있는 잡음) 시뮬레이션
         do_blur = random.random() < 0.2
-        do_noise = random.random() < 0.2
-        noise_sigma = random.uniform(2.0, 8.0)
+        do_noise = random.random() < getattr(config, 'TRAIN_AUG_NOISE_PROB', 0.2)
+        noise_sigma = random.uniform(*getattr(config, 'TRAIN_AUG_NOISE_SIGMA', (2.0, 8.0)))
+        grain = None
+        if do_noise:
+            # 클립 내내 같은 잔무늬 — 흑백 클립은 밝기 잡음만(색 잡음이 끼면 적외선 영상답지 않다)
+            h, w = frames[0].shape[:2]
+            grain = np.random.normal(0.0, noise_sigma, (h, w, 1 if do_gray else 3)).astype(np.float32)
 
         aug_frames = []
         for frame in frames:
@@ -322,13 +368,26 @@ class HitAndRunDataset(Dataset):
             if do_blur:
                 img = TF.gaussian_blur(img, kernel_size=3)
             arr = np.array(img)
-            if do_noise:
-                noise = np.random.normal(0.0, noise_sigma, arr.shape)
-                arr = np.clip(arr.astype(np.float32) + noise,
-                              0, 255).astype(np.uint8)
+            if grain is not None:
+                arr = np.clip(arr.astype(np.float32) + grain, 0, 255).astype(np.uint8)
             aug_frames.append(arr)
 
         return aug_frames
+
+    def _apply_light(self, frames):
+        """불빛 증강(config.TRAIN_LIGHT_AUG_PROB, 학습 전용 — 주석은 config). 사고·정상 구분 없이 같은 확률로, 클립마다
+        훑기·비추기 중 하나와 세기·크기·방향·색·시점을 하나씩 뽑는다. 확률 0 이면 난수를 쓰지 않는다."""
+        p = float(getattr(config, 'TRAIN_LIGHT_AUG_PROB', 0.0) or 0.0)
+        if p <= 0 or random.random() >= p:
+            return frames
+        n = len(frames)
+        dur = random.randint(6, 30)
+        dark = random.uniform(0.25, 0.6) if random.random() < getattr(config, 'TRAIN_LIGHT_DARK_PROB', 0.7) else 1.0
+        return add_light(frames, 'sweep' if random.random() < 0.6 else 'ramp', dark=dark,
+                         peak=random.uniform(60, 200), radius=random.uniform(0.2, 0.6),
+                         t0=random.randint(-dur // 2, n - dur // 2), dur=dur, direction=random.choice((1, -1)),
+                         color=random.choices(('white', 'warm', 'cool', 'red'), weights=(4, 3, 2, 1))[0],
+                         y=random.uniform(0.3, 0.8))
 
     def _apply_low_quality(self, frames, crop_side):
         """저화질 증강(config.TRAIN_LQ_AUG_PROB, 학습 전용 — 주석은 config). 깨끗한 클립만 H.264 로 압축했다 풀고,
@@ -441,6 +500,36 @@ class HitAndRunDataset(Dataset):
             size += n_read * self.resize[0] * self.resize[1] * 3
         return have, len(indices), size / 2 ** 30
 
+    def _fps_aug_stride(self, sample, starts):
+        """fps 증강(config.TRAIN_FPS_AUG_PROB, 학습 전용 — 주석은 config)으로 몇 장마다 한 장 고를지. 안 하면 1.
+        확률 0 이면 난수를 쓰지 않아 기존 학습과 같다."""
+        p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0.0) or 0.0)
+        if p <= 0 or len(starts) != 1 or random.random() >= p:
+            return 1
+        fps = float(sample.get('fps', 30.0))
+        ks = [k for k in getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3))
+              if k > 1 and fps / k >= getattr(config, 'TRAIN_FPS_AUG_MIN_FPS', 8.0)]
+        if not ks:
+            return 1
+        k = random.choice(ks)
+        total = int(sample.get('total', 0) or 0)
+        if total and total < (self.clip_length - 1) * k + 1:
+            return 1                           # 영상이 짧아 k배로 못 읽음 — 그대로
+        return k
+
+    def _read_strided(self, sample, start, k, bbox, r):
+        """start 근처에서 (clip_length − 1)·k + 1 프레임을 읽어 k장마다 한 장 → clip_length 장.
+        사고 클립은 충돌 시작이 원래처럼 TRAIN_A_PRE_FRAMES 번째에 오게 앞쪽을 k배로 늘린다."""
+        n = (self.clip_length - 1) * k + 1
+        s0 = start
+        if sample['label'] == 1:
+            s0 = start - int(getattr(config, 'TRAIN_A_PRE_FRAMES', 0)) * (k - 1)
+        total = int(sample.get('total', 0) or 0)
+        if total:
+            s0 = min(s0, total - n)            # 영상 끝을 넘지 않게
+        s0 = max(0, s0)
+        return self._read_frames(sample['mp4_path'], s0, n, bbox, r)[::k]
+
     def _frames_to_tensor(self, frames):
         arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
         video_tensor = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()
@@ -479,26 +568,27 @@ class HitAndRunDataset(Dataset):
             hw, hh = int(bw * s / 2), int(bh * s / 2)
             bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
 
-        # r 증강(학습 전용): 클립마다 r을 하나 뽑아 '모든 프레임에 동일 적용'한다.
-        # 검증/추론은 항상 self.r_value(=1.0) → 서비스 추론 조건과 일치.
+        # 크롭 배율은 학습·검증·서비스 모두 self.r_value(=config.R_VALUE, 1.0). 학습 중 r 을 넓히던 r 증강은 2026-11-05 삭제
         r = self.r_value
-        if (self.augment
-                and getattr(config, 'TRAIN_R_AUGMENT_VALUES', ())
-                and random.random() < getattr(config, 'TRAIN_R_AUGMENT_PROB', 0.0)):
-            r = random.choice(config.TRAIN_R_AUGMENT_VALUES)
 
         # 첫 창 시작부터 마지막 창 끝까지 한 번에 읽는다(창 1개면 clip_length 프레임).
         # 모든 창이 같은 박스·r·증강을 쓰게 되어, 같은 충돌의 다른 시점일 뿐이 된다.
         s0 = min(starts)
-        n_read = max(starts) - s0 + self.clip_length
-        cache = self._cache_path(sample['mp4_path'], s0, n_read, bbox, r)
-        frames = self._cache_load(cache, n_read)
-        if frames is None:
-            frames = self._read_frames(sample['mp4_path'], s0, n_read, bbox, r)
-            self._cache_save(cache, frames)
+        k = self._fps_aug_stride(sample, starts) if self.augment else 1
+        if k > 1:
+            frames = self._read_strided(sample, s0, k, bbox, r)
+        else:
+            n_read = max(starts) - s0 + self.clip_length
+            cache = self._cache_path(sample['mp4_path'], s0, n_read, bbox, r)
+            frames = self._cache_load(cache, n_read)
+            if frames is None:
+                frames = self._read_frames(sample['mp4_path'], s0, n_read, bbox, r)
+                self._cache_save(cache, frames)
 
         # 증강은 학습 세트에만 적용 (검증 세트는 결정적이어야 val loss가 안정됨)
         if self.augment:
+            # 불빛 증강은 장면에 비치는 빛이라 색·노이즈·저화질보다 먼저(기본 끔 — config.TRAIN_LIGHT_AUG_PROB)
+            frames = self._apply_light(frames)
             frames = self._apply_augmentation(frames)
             # 저화질 증강은 색·노이즈 뒤에(찍은 뒤 저장할 때 압축되는 순서). 원본 프레임 크롭 한 변으로 대상을 고른다
             frames = self._apply_low_quality(frames, max(bbox[2] - bbox[0], bbox[3] - bbox[1]) * r)

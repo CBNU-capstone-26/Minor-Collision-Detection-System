@@ -196,15 +196,23 @@ class _WithCam(torch.nn.Module):
 def _export_copy(model):
     """변환용 CPU 복사본 — 모델 객체를 복제하지 않고 가중치만 옮겨 새로 만든다(출력 logits, cam)."""
     from hitandrun_model import HitAndRun3DCNN
-    m = HitAndRun3DCNN(num_classes=model.head_conv.out_channels)
+    pool = getattr(model, 'temporal_pool', 'avg')
+    m = HitAndRun3DCNN(num_classes=model.head_conv.out_channels, temporal_pool=pool)
     m.load_state_dict({k: v.detach().cpu() for k, v in model.state_dict().items()})
     m.eval()
-    m.head_pool.pool = _TimeMean()
+    if pool == 'avg':
+        m.head_pool.pool = _TimeMean()      # top3·avgtop3 의 TemporalPool 은 mean·topk 라 그대로 바뀐다
     return _WithCam(m).eval()
 
 
+def _pool_tag():
+    """헤드 시간 풀링이 avg 가 아니면 변환 파일·검사 지문에 붙일 표시(avg 는 예전 이름 그대로 — 저장해 둔 것 재사용)."""
+    pool = getattr(config, 'HEAD_TEMPORAL_POOL', 'avg')
+    return '' if pool == 'avg' else f'_{pool}'
+
+
 def _onnx_path(state_hash):
-    return Path(config.INFER_CACHE_DIR) / f'x3d_{state_hash[:16]}_v{RUNTIME_VERSION}.onnx'
+    return Path(config.INFER_CACHE_DIR) / f'x3d_{state_hash[:16]}{_pool_tag()}_v{RUNTIME_VERSION}.onnx'
 
 
 def _ensure_onnx(model, state_hash, clip_shape):
@@ -307,7 +315,7 @@ def _save_cache(key, entry):
 
 def _fingerprint(state_hash, clip_shape, batch):
     return {
-        'runtime_version': RUNTIME_VERSION, 'weights': state_hash[:16],
+        'runtime_version': RUNTIME_VERSION, 'weights': state_hash[:16] + _pool_tag(),
         'clip_shape': list(clip_shape), 'batch': batch,
         'backend_cfg': (config.INFER_BACKEND or 'auto').lower(),
         'tol': config.INFER_CHECK_MAX_PROB_DIFF,

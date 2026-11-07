@@ -6,7 +6,7 @@
 
 평가 영상(config.EVAL_FOLDER_PATH)마다 창을 고른다 — 사고 영상은 충돌 시작 앞뒤(시작 25·20·15·10·5·0프레임 전 시작),
 정상 영상은 영상 전체에 고르게 12개. 창마다 30프레임을 학습·서비스와 같이 자르고 줄인 뒤(0번 차량 박스, r=1.0)
-변형별로 P(A)를 잰다. 변형은 클립 전체에 같은 값이다(노이즈만 프레임마다, 시드 고정).
+변형별로 P(A)를 잰다. 변형은 클립 전체에 같은 값이다(노이즈는 고정 잔무늬, 시드 고정).
   · 학습한 증강(dataset.py 와 같은 연산): 좌우 뒤집기 · 밝게 1.4 · 어둡게 0.6 · 대비 0.7 · 채도 0.7 · 색조 +0.1 ·
     흑백 · 흐림(3×3) · 노이즈 σ8
   · 학습하지 않은 변형: 저해상도(차량 크롭을 64·40px 로 줄였다 다시 키움 = 화면 속 작은 차) · 압축(JPEG 화질 25) ·
@@ -66,10 +66,17 @@ def _pil(fn):
 
 
 def _noise(frames, seed):
-    # 학습과 같이 프레임마다 새로 뽑는다(창마다 시드 고정 → 다시 돌려도 같다)
+    # 예전 학습 노이즈 — 프레임마다 새로 뽑는다(창마다 시드 고정 → 다시 돌려도 같다). 11-05 부터 학습엔 없음(참고용)
     rng = np.random.default_rng(seed)
     return [np.clip(f.astype(np.float32) + rng.normal(0.0, NOISE_SIGMA, f.shape), 0, 255).astype(np.uint8)
             for f in frames]
+
+
+def _grain(frames, seed):
+    # 지금 학습 노이즈(dataset._apply_augmentation) — 클립 내내 같은 잔무늬(창마다 시드 고정)
+    rng = np.random.default_rng(seed)
+    g = rng.normal(0.0, NOISE_SIGMA, frames[0].shape).astype(np.float32)
+    return [np.clip(f.astype(np.float32) + g, 0, 255).astype(np.uint8) for f in frames]
 
 
 def _low(size, jpeg=None):
@@ -90,7 +97,27 @@ def _jpeg_one(f, q):
     return cv2.cvtColor(cv2.imdecode(buf, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
 
 
-TRAINED, UNTRAINED = '학습한 증강', '학습 안 한 변형'
+TRAINED, UNTRAINED, KEYFRAME = '학습한 증강', '학습 안 한 변형', 'H.264 키프레임(화질 튐)'
+REF = '참고: 예전 학습 노이즈(매 프레임 깜빡임)'
+LIGHT = '불빛(야간)'
+
+
+def _light(**kw):
+    """밤처럼 어둡게(×0.4) 한 뒤 움직이는 불빛을 더한다 — dataset.add_light(불빛 증강과 같은 함수), 값은 고정."""
+    def fn(frames, seed):
+        from dataset import add_light
+        return add_light(list(frames), **kw)
+    return fn
+
+H264_CRF = 35
+
+
+def _h264(crf, gop):
+    """크롭 30프레임을 H.264 로 압축했다 푼다 — 키프레임은 gop 프레임마다(창 길이 이상이면 창 처음에만 = 튐 없음)."""
+    def fn(frames, seed):
+        from dataset import h264_roundtrip
+        return h264_roundtrip(list(frames), crf, gop)
+    return fn
 CONDITIONS = [
     ('orig', '원본', None, lambda frames, seed: frames),
     ('flip', '좌우 뒤집기', TRAINED, _pil(TF.hflip)),
@@ -101,11 +128,35 @@ CONDITIONS = [
     ('hue', '색조 +0.1', TRAINED, _pil(lambda im: TF.adjust_hue(im, 0.1))),
     ('gray', '흑백', TRAINED, _pil(lambda im: TF.rgb_to_grayscale(im, num_output_channels=3))),
     ('blur', '흐림 3×3', TRAINED, _pil(lambda im: TF.gaussian_blur(im, kernel_size=3))),
-    ('noise', f'노이즈 σ{NOISE_SIGMA:g}', TRAINED, _noise),
+    ('grain', f'잔무늬 노이즈 σ{NOISE_SIGMA:g}', TRAINED, _grain),
     ('low64', '저해상도 64px', UNTRAINED, _low(64)),
     ('low40', '저해상도 40px', UNTRAINED, _low(40)),
     ('jpeg25', 'JPEG 화질 25', UNTRAINED, lambda frames, seed: [_jpeg_one(f, 25) for f in frames]),
     ('low64j', '저해상도 64px+압축', UNTRAINED, _low(64, jpeg=25)),
+    ('noise', f'깜빡이는 노이즈 σ{NOISE_SIGMA:g}', REF, _noise),
+]
+try:
+    import av  # noqa: F401 — H.264 변형에 필요(dataset.h264_roundtrip)
+    CONDITIONS += [
+        ('h264g30', f'H.264 압축만(CRF {H264_CRF})', KEYFRAME, _h264(H264_CRF, 300)),
+        ('h264g15', '+ 15프레임마다 키프레임', KEYFRAME, _h264(H264_CRF, 15)),
+        ('h264g10', '+ 10프레임마다 키프레임', KEYFRAME, _h264(H264_CRF, 10)),
+        ('h264g15q', '+ 15프레임마다·CRF 42', KEYFRAME, _h264(42, 15)),
+    ]
+    KEYFRAME_NOTE = ''
+except ImportError:
+    KEYFRAME_NOTE = 'PyAV(av) 가 없어 H.264 키프레임 변형은 건너뜀 — pip install av'
+
+
+# 불빛(2026-11-05): 같은 '밤(×0.4)'에 불빛만 더한 것과 비교해 불빛 때문에 P(A)가 오르는지(정상 창) · 떨어지는지(사고 창)
+CONDITIONS += [
+    ('night', '밤처럼 어둡게 ×0.4', LIGHT, _light(kind='none', dark=0.4)),
+    ('lsweep', '+ 흰 빛 훑기', LIGHT, _light(kind='sweep', dark=0.4, peak=160, radius=0.35, t0=8, dur=14,
+                                             direction=1, color='white')),
+    ('lramp', '+ 따뜻한 빛 비추기', LIGHT, _light(kind='ramp', dark=0.4, peak=120, t0=10, dur=8, direction=-1,
+                                              color='warm')),
+    ('lred', '+ 빨간 미등 훑기', LIGHT, _light(kind='sweep', dark=0.4, peak=140, radius=0.2, t0=8, dur=14,
+                                            direction=-1, color='red')),
 ]
 
 
@@ -204,8 +255,8 @@ def _run(args, out_dir):
     vids = []
     for mp4 in sorted(folder.glob('*.mp4')):
         txt = mp4.with_suffix('.txt')
-        if not txt.exists():
-            continue
+        if not txt.exists() or mp4.stem in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ()):
+            continue   # 10fps 미만 영상(config.LOW_FPS_VIDEOS)은 뺀다
         bboxes, gt_sf, _ = _read_label(str(txt))
         if bboxes:
             vids.append((mp4, bboxes.get(config.TARGET_ID, next(iter(bboxes.values()))), gt_sf))
@@ -215,6 +266,8 @@ def _run(args, out_dir):
         vids = a + s
     n_a = sum(v[2] is not None for v in vids)
     print(f'영상: {folder} — 사고 {n_a}개 · 정상 {len(vids) - n_a}개 · 변형 {len(CONDITIONS) - 1}가지 + 원본')
+    if KEYFRAME_NOTE:
+        print(f'  ⚠️ {KEYFRAME_NOTE}')
 
     rows = []                                    # (영상, gt, 창 시작, 변형, P(A))
     t0 = time.perf_counter()
@@ -309,6 +362,60 @@ def _report(rows):
         print('     → 화질이 나빠지면 사고 창을 놓치는 쪽입니다(지름길보다는 저해상도에서 정보가 부족한 것).')
     else:
         print('     → 화질이 나빠져도 판단이 크게 기울지 않습니다 — 지름길 징후는 약합니다.')
+    if 'h264g30' in stats:
+        _report_keyframe(rows, stats, th)
+    if 'night' in stats:
+        _report_light(rows, stats, th)
+
+
+def _report_light(rows, stats, th):
+    """4) 불빛: 같은 '밤'(night)에 불빛만 더했을 때 정상 창 P(A)가 오르는지(오탐 경향)·사고 창이 떨어지는지(불빛에 가려 놓침)."""
+    ref = {(v, s): p for v, gt, s, k, p in rows if k == 'night'}
+    c = stats['night']
+    print(f'  4) 불빛(같은 밤 ×0.4 에 불빛만 더함) — 밤: 정상 창 {c["ps"]:.3f} · 사고 창 {c["pa"]:.3f}')
+    worst_s, worst_a = None, None
+    for key in ('lsweep', 'lramp', 'lred'):
+        sub = [(v, gt, s, p) for v, gt, s, k, p in rows if k == key]
+        ds = [p - ref[(v, s)] for v, gt, s, p in sub if gt == 'S']
+        da = [p - ref[(v, s)] for v, gt, s, p in sub if gt == 'A']
+        new_fa = sum(gt == 'S' and ref[(v, s)] <= th < p for v, gt, s, p in sub)
+        new_miss = sum(gt == 'A' and ref[(v, s)] > th >= p for v, gt, s, p in sub)
+        print(f'     {stats[key]["name"]:<16} 정상 창 P(A) 변화 평균 {np.mean(ds):+.3f}(최대 {max(ds):+.3f}) · 새 오탐 창 {new_fa}개 · '
+              f'사고 창 {np.mean(da):+.3f} · 새로 놓친 사고 창 {new_miss}개')
+        if worst_s is None or np.mean(ds) > worst_s[1]:
+            worst_s = (stats[key]['name'], float(np.mean(ds)), new_fa)
+        if worst_a is None or np.mean(da) < worst_a[1]:
+            worst_a = (stats[key]['name'], float(np.mean(da)), new_miss)
+    n_s = stats['orig']['n_s']
+    if worst_s[1] > 0.03 or worst_s[2] >= max(2, 0.05 * n_s):
+        print(f'     → 불빛만으로 정상 창이 사고 쪽으로 기웁니다({worst_s[0]}) — 야간 불빛 오탐 경향. 불빛 증강·야간 정상 영상으로 보완')
+    else:
+        print('     → 불빛에 정상 창 판단이 거의 흔들리지 않습니다.')
+    if worst_a[1] < -0.05:
+        print(f'     → 불빛이 있으면 사고 창 P(A)가 떨어집니다({worst_a[0]}) — 전조등을 켠 차의 야간 충돌을 놓칠 수 있음')
+
+
+def _report_keyframe(rows, stats, th):
+    """3) 키프레임 화질 튐: '압축만'(h264g30) 대비 키프레임을 창 안에 둔 변형에서 P(A)가 오르는지."""
+    ref = {(v, s): p for v, gt, s, k, p in rows if k == 'h264g30'}
+    c = stats['h264g30']
+    print(f'  3) 키프레임 화질 튐(같은 H.264 압축에 키프레임만 더 둔 것) — 압축만: 정상 창 {c["ps"]:.3f} · 사고 창 {c["pa"]:.3f}')
+    worst = None
+    for key in ('h264g15', 'h264g10', 'h264g15q'):
+        sub = [(v, gt, s, p) for v, gt, s, k, p in rows if k == key]
+        ds = [p - ref[(v, s)] for v, gt, s, p in sub if gt == 'S']
+        da = [p - ref[(v, s)] for v, gt, s, p in sub if gt == 'A']
+        new_fa = sum(gt == 'S' and ref[(v, s)] <= th < p for v, gt, s, p in sub)
+        print(f'     {stats[key]["name"]:<18} 정상 창 P(A) 변화 평균 {np.mean(ds):+.3f}(최대 {max(ds):+.3f}) · '
+              f'사고 창 {np.mean(da):+.3f} · 압축만에선 아니던 정상 오탐 창 {new_fa}개')
+        if worst is None or np.mean(ds) > worst[1]:
+            worst = (stats[key]['name'], float(np.mean(ds)), new_fa)
+    n_s = stats['orig']['n_s']
+    if worst[1] > 0.03 or worst[2] >= max(2, 0.05 * n_s):
+        print(f'     → 키프레임 화질 튐만으로 정상 창이 사고 쪽으로 기웁니다({worst[0]}) — 멈춘 장면의 압축 튐을 흔들림으로 '
+              '읽는 경향(ReS_0018 같은 오탐). 헤드 풀링을 바꿨다면 이 값이 늘었는지 대조군과 비교하세요.')
+    else:
+        print('     → 키프레임 화질 튐에 판단이 거의 흔들리지 않습니다.')
 
 
 if __name__ == '__main__':

@@ -93,7 +93,11 @@ def suggest(run_dir, k=None, gap=None):
                      f"{fp.name if fp else '(없음 — 에포크별 저장 전 학습)'}")
     have = [p for p in files if p]
     if have:
-        lines.append("  평가 명령(하나씩 차례로):")
-        lines.append("    for w in " + " ".join(str(p) for p in have) + "; do")
-        lines.append("      python -u -m model.main --mode eval --weights \"$w\"; done")
+        from hitandrun_model import weights_head_pool, weights_input_size
+        lines.append("  평가 명령(가중치 학습 설정을 자동으로 맞춥니다):")
+        for path in have:
+            size = weights_input_size(path.name)
+            pool = weights_head_pool(path.name)
+            env = (f"INPUT_SIZE={size} " if size else "") + (f"HEAD_TEMPORAL_POOL={pool} " if pool != 'avg' else "")
+            lines.append(f'    {env}python -u -m model.main --mode eval --weights "{path}"')
     return pick, lines
