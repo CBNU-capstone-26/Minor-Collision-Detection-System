@@ -1968,7 +1968,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   transform: translate(-50%, -50%) scale(1);
 }
 
-.progress-track.event-playing .progress-thumb {
+.progress-track.event-current .progress-thumb {
   width: 6px;
   height: 22px;
   border-radius: 0;
@@ -1982,6 +1982,17 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 .progress-track.seeking .progress-thumb {
   transition: none;
 }
+
+/* Click/tap moves the playhead with a short glide; an actual drag stays attached to the pointer. */
+.progress-track.click-seeking .progress-rail { height: 14px; }
+.progress-track.click-seeking .progress-thumb {
+  transform: translate(-50%, -50%) scale(1);
+  transition: left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1), transform 0.15s ease;
+}
+.progress-track.click-seeking .progress-fill {
+  transition: width 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.progress-track.click-seeking .progress-hover-time { opacity: 1; }
 
 /* 차량 탐지 중: 이동할 수 없음을 보여 준다(흐리게, 손잡이·시각 말풍선 숨김) */
 .progress-track.locked,

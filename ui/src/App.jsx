@@ -1,4 +1,17 @@
 import { useCallback, useMemo, useRef, useState, useEffect, useSyncExternalStore } from "react";
+import replay5Icon from "./assets/icons/replay-5.svg";
+import forward5Icon from "./assets/icons/forward-5.svg";
+import playArrowIcon from "./assets/icons/play_arrow.svg";
+import pauseIcon from "./assets/icons/pause.svg";
+import volumeUpIcon from "./assets/icons/volume_up.svg";
+import volumeOffIcon from "./assets/icons/volume_off.svg";
+import volumeDownIcon from "./assets/icons/volume_down.svg";
+import fastForwardIcon from "./assets/icons/fast_forward.svg";
+import fastRewindIcon from "./assets/icons/fast_rewind.svg";
+import speedIcon from "./assets/icons/speed.svg";
+import theatersIcon from "./assets/icons/theaters.svg";
+import fullscreenIcon from "./assets/icons/fullscreen.svg";
+import fullscreenExitIcon from "./assets/icons/fullscreen_exit.svg";
 import {
   BrowserRouter,
   Routes,
@@ -12,6 +25,22 @@ import "./App.css";
 import "./incident-ui.css";
 import "./premium-ui.css";
 import "./dashboard-dark.css"; // 다크 모드 통일 — 반드시 premium-ui.css 다음
+
+const VIDEO_FEEDBACK_ICONS = {
+  play: playArrowIcon,
+  pause: pauseIcon,
+  replay5: replay5Icon,
+  forward5: forward5Icon,
+  fastRewind: fastRewindIcon,
+  fastForward: fastForwardIcon,
+  volumeUp: volumeUpIcon,
+  volumeDown: volumeDownIcon,
+  volumeOff: volumeOffIcon,
+  speed: speedIcon,
+  theater: theatersIcon,
+  fullscreen: fullscreenIcon,
+  fullscreenExit: fullscreenExitIcon,
+};
 
 function InterfaceIcon({ name }) {
   const paths = {
@@ -885,7 +914,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [datePickerVideos, setDatePickerVideos] = useState(null); // 동일 날짜 영상 복수 존재 시 선택 모달 데이터
   const [playbackSpeed, setPlaybackSpeed] = useState("1");
   const [volume, setVolume] = useState(70);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [showVideoTapControls, setShowVideoTapControls] = useState(false);
+  const [videoClickFeedback, setVideoClickFeedback] = useState(null);
   const [mediaDuration, setMediaDuration] = useState(0); // <video> 가 알려준 실제 길이(초, 소수) — 재생바 위치 계산용
   const [isSeeking, setIsSeeking] = useState(false); // 재생바를 누른 채 끌어서 탐색 중
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -895,6 +926,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [clearingHistory, setClearingHistory] = useState(false);
   const [clipView, setClipView] = useState("cam");
   const camChipRef = useRef(null);
+  const videoTapControlsTimerRef = useRef(null);
+  const videoClickFeedbackTimerRef = useRef(null);
+  const videoClickFeedbackIdRef = useRef(0);
   const eventListRef = useRef(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
   const playerContainerRef = useRef(null);
@@ -903,8 +937,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const seekHoverRef = useRef(null); // 재생바 위 마우스 위치의 시각 말풍선 (마우스 움직임마다 다시 그리지 않게 직접 갱신)
   const isSeekingRef = useRef(false); // 끄는 중인지 — 이벤트 처리 중엔 다시 그리기 전이라 상태 대신 이걸 본다
   const seekStartXRef = useRef(0);
+  const seekDragThresholdRef = useRef(3);
   const didDragSeekRef = useRef(false);
   const seekCaptureTargetRef = useRef(null);
+  const seekInitialTimeRef = useRef(0);
+  const seekWasPlayingRef = useRef(false);
   const pendingSeekTimeRef = useRef(null);
   const lastSeekTargetRef = useRef(null);
   const seekPreviewFrameRef = useRef(0);
@@ -1068,6 +1105,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       setSelectedVideo(null);
       return;
     }
+    // 목록의 스크롤 위치가 남지 않도록 상세 화면 진입 즉시 맨 위로 이동한다.
+    window.scrollTo(0, 0);
     let cancelled = false;
     (async () => {
       try {
@@ -1662,9 +1701,67 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     else v.pause();
   }, [isDetectingVehicles]);
 
+  useEffect(() => () => {
+    clearTimeout(videoTapControlsTimerRef.current);
+    clearTimeout(videoClickFeedbackTimerRef.current);
+  }, []);
+
+  const revealVideoTapControls = () => {
+    setShowVideoTapControls(true);
+    clearTimeout(videoTapControlsTimerRef.current);
+    videoTapControlsTimerRef.current = setTimeout(() => setShowVideoTapControls(false), 2600);
+  };
+
+  const toggleVideoTapControls = () => {
+    if (showVideoTapControls) {
+      clearTimeout(videoTapControlsTimerRef.current);
+      setShowVideoTapControls(false);
+      return;
+    }
+    revealVideoTapControls();
+  };
+
+  const dismissVideoTapControls = useCallback(() => {
+    clearTimeout(videoTapControlsTimerRef.current);
+    setShowVideoTapControls(false);
+  }, []);
+
+  const usesTouchVideoControls = () =>
+    window.matchMedia("(pointer: coarse)").matches ||
+    window.matchMedia("(max-width: 1024px)").matches;
+
+  const showPlayerFeedback = useCallback((action) => {
+    if (usesTouchVideoControls()) return;
+    setVideoClickFeedback({ action, id: ++videoClickFeedbackIdRef.current });
+    clearTimeout(videoClickFeedbackTimerRef.current);
+    videoClickFeedbackTimerRef.current = setTimeout(() => setVideoClickFeedback(null), 820);
+  }, []);
+
+  const toggleDesktopVideoPlayback = useCallback(() => {
+    const video = videoElRef.current;
+    if (!video || isDetectingVehicles) return;
+    const action = video.paused ? "play" : "pause";
+    showPlayerFeedback(action);
+    dismissVideoTapControls();
+    togglePlay();
+  }, [dismissVideoTapControls, isDetectingVehicles, showPlayerFeedback, togglePlay]);
+
   // 재생바 길이 기준 — 실제 영상 길이(소수)를 쓰고, 영상 정보를 받기 전엔 서버가 준 길이(정수 초)
   const playerDuration = mediaDuration || selectedVideo?.duration || 0;
-  const isPlayingInEvent = isPlaying && selectedVideo?.events?.some((event) => {
+  const seekBySeconds = (delta) => {
+    const video = videoElRef.current;
+    if (!video || isDetectingVehicles) return;
+    const duration = Number.isFinite(video.duration) && video.duration > 0
+      ? video.duration : playerDuration;
+    const nextTime = Math.max(0, Math.min(duration || Infinity, video.currentTime + delta));
+    const wasPlaying = !video.paused;
+    video.currentTime = nextTime;
+    setCurrentTime(nextTime);
+    showPlayerFeedback(delta < 0 ? "replay5" : "forward5");
+    if (wasPlaying && video.paused) video.play().catch(() => {});
+    revealVideoTapControls();
+  };
+  const isCurrentTimeInEvent = selectedVideo?.events?.some((event) => {
     const start = event.startSec ?? event.timestamp;
     const end = Math.max(start, event.endSec ?? event.endTimestamp ?? start);
     return currentTime >= start && currentTime <= end;
@@ -1673,15 +1770,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 재생바: 누르거나 누른 채 끌어서 탐색하고, 마우스를 올리면 그 위치의 시각을 말풍선으로 보여준다
   const seekRatioAt = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
     return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
   };
 
-  const seekToRatio = (ratio) => {
-    const v = videoElRef.current;
-    if (!v || !v.duration) return;
-    v.currentTime = ratio * v.duration;
-    setCurrentTime(v.currentTime);
-  };
+  const seekDurationFor = (video) =>
+    Number.isFinite(video?.duration) && video.duration > 0 ? video.duration : playerDuration;
 
   const queueSeekPreview = (time) => {
     if (!Number.isFinite(time)) return;
@@ -1694,10 +1788,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       if (!v || v.seeking || pendingSeekTimeRef.current == null) return;
       const nextTime = pendingSeekTimeRef.current;
       pendingSeekTimeRef.current = null;
-      if (Math.abs(v.currentTime - nextTime) < 0.04) return;
-      if (typeof v.fastSeek === "function") v.fastSeek(nextTime);
-      else v.currentTime = nextTime;
-      setCurrentTime(v.currentTime);
+      if (Math.abs(v.currentTime - nextTime) < 0.001) return;
+      // fastSeek는 키프레임에 맞춰 초 단위로 건너뛸 수 있으므로, 드래그 위치를 그대로 요청한다.
+      v.currentTime = nextTime;
+      setCurrentTime(nextTime);
     });
   };
 
@@ -1716,28 +1810,34 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const captureTarget = e.target.closest?.(".event-range") || e.currentTarget;
     captureTarget.setPointerCapture?.(e.pointerId);
     seekCaptureTargetRef.current = captureTarget;
+    seekInitialTimeRef.current = videoElRef.current?.currentTime || 0;
+    seekWasPlayingRef.current = !!videoElRef.current && !videoElRef.current.paused;
     seekStartXRef.current = e.clientX;
+    seekDragThresholdRef.current = e.pointerType === "touch" ? 10 : 3;
     didDragSeekRef.current = false;
     isSeekingRef.current = true;
     setIsSeeking(true);
     const ratio = seekRatioAt(e);
-    lastSeekTargetRef.current = videoElRef.current?.duration
-      ? ratio * videoElRef.current.duration : null;
+    const duration = seekDurationFor(videoElRef.current);
+    lastSeekTargetRef.current = duration > 0 ? ratio * duration : null;
+    if (lastSeekTargetRef.current != null) setCurrentTime(lastSeekTargetRef.current);
     updateSeekBubble(e, ratio);
-    seekToRatio(ratio);
   };
 
   const handleSeekMove = (e) => {
-    if (isSeekingRef.current && Math.abs(e.clientX - seekStartXRef.current) > 3) {
+    if (isSeekingRef.current && Math.abs(e.clientX - seekStartXRef.current) > seekDragThresholdRef.current) {
       didDragSeekRef.current = true;
     }
     const ratio = seekRatioAt(e);
     updateSeekBubble(e, ratio);
-    if (isSeekingRef.current) {
+    if (isSeekingRef.current && didDragSeekRef.current) {
       const v = videoElRef.current;
-      if (v?.duration) {
-        lastSeekTargetRef.current = ratio * v.duration;
-        queueSeekPreview(lastSeekTargetRef.current);
+      const duration = seekDurationFor(v);
+      if (v && duration > 0) {
+        lastSeekTargetRef.current = ratio * duration;
+        setCurrentTime(lastSeekTargetRef.current);
+        // 모바일은 손가락 이동 중 fastSeek를 반복하지 않고, 놓을 때 최종 위치로 한 번만 이동한다.
+        if (e.pointerType !== "touch") queueSeekPreview(lastSeekTargetRef.current);
       }
     }
   };
@@ -1746,17 +1846,24 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     if (!isSeekingRef.current) return;
     isSeekingRef.current = false;
     const pendingTime = lastSeekTargetRef.current;
+    const seekDelta = pendingTime == null ? 0 : pendingTime - seekInitialTimeRef.current;
+    const shouldResumePlayback = seekWasPlayingRef.current;
+    const eventId = Number(seekCaptureTargetRef.current?.dataset.eventId);
+    const tappedEvent = !didDragSeekRef.current && eventId
+      ? selectedVideo?.events.find((event) => event.id === eventId)
+      : null;
     pendingSeekTimeRef.current = null;
     lastSeekTargetRef.current = null;
     if (seekPreviewFrameRef.current) {
       cancelAnimationFrame(seekPreviewFrameRef.current);
       seekPreviewFrameRef.current = 0;
     }
-    if (pendingTime != null) {
+    if (pendingTime != null && !tappedEvent) {
       const v = videoElRef.current;
       if (v) {
         v.currentTime = pendingTime;
         setCurrentTime(pendingTime);
+        setCurrentEventId(null);
       }
     }
     const captureTarget = seekCaptureTargetRef.current;
@@ -1764,11 +1871,53 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       captureTarget.releasePointerCapture(e.pointerId);
     }
     seekCaptureTargetRef.current = null;
+    seekWasPlayingRef.current = false;
     setIsSeeking(false);
+    didDragSeekRef.current = false;
+    if (Math.abs(seekDelta) > 0.05) {
+      showPlayerFeedback(seekDelta < 0 ? "fastRewind" : "fastForward");
+    }
+    // Touch 브라우저의 합성 click이 이동량에 따라 취소돼도 빨간 구간 탭은 재생되게 한다.
+    if (tappedEvent) {
+      const video = videoElRef.current;
+      seekToEvent(
+        tappedEvent,
+        pendingTime ?? (tappedEvent.startSec ?? tappedEvent.timestamp),
+        shouldResumePlayback,
+      );
+    } else if (shouldResumePlayback) {
+      const video = videoElRef.current;
+      if (video?.paused) video.play().catch(() => {});
+    }
+  };
+
+  const handleSeekCancel = (e) => {
+    if (!isSeekingRef.current) return;
+    isSeekingRef.current = false;
+    const shouldResumePlayback = seekWasPlayingRef.current;
+    pendingSeekTimeRef.current = null;
+    lastSeekTargetRef.current = null;
+    if (seekPreviewFrameRef.current) {
+      cancelAnimationFrame(seekPreviewFrameRef.current);
+      seekPreviewFrameRef.current = 0;
+    }
+    const captureTarget = seekCaptureTargetRef.current;
+    if (captureTarget?.hasPointerCapture?.(e.pointerId)) {
+      captureTarget.releasePointerCapture(e.pointerId);
+    }
+    seekCaptureTargetRef.current = null;
+    seekWasPlayingRef.current = false;
+    didDragSeekRef.current = false;
+    setIsSeeking(false);
+    if (videoElRef.current) setCurrentTime(videoElRef.current.currentTime);
+    if (shouldResumePlayback) {
+      const video = videoElRef.current;
+      if (video?.paused) video.play().catch(() => {});
+    }
   };
 
   const handleSeeked = (e) => {
-    setCurrentTime(e.currentTarget.currentTime);
+    if (!isSeekingRef.current) setCurrentTime(e.currentTarget.currentTime);
     if (isSeekingRef.current && pendingSeekTimeRef.current != null) {
       queueSeekPreview(pendingSeekTimeRef.current);
     }
@@ -1789,35 +1938,44 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         const duration = Number.isFinite(video.duration) ? video.duration : playerDuration;
         video.currentTime = Math.max(0, Math.min(duration, video.currentTime + delta));
         setCurrentTime(video.currentTime);
+        showPlayerFeedback(delta < 0 ? "replay5" : "forward5");
       } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         const next = Math.max(0, Math.min(100, volume + (e.key === "ArrowUp" ? 5 : -5)));
         setVolume(next);
         setIsMuted((muted) => (e.key === "ArrowUp" ? false : next === 0 ? true : muted));
+        showPlayerFeedback(e.key === "ArrowUp" ? "volumeUp" : "volumeDown");
       } else if (key === "m" || e.code === "KeyM") {
         e.preventDefault();
         if (isMuted || volume === 0) {
           if (volume === 0) setVolume(50);
           setIsMuted(false);
+          showPlayerFeedback("volumeUp");
         } else {
           setIsMuted(true);
+          showPlayerFeedback("volumeOff");
         }
       } else if (key === "t" || e.code === "KeyT") {
         e.preventDefault();
         if (selectionMode === "none" && !isDetectingVehicles) {
           setIsTheaterMode((enabled) => !enabled);
+          showPlayerFeedback("theater");
         }
       } else if (key === "f" || e.code === "KeyF") {
         e.preventDefault();
-        if ((selectionMode === "none" && !isDetectingVehicles) || isFullscreen) handleToggleFullscreen();
+        if ((selectionMode === "none" && !isDetectingVehicles) || isFullscreen) {
+          showPlayerFeedback(isFullscreen ? "fullscreenExit" : "fullscreen");
+          handleToggleFullscreen();
+        }
       } else if (e.code === "Space" || e.key === " ") {
         e.preventDefault();
-        togglePlay();
+        if (usesTouchVideoControls()) togglePlay();
+        else toggleDesktopVideoPlayback();
       }
     };
     document.addEventListener("keydown", onPlayerKeyDown);
     return () => document.removeEventListener("keydown", onPlayerKeyDown);
-  }, [selectedVideo, isDetectingVehicles, playerDuration, volume, isMuted, selectionMode, isFullscreen, togglePlay, handleToggleFullscreen]);
+  }, [selectedVideo, isDetectingVehicles, playerDuration, volume, isMuted, selectionMode, isFullscreen, togglePlay, toggleDesktopVideoPlayback, handleToggleFullscreen, showPlayerFeedback]);
 
   useEffect(() => {
     const player = bboxOverlayRef.current;
@@ -1830,13 +1988,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       setVolume(next);
       if (direction > 0) setIsMuted(false);
       else if (next === 0) setIsMuted(true);
+      showPlayerFeedback(direction > 0 ? "volumeUp" : next === 0 ? "volumeOff" : "volumeDown");
     };
     player.addEventListener("wheel", onPlayerWheel, { passive: false });
     return () => player.removeEventListener("wheel", onPlayerWheel);
-  }, [selectedVideo?.id, volume, isBBoxMode, isDetectingVehicles]);
+  }, [selectedVideo?.id, volume, isBBoxMode, isDetectingVehicles, showPlayerFeedback]);
 
   // 이벤트 구간 클릭 → 1초 앞부터 재생해 사고 직전 상황도 볼 수 있게 한다.
-  const seekToEvent = (event, exactTime = null) => {
+  const seekToEvent = (event, exactTime = null, shouldPlay = true) => {
     if (isDetectingVehicles) return;
     setCurrentEventId(event.id);
     const v = videoElRef.current;
@@ -1845,7 +2004,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       const eventStart = Math.max(0, (event.startSec ?? event.timestamp) - EVENT_PREROLL_SEC);
       v.currentTime = exactTime == null ? eventStart : Math.max(0, Math.min(duration, exactTime));
       setCurrentTime(v.currentTime);
-      v.play().catch(() => {});
+      if (shouldPlay) v.play().catch(() => {});
     }
   };
 
@@ -1853,8 +2012,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     if (isMuted || volume === 0) {
       if (volume === 0) setVolume(50);
       setIsMuted(false);
+      showPlayerFeedback("volumeUp");
     } else {
       setIsMuted(true);
+      showPlayerFeedback("volumeOff");
     }
   };
 
@@ -1880,8 +2041,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   useEffect(() => {
     const el = bboxOverlayRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => {
-      const { width, height } = el.getBoundingClientRect();
+    const ro = new ResizeObserver(([entry]) => {
+      // getBoundingClientRect() includes the fullscreen transition transform.
+      // Measuring the visual, animated bounds can leave CAM overlays positioned
+      // for an intermediate scale after fullscreen has already closed.
+      const { width, height } = entry?.contentRect || el.getBoundingClientRect();
       setOverlaySize((prev) => (prev && prev.w === width && prev.h === height ? prev : { w: width, h: height }));
     });
     ro.observe(el);
@@ -2045,6 +2209,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 넓은 화면의 영상 재생 화면에선 버튼 묶음을 왼쪽 칸 맨 위(사고 클립 사이드바 위)에 둔다.
   // 좁은 화면(1024px 이하)은 한 줄로 쌓여 사이드바가 영상 아래로 가므로 영상 위 헤더에 둔다.
   const isWideScreen = useMediaQuery("(min-width: 1025px)");
+  const isMobilePlayback = useMediaQuery("(max-width: 720px)");
   const actionsInSide = isWideScreen && !!selectedVideo;
 
   // 진행 단계(01 차량 선택 → 02 사고 구간 찾기 → 03 클립 검토).
@@ -2064,7 +2229,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const isChoosingVehicle = selectionMode !== "none" || isDetectingVehicles;
   const camEnabled = clipView === "cam" && !isChoosingVehicle;
   const camShown = camEnabled && selectedVideo
-    ? clipEventsAhead(selectedVideo.events, currentTime, currentEventId, 3) : [];
+    ? (isMobilePlayback
+      ? clipEventsAhead(selectedVideo.events, currentTime, currentEventId, 2).slice(0, 2)
+      : clipEventsAhead(selectedVideo.events, currentTime, currentEventId, 3))
+    : [];
   const camKey = camShown.map((e) => e.id).join(",");
 
   // 원본 재생 시각과 CAM 클립을 맞추고 현재 구간에 해당하는 클립만 겹쳐 보여 준다.
@@ -2081,21 +2249,81 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       }))
       .filter((x) => x.cam && x.ev);
     const chip = camChipRef.current;
+    // CAM은 활성 구간에 진입할 때 한 번만 맞춘다. seek 중 원본은 계속 흐르므로 매 프레임
+    // 현재 시각에 재정렬하면 모바일에서 CAM seek가 끝없이 반복되어 재생이 시작되지 않을 수 있다.
+    const blockedCamPlayback = new WeakSet();
+    const alignedCam = new WeakSet();
+    const aligningCam = new WeakSet();
     const sync = () => {
       const now = clipEventAt(events, main.currentTime, currentEventId);
       let shown = null;
       layers.forEach(({ layer, cam, ev }) => {
         const local = main.currentTime - ev.clipStartSec;
         const inClip = local >= 0 && local < (cam.duration || 0);
-        if (inClip) {
-          if (Math.abs(cam.currentTime - local) > (main.paused ? 0.01 : 0.12)) cam.currentTime = local;
+        const activeEvent = now?.id === ev.id;
+        const eventStart = ev.startSec ?? ev.timestamp;
+        const prepareAhead = isMobilePlayback && !activeEvent
+          && eventStart > main.currentTime && eventStart - main.currentTime <= 2;
+        // 모바일에선 이벤트 진입 전에 CAM을 목표 프레임으로 seek하고 정지시킨다.
+        // 실제 진입 시점의 초기 seek를 피하면서, 미리보기 재생으로 디코더 부하를 늘리지 않는다.
+        const shouldSyncClip = inClip && (activeEvent || !isMobilePlayback);
+        if (prepareAhead) {
+          if (cam.seeking) {
+            layer.classList.remove("shown");
+            return;
+          }
+          const targetLocal = Math.max(0, eventStart - ev.clipStartSec);
+          if (cam.duration > 0 && targetLocal < cam.duration && !alignedCam.has(cam)) {
+            if (!aligningCam.has(cam) && Math.abs(cam.currentTime - targetLocal) > 0.08) {
+              if (!cam.paused) cam.pause();
+              aligningCam.add(cam);
+              cam.currentTime = targetLocal;
+              layer.classList.remove("shown");
+              return;
+            }
+            if (aligningCam.has(cam)) {
+              // seeked 이벤트로 도착한 이벤트 시작 프레임을 보관한다.
+              aligningCam.delete(cam);
+              alignedCam.add(cam);
+            } else {
+              alignedCam.add(cam);
+            }
+          }
+          if (!cam.paused) cam.pause();
+        } else if (shouldSyncClip) {
+          if (cam.seeking) {
+            layer.classList.remove("shown");
+            return;
+          }
+          if (aligningCam.has(cam)) {
+            aligningCam.delete(cam);
+            alignedCam.add(cam);
+          } else if (!alignedCam.has(cam)) {
+            if (Math.abs(cam.currentTime - local) > 0.08) {
+              if (!cam.paused) cam.pause();
+              aligningCam.add(cam);
+              cam.currentTime = local;
+              layer.classList.remove("shown");
+              return;
+            }
+            alignedCam.add(cam);
+          }
           if (cam.playbackRate !== main.playbackRate) cam.playbackRate = main.playbackRate;
-          if (!main.paused && cam.paused) cam.play().catch(() => {});
+          if (!main.paused && cam.paused && !blockedCamPlayback.has(cam)) {
+            cam.play().catch(() => blockedCamPlayback.add(cam));
+          }
           if (main.paused && !cam.paused) cam.pause();
         } else if (!cam.paused) {
           cam.pause();
         }
-        const show = now?.id === ev.id && inClip && cam.readyState >= 2;
+        if (!shouldSyncClip && !prepareAhead && (!inClip || isMobilePlayback)) {
+          alignedCam.delete(cam);
+          aligningCam.delete(cam);
+        }
+        // CAM 영상이 모바일 정책 등으로 재생되지 않으면 멈춘 프레임을 덮지 않고 원본을 보여 준다.
+        const show = activeEvent && inClip && cam.readyState >= 2
+          && !cam.seeking && alignedCam.has(cam)
+          && (main.paused || !cam.paused);
         layer.classList.toggle("shown", show);
         if (show) shown = ev;
       });
@@ -2106,9 +2334,22 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     };
     let raf = 0;
     const loop = () => { sync(); raf = requestAnimationFrame(loop); };
-    const onPlay = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); };
+    const onPlay = () => {
+      cancelAnimationFrame(raf);
+      layers.forEach(({ cam }) => blockedCamPlayback.delete(cam));
+      sync();
+      raf = requestAnimationFrame(loop);
+    };
     const onPause = () => { cancelAnimationFrame(raf); sync(); };
-    const mainEvents = { play: onPlay, pause: onPause, seeking: sync, seeked: sync, ratechange: sync };
+    const onMainSeeking = () => {
+      layers.forEach(({ cam }) => {
+        alignedCam.delete(cam);
+        aligningCam.delete(cam);
+        if (!cam.paused) cam.pause();
+      });
+      sync();
+    };
+    const mainEvents = { play: onPlay, pause: onPause, seeking: onMainSeeking, seeked: sync, ratechange: sync };
     const camEvents = { loadedmetadata: sync, loadeddata: sync, seeked: sync };
     Object.entries(mainEvents).forEach(([k, fn]) => main.addEventListener(k, fn));
     layers.forEach(({ cam }) => Object.entries(camEvents).forEach(([k, fn]) => cam.addEventListener(k, fn)));
@@ -2119,7 +2360,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       layers.forEach(({ cam }) => Object.entries(camEvents).forEach(([k, fn]) => cam.removeEventListener(k, fn)));
       if (chip) chip.hidden = true;
     };
-  }, [camKey, selectedVideo, currentEventId]);
+  }, [camKey, selectedVideo, currentEventId, isMobilePlayback]);
 
   // 분석 이력에서 고른 분석의 클립이 아직 남아 있으면 '강조 중' (클립을 다 지우면 저절로 풀림)
   const isHighlighting = !!selectedVideo && highlightAnalysisNo != null
@@ -2881,7 +3122,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   }}
                   onClick={(e) => {
                     if (isBBoxMode || isDetectingVehicles || e.target.closest("button")) return;
-                    togglePlay();
+                    if (usesTouchVideoControls()) {
+                      toggleVideoTapControls();
+                    } else {
+                      toggleDesktopVideoPlayback();
+                    }
                   }}
                   /* 박스 그리기·차량 고르기는 pointer 이벤트 — 마우스·터치(폰·태블릿)·펜 모두 같은 코드로 동작 */
                   onPointerDown={(e) => {
@@ -2996,7 +3241,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       if (selectionMode === "auto" && !isDetectingVehicles) handleEndDesignateMode();
                     }}
                     onPause={() => setIsPlaying(false)}
-                    onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                    onTimeUpdate={(e) => {
+                      if (!isSeekingRef.current) setCurrentTime(e.currentTarget.currentTime);
+                    }}
                     onSeeked={handleSeeked}
                     onLoadedMetadata={(e) => {
                       const d = e.currentTarget.duration;
@@ -3142,17 +3389,71 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       </div>
                     );
                   })()}
+
+                  {videoClickFeedback && !isBBoxMode && !isDetectingVehicles && (
+                    <div className="video-click-feedback-layer" aria-hidden="true">
+                      <div
+                        key={videoClickFeedback.id}
+                        className="video-click-feedback"
+                      >
+                        <img
+                          src={VIDEO_FEEDBACK_ICONS[videoClickFeedback.action]}
+                          alt=""
+                          aria-hidden="true"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {showVideoTapControls && !isBBoxMode && !isDetectingVehicles && (
+                    <div
+                      className="video-tap-controls"
+                      role="group"
+                      aria-label="영상 빠른 조작"
+                      onClick={(e) => {
+                        if (usesTouchVideoControls()) {
+                          e.stopPropagation();
+                          dismissVideoTapControls();
+                        }
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="video-tap-skip"
+                        aria-label="5초 전으로 이동"
+                        onClick={(e) => { e.stopPropagation(); seekBySeconds(-5); }}
+                      >
+                        <img src={replay5Icon} alt="" aria-hidden="true" /><small>5초 전</small>
+                      </button>
+                      <button
+                        type="button"
+                        className="video-tap-play"
+                        aria-label={isPlaying ? "일시정지" : "재생"}
+                        onClick={(e) => { e.stopPropagation(); togglePlay(); revealVideoTapControls(); }}
+                      >
+                        <PlayerIcon name={isPlaying ? "pause" : "play"} size={30} />
+                      </button>
+                      <button
+                        type="button"
+                        className="video-tap-skip"
+                        aria-label="5초 후로 이동"
+                        onClick={(e) => { e.stopPropagation(); seekBySeconds(5); }}
+                      >
+                        <img src={forward5Icon} alt="" aria-hidden="true" /><small>5초 후</small>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* 재생바 + 재생 컨트롤 (영상 화면을 가리지 않게 화면 바깥 하단) */}
                 <div className="custom-progress-bar">
                   <div
-                    className={`progress-track ${isSeeking ? "seeking" : ""} ${isDetectingVehicles ? "locked" : ""} ${isPlayingInEvent ? "event-playing" : ""}`}
+                    className={`progress-track ${isSeeking && didDragSeekRef.current ? "seeking" : ""} ${isSeeking && !didDragSeekRef.current ? "click-seeking" : ""} ${isDetectingVehicles ? "locked" : ""} ${isCurrentTimeInEvent ? "event-current" : ""}`}
                     title={isDetectingVehicles ? "차량 탐지 중에는 이동할 수 없습니다" : undefined}
                     onPointerDown={handleSeekStart}
                     onPointerMove={handleSeekMove}
                     onPointerUp={handleSeekEnd}
-                    onPointerCancel={handleSeekEnd}
+                    onPointerCancel={handleSeekCancel}
                   >
                     <div className="progress-rail">
                       {/* 실제 재생 진행률 */}
@@ -3172,16 +3473,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                             <div
                               key={event.id}
                               className={`event-range ${currentEventId === event.id ? "active" : ""}`}
+                              data-event-id={event.id}
                               style={{ left: `${left}%`, width: `${width}%` }}
                               title={`${event.title} ${formatTime(Math.floor(start))} ~ ${formatTime(Math.ceil(end))} · 드래그하여 이동`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (didDragSeekRef.current) {
-                                  didDragSeekRef.current = false;
-                                  return;
-                                }
-                                seekToEvent(event, start);
-                              }}
                             />
                           );
                         })}
@@ -3196,7 +3490,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   <div className="player-controls">
                     <button
                       className="control-btn"
-                      onClick={togglePlay}
+                      onClick={toggleDesktopVideoPlayback}
                       disabled={isDetectingVehicles}
                       aria-label={isPlaying ? "일시정지" : "재생"}
                       title={isDetectingVehicles ? "차량 탐지 중에는 재생할 수 없습니다"
@@ -3225,8 +3519,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         style={{ "--fill": `${isMuted ? 0 : volume}%` }}
                         onChange={(e) => {
                           const next = Number(e.target.value);
+                          const previous = isMuted ? 0 : volume;
                           setVolume(next);
                           setIsMuted(next === 0);
+                          showPlayerFeedback(next === 0 ? "volumeOff" : next >= previous ? "volumeUp" : "volumeDown");
                         }}
                         aria-label="음량"
                       />
@@ -3243,7 +3539,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       <select
                         className="speed-select"
                         value={playbackSpeed}
-                        onChange={(e) => setPlaybackSpeed(e.target.value)}
+                        onChange={(e) => {
+                          setPlaybackSpeed(e.target.value);
+                          showPlayerFeedback("speed");
+                        }}
                         aria-label="재생 속도"
                         title="재생 속도를 바꿉니다"
                       >
@@ -3275,7 +3574,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       {!isFullscreen && (
                         <button
                           className={`control-btn ${isTheaterMode ? "active" : ""}`}
-                          onClick={() => setIsTheaterMode((enabled) => !enabled)}
+                          onClick={() => {
+                            setIsTheaterMode((enabled) => !enabled);
+                            showPlayerFeedback("theater");
+                          }}
                           disabled={isChoosingVehicle}
                           aria-label="영화관 모드"
                           title={isChoosingVehicle ? "차량을 고르는 중에는 쓸 수 없습니다"
@@ -3286,7 +3588,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       )}
                       <button
                         className="control-btn"
-                        onClick={handleToggleFullscreen}
+                        onClick={() => {
+                          showPlayerFeedback(isFullscreen ? "fullscreenExit" : "fullscreen");
+                          handleToggleFullscreen();
+                        }}
                         disabled={isChoosingVehicle && !isFullscreen}
                         aria-label={isFullscreen ? "전체화면 종료" : "전체화면"}
                         title={isChoosingVehicle && !isFullscreen ? "차량을 고르는 중에는 쓸 수 없습니다"

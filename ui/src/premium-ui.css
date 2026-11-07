@@ -514,3 +514,25 @@ body.dark-mode .dashboard-layout .analysis-jobs-toggle { background: #193b3e; bo
 @media (max-width: 768px) {
   .dashboard-layout .watch-view:not(.theater-view) { padding: 12px; --watch-avail-h: max(180px, calc(100dvh - 250px)); }
 }
+
+@media (max-width: 760px) {
+  .dashboard-layout .top-navbar { align-items: center; }
+  .dashboard-layout .top-navbar .nav-section { align-items: center; }
+  .dashboard-layout .top-navbar .nav-logo,
+  .dashboard-layout .top-navbar .analysis-status-box,
+  .dashboard-layout .top-navbar .profile-trigger-btn { align-self: center; }
+}
+
+@media (max-width: 640px) {
+  .dashboard-layout .top-navbar { min-height: 62px; }
+}
+
+@media (max-width: 720px) {
+  .public-login-page .public-navbar { align-items: center; }
+  .public-login-page .public-navbar .public-brand,
+  .public-login-page .public-navbar .public-nav-meta,
+  .public-login-page .public-navbar .premium-nav-links,
+  .public-login-page .public-navbar .public-login-trigger { align-self: center; }
+  .public-login-page .public-navbar .public-nav-meta,
+  .public-login-page .public-navbar .premium-nav-links { align-items: center; }
+}
