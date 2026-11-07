@@ -1867,6 +1867,13 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 .cam-clip-layer.shown { opacity: 1; }
 .dashboard-layout .mock-video-player .cam-clip-layer { transition: opacity 0.25s ease !important; }
 .cam-clip-layer video { display: block; width: 100%; height: auto; }
+.real-video,
+.cam-clip-layer video,
+.clip-modal-video {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
 .cam-now-chip {
   margin-left: 8px;
   padding: 2px 8px;
@@ -4041,6 +4048,28 @@ body.dark-mode .auto-detect-btn.active:not(.detecting):hover {
 .bbox-btn-icon {
   font-size: 16px;
   line-height: 1;
+}
+
+/* 박스를 그리는 동안 화면의 텍스트와 이미지가 함께 선택되거나 끌리지 않게 한다. */
+.dashboard-layout.bbox-drawing,
+.dashboard-layout.bbox-drawing * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 박스와 라벨, 삭제 표시도 선택하거나 끌 수 없게 한다. */
+.mock-video-player.bbox-mode-active,
+.mock-video-player.bbox-mode-active *,
+.bbox-drawn,
+.bbox-drawn *,
+.bbox-preview,
+.bbox-preview *,
+.bbox-hover-preview,
+.bbox-hover-preview * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 /* 바운딩박스 모드 시 비디오 플레이어 스타일 */

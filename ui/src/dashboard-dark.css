@@ -245,6 +245,72 @@ body.dark-mode .dashboard-layout .event-item { border-left: 3px solid #db9a58; }
   font-size: 12px;
 }
 
+.player-settings,
+.player-settings-options {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.player-settings-options[hidden] { display: none !important; }
+.cam-overlay-chip { display: none; }
+
+@media (max-width: 720px), (max-width: 1024px) and (pointer: coarse) {
+  .dashboard-layout .player-container.is-fullscreen-active .cam-now-chip { display: none; }
+  .dashboard-layout .player-container.is-fullscreen-active .cam-overlay-chip:not([hidden]) {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    left: max(12px, env(safe-area-inset-left));
+    z-index: 12;
+    display: inline-flex;
+    max-width: calc(100% - 24px);
+    padding: 5px 9px;
+    border: 1px solid #ff9c9966;
+    border-radius: 5px;
+    background: #312126df;
+    color: #ffd3d0;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-layout .player-container.is-fullscreen-active .custom-progress-bar { z-index: 20; }
+  .dashboard-layout .player-container.is-fullscreen-active .player-controls {
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+  .dashboard-layout .player-container.is-fullscreen-active .player-controls .control-btn {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 44px;
+  }
+  .dashboard-layout .player-container.is-fullscreen-active .time-display { margin-left: 2px; }
+  .dashboard-layout .player-container.is-fullscreen-active .right-controls { gap: 0; }
+  .player-settings-options.is-popup {
+    position: absolute;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(100% + 8px);
+    z-index: 20;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px 12px;
+    width: min(250px, calc(100vw - 24px));
+    padding: 12px;
+    border: 1px solid #ffffff30;
+    border-radius: 8px;
+    background: #152733f5;
+    box-shadow: 0 12px 32px #0008;
+  }
+  .player-setting-label { color: #d6e4e7; font-size: 13px; font-weight: 650; }
+  .player-settings-options.is-popup .speed-select { min-width: 82px; height: 44px; }
+  .dashboard-layout .player-settings-options.is-popup .clip-view-toggle { height: 44px; }
+  .dashboard-layout .player-settings-options.is-popup .clip-view-toggle button { padding-inline: 10px; }
+}
+
 .dashboard-layout .video-tap-controls {
   position: absolute;
   z-index: 8;
@@ -337,4 +403,127 @@ body.dark-mode .dashboard-layout .event-item { border-left: 3px solid #db9a58; }
 
 @media (pointer: coarse), (max-width: 1024px) {
   .dashboard-layout .video-tap-controls { pointer-events: auto; }
+}
+
+.theater-mobile-heading { display: none; }
+
+@media (max-width: 720px) {
+  .dashboard-layout .watch-view.theater-view {
+    min-height: 0;
+    padding: 0 0 24px;
+    background: transparent;
+  }
+  .dashboard-layout .watch-view.theater-view .watch-layout {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 12px;
+  }
+  .dashboard-layout .watch-view.theater-view .player-section {
+    order: 1;
+    max-width: none;
+    max-height: none;
+    padding: 12px 12px 14px;
+    background: #0b1923;
+  }
+  .dashboard-layout .watch-view.theater-view .player-container:not(:fullscreen) {
+    width: 100%;
+    max-height: none;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px #0003;
+  }
+  .dashboard-layout .watch-view.theater-view .mock-video-player { max-height: none; }
+  .dashboard-layout .watch-view.theater-view .watch-side,
+  .dashboard-layout .watch-view.theater-view .watch-right {
+    display: flex;
+    height: auto;
+    padding-inline: 12px;
+  }
+  .dashboard-layout .watch-view.theater-view .watch-side { order: 2; }
+  .dashboard-layout .watch-view.theater-view .watch-right { order: 3; }
+  .dashboard-layout .watch-view.theater-view .event-sidebar { display: flex; }
+  .dashboard-layout .watch-view.theater-view .watch-side > .event-sidebar { flex: none; }
+  .dashboard-layout .watch-view.theater-view .event-list {
+    flex: 0 1 auto;
+    height: auto;
+    min-height: 0;
+  }
+  .dashboard-layout .theater-mobile-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    margin-bottom: 10px;
+  }
+  .theater-mobile-heading-copy { min-width: 0; }
+  .theater-mobile-heading-copy span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #84c8c1;
+    font-size: 10px;
+    font-weight: 750;
+    line-height: 1.3;
+  }
+  .theater-mobile-heading-copy span::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #70d4c5;
+  }
+  .theater-mobile-heading-copy strong {
+    display: block;
+    overflow: hidden;
+    margin-top: 3px;
+    color: #edf5f5;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dashboard-layout .theater-mobile-exit {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid #ffffff38;
+    border-radius: 6px;
+    background: #ffffff0d;
+    color: #e5f0f0;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .theater-mobile-exit span { font-size: 18px; line-height: 1; }
+}
+
+/* Fullscreen API가 지원되지 않으면 플레이어를 현재 화면에 고정한다. */
+.dashboard-layout .player-container.is-viewport-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  width: 100vw !important;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.dashboard-layout .player-container.is-viewport-fullscreen .mock-video-player {
+  flex: 1 1 0%;
+  width: 100%;
+  min-height: 0;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+  background: #000;
+}
+.dashboard-layout .player-container.is-viewport-fullscreen .custom-progress-bar {
+  flex-shrink: 0;
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+  border-radius: 0;
 }
