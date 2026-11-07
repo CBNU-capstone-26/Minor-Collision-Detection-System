@@ -350,7 +350,7 @@ function LoginPage({ onLogin }) {
           <span className="workspace-wordmark" translate="no">SI<span className="workspace-lens">O</span>T<span className="workspace-brand-dot">.</span></span>
         </button>
         <div className="public-nav-meta">
-          <nav className="premium-nav-links" aria-label="서비스 소개"><a href="#overview" translate="no">SIOT</a><a href="#why-siot">주요 기능</a><a href="#review-preview">클립 검토</a></nav>
+          <nav className="premium-nav-links" aria-label="서비스 소개"><a href="#overview" translate="no">SIOT</a><a href="#review-preview">클립 검토</a><a href="#why-siot">주요 기능</a></nav>
           <button className="public-login-trigger" translate="no" onClick={openLogin}>
             LOGIN <span aria-hidden="true">↗</span>
           </button>
