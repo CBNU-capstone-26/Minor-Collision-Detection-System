@@ -897,7 +897,7 @@ function groupVideosByDate(videos) {
 }
 
 // 대시보드 컴포넌트
-function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
+function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setIsDarkMode }) {
   const navigate = useNavigate();
   const { videoId } = useParams();
 
@@ -1065,18 +1065,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  // 테마 설정 (다크 모드)
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  // 다크 모드 활성화 / 비활성화 제어
-  useEffect(() => {
-    if (isDarkMode) {
-      document.body.classList.add("dark-mode");
-    } else {
-      document.body.classList.remove("dark-mode");
-    }
-  }, [isDarkMode]);
 
   // API에서 영상 목록 로드
   const loadVideos = async () => {
@@ -4537,9 +4525,15 @@ function RequireAuth({ children }) {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
   const [user, setUser] = useState(() => !!getToken());
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem("siot_dark_mode") === "true");
   // 로그인돼 있으면 화면을 그리기 전에 세션부터 연다 — 영상·썸네일·클립은 이때 받는
   // 쿠키로 열리므로(헤더를 못 싣는 <video>·<img>), 먼저 그리면 첫 썸네일이 막힌다
   const [sessionReady, setSessionReady] = useState(() => !getToken());
+
+  useEffect(() => {
+    document.body.classList.toggle("dark-mode", isDarkMode);
+    localStorage.setItem("siot_dark_mode", String(isDarkMode));
+  }, [isDarkMode]);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -4586,6 +4580,8 @@ export default function App() {
             <RequireAuth>
               <Dashboard
                 currentUser={currentUser}
+                isDarkMode={isDarkMode}
+                setIsDarkMode={setIsDarkMode}
                 onUpdateUser={handleUpdateUser}
                 onLogout={handleLogout}
                 view="list"
@@ -4599,6 +4595,8 @@ export default function App() {
             <RequireAuth>
               <Dashboard
                 currentUser={currentUser}
+                isDarkMode={isDarkMode}
+                setIsDarkMode={setIsDarkMode}
                 onUpdateUser={handleUpdateUser}
                 onLogout={handleLogout}
                 view="watch"

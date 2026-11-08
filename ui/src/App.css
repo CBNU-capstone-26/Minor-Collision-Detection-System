@@ -4719,6 +4719,25 @@ body.dark-mode .analyze-popover-run:hover {
   border: 1px solid #334155;
 }
 
+@media (max-width: 720px) {
+  .app-toast,
+  .designate-hint,
+  .analyze-popover-text,
+  .vehicle-detect-loading {
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+
+  .app-toast,
+  .designate-hint {
+    box-sizing: border-box;
+    max-width: calc(100vw - 32px);
+  }
+
+  .app-toast { width: max-content; }
+}
+
 /* CAM 클립 팝업 */
 
 
