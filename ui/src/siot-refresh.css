@@ -1,0 +1,108 @@
+/* SIOT visual refresh: shared surfaces and hierarchy, without changing player geometry. */
+.public-login-page {
+  --public-paper: #f4f7f6;
+  --public-ink: #142d35;
+  --public-muted: #5b7177;
+  --public-line: #dce8e6;
+}
+body.dark-mode .public-login-page {
+  --public-paper: #101a1e;
+  --public-ink: #e6f1ef;
+  --public-muted: #a2b8b8;
+  --public-line: #2c4346;
+}
+.public-login-page .public-navbar {
+  background: #f4f7f6ed;
+  border-bottom: 1px solid #dce8e6;
+}
+body.dark-mode .public-login-page .public-navbar { background: #101a1eed; border-color: #2c4346; }
+.public-login-page .public-hero { gap: 48px; padding-top: clamp(64px, 7vw, 104px); }
+.public-login-page .public-hero h1 { letter-spacing: -.065em; }
+.public-login-page .public-hero-description { color: var(--public-muted); }
+.public-login-page .public-primary-btn { border-radius: 10px; box-shadow: 0 10px 24px #087f832b; }
+.public-login-page .public-login-trigger { border-radius: 8px; }
+.public-login-page .public-hero-panel {
+  width: min(980px, 100%);
+  padding: clamp(16px, 2vw, 24px);
+  border-radius: 12px;
+  background: #10232b;
+  border-color: #35525a;
+  box-shadow: 0 28px 65px -28px #0d333d80, 0 4px 12px #0d333d12;
+}
+.public-login-page .public-scan-frame { border-radius: 8px; }
+.public-login-page .public-panel-topline { color: #c5d8d6; }
+.public-login-page .public-proof-strip { border-top: 1px solid var(--public-line); padding-top: 32px; }
+.public-login-page .public-proof-strip strong { font-variant-numeric: tabular-nums; }
+.public-login-page .premium-showcase { background: #10262d; }
+.public-login-page .premium-review-window { border-radius: 12px 12px 0 0; }
+.public-login-page .premium-story { padding-block: clamp(72px, 8vw, 112px); }
+.public-login-page .premium-feature-grid { gap: 16px; }
+.public-login-page .premium-feature {
+  border-radius: 12px;
+  border-color: #dce8e6;
+  background: #fff;
+  padding: clamp(26px, 3vw, 36px);
+}
+body.dark-mode .public-login-page .premium-feature { background: #19292c; border-color: #304548; }
+.public-login-page .premium-feature h3 { line-height: 1.4; }
+.public-login-page .premium-feature p { font-size: 14px; line-height: 1.8; }
+.public-login-page .premium-feature-index { font-size: 11px; }
+.public-login-page .premium-feature-tag { font-size: 12px; font-weight: 700; }
+.public-login-page .premium-closing { border-color: var(--public-line); }
+.public-login-page :is(button, a):focus-visible { outline: 3px solid #159c96; outline-offset: 4px; }
+
+.dashboard-layout {
+  --incident-ink: #18313a;
+  --incident-muted: #5a737b;
+  --incident-line: #dce7e5;
+  background: #f2f6f5;
+}
+body.dark-mode .dashboard-layout {
+  --incident-ink: #e2efed;
+  --incident-muted: #a6bcbb;
+  --incident-line: #304648;
+  --incident-surface: #172a2e;
+  background: #101d20;
+}
+.dashboard-layout .top-navbar { border-bottom: 1px solid var(--incident-line); box-shadow: 0 4px 20px #102f3108; }
+.dashboard-layout .analysis-status-idle { border-radius: 9px; }
+.dashboard-layout .home-view { padding-block: clamp(24px, 3vw, 40px); }
+.dashboard-layout .incident-overview {
+  border-radius: 14px;
+  background: linear-gradient(120deg, #102c34, #1a4c4b);
+  box-shadow: 0 18px 40px #113b381c;
+}
+.dashboard-layout .incident-overview p { color: #c3d7d5; font-size: 15px; }
+.dashboard-layout .incident-upload { border-radius: 9px; min-height: 48px; }
+.dashboard-layout .incident-metrics > div { border-color: #80a6a180; }
+.dashboard-layout .incident-metrics span { color: #c3d7d5; }
+.dashboard-layout .incident-section-title { margin-bottom: 20px; }
+.dashboard-layout .incident-section-title h2 { letter-spacing: -.035em; }
+.dashboard-layout .filter-pills { border-radius: 10px; background: #e6efed; }
+.dashboard-layout .filter-pills button { border-radius: 7px; }
+body.dark-mode .dashboard-layout .filter-pills { background: #0d1b1e; }
+.dashboard-layout .video-card {
+  border-radius: 12px;
+  border: 1px solid var(--incident-line);
+  box-shadow: 0 4px 18px #12332f08;
+}
+.dashboard-layout .video-card:hover { box-shadow: 0 14px 32px #12332f1c; }
+.dashboard-layout .video-info h3 { line-height: 1.4; overflow-wrap: anywhere; }
+.dashboard-layout .event-count-badge, .dashboard-layout .recording-date-badge { border-radius: 7px; }
+.dashboard-layout :is(.event-sidebar, .analysis-history) { border: 1px solid var(--incident-line); border-radius: 10px; }
+.dashboard-layout .incident-workflow { border-radius: 10px; }
+.dashboard-layout .event-item { border-radius: 8px; }
+.dashboard-layout :is(.auto-detect-btn, .bbox-designate-btn, .detect-run-btn) { border-radius: 8px; }
+
+@media (max-width: 720px) {
+  .public-login-page .public-hero { gap: 36px; padding-top: 56px; }
+  .public-login-page .public-hero-panel { border-radius: 10px; }
+  .public-login-page .premium-feature { padding: 26px; }
+  .dashboard-layout .home-view { padding: 20px 16px; }
+  .dashboard-layout .incident-overview { padding: 26px 22px; border-radius: 12px; }
+  .dashboard-layout .incident-overview p { font-size: 14px; }
+  .dashboard-layout .video-card { border-radius: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .public-login-page .public-hero h1 em { animation: none; }
+}

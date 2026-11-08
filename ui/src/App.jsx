@@ -25,6 +25,7 @@ import "./App.css";
 import "./incident-ui.css";
 import "./premium-ui.css";
 import "./dashboard-dark.css"; // 다크 모드 통일 — 반드시 premium-ui.css 다음
+import "./siot-refresh.css";
 
 const VIDEO_FEEDBACK_ICONS = {
   play: playArrowIcon,
