@@ -1,8 +1,95 @@
 import os
 
+import torch
 import torch.nn as nn
 from pytorchvideo.models.hub import x3d_m
 from torch.utils.checkpoint import checkpoint, checkpoint_sequential
+
+
+def _tag_names(path):
+    """조건 표시를 찾을 이름들 — 파일 이름, 그리고 학습 회차 폴더(<시각>_<모델>_<조건>) 안의 파일이면 그 폴더 이름.
+    work_best.pth·work_cand_ep*.pth·epochs/ 안 파일처럼 이름에 표시가 없어도 회차 폴더 이름으로 맞춘다."""
+    import re
+    p = os.path.abspath(str(path))
+    names = [os.path.basename(p)]
+    for d in (os.path.dirname(p), os.path.dirname(os.path.dirname(p))):
+        if re.match(r'^\d{6}_\d{4}', os.path.basename(d)):
+            names.append(os.path.basename(d))
+            break
+    return names
+
+
+def weights_input_size(path):
+    """가중치 파일(또는 회차 폴더) 이름의 입력 크기 표시(_s256 등 — 224 아닌 크기로 학습하면 train.py 가 붙인다). 없으면 None."""
+    import re
+    for n in _tag_names(path):
+        m = re.search(r'_s(\d{3})(?=[_.]|$)', n)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def check_input_size(path):
+    """가중치를 학습한 입력 크기와 지금 config.INPUT_SIZE 가 다르면 멈춘다 — 크기가 다르면 판정이 틀어진다.
+    이름에 표시가 없으면 224 로 학습한 것으로 본다."""
+    import config
+    n = weights_input_size(path) or 224
+    if n != config.RESIZE[0]:
+        raise RuntimeError(f"가중치 {os.path.basename(str(path))} 은(는) 입력 {n}×{n} 으로 학습했는데 지금 입력 크기는 "
+                           f"{config.RESIZE[0]} 입니다 — 환경변수 INPUT_SIZE={n} 으로 실행하세요(config.INPUT_SIZE)")
+
+
+HEAD_POOL_MODES = ('avg', 'top3', 'avgtop3')
+
+
+def weights_head_pool(path):
+    """가중치 파일(또는 회차 폴더) 이름의 헤드 시간 풀링 표시(_top3·_avgtop3 — avg 아닌 풀링으로 학습하면 train.py 가 붙인다). 없으면 'avg'."""
+    import re
+    for n in _tag_names(path):
+        m = re.search(r'_(avgtop3|top3)(?=[_.]|$)', n)
+        if m:
+            return m.group(1)
+    return 'avg'
+
+
+def check_head_pool(path):
+    """가중치를 학습한 헤드 시간 풀링과 지금 config.HEAD_TEMPORAL_POOL 이 다르면 멈춘다.
+    풀링엔 가중치가 없어 다른 풀링으로도 가중치가 그대로 읽히고 판정만 틀어지므로 이름으로 막는다."""
+    import config
+    mode = weights_head_pool(path)
+    if mode != config.HEAD_TEMPORAL_POOL:
+        raise RuntimeError(f"가중치 {os.path.basename(str(path))} 은(는) 헤드 시간 풀링 {mode} 로 학습했는데 지금은 "
+                           f"{config.HEAD_TEMPORAL_POOL} 입니다 — 환경변수 HEAD_TEMPORAL_POOL={mode} 로 실행하세요"
+                           f"(config.HEAD_TEMPORAL_POOL)")
+
+
+def check_weights(path):
+    """가중치를 읽기 전 학습 조건 확인 — 입력 크기(_s256)·헤드 시간 풀링(_top3 등)이 지금 설정과 같아야 한다."""
+    check_input_size(path)
+    check_head_pool(path)
+
+
+class TemporalPool(nn.Module):
+    """헤드의 시간 축 모으기 (B, C, T, H, W) → (B, C, 1, H, W) — config.HEAD_TEMPORAL_POOL.
+
+    top3   : 채널·칸마다 시간 축에서 가장 큰 k(=3)개를 평균. 2~6프레임짜리 짧은 흔들림이 1/30 로 묽어지지 않는다.
+    avgtop3: 평균과 상위 k개 평균의 평균 — 긴 맥락(평균)과 짧은 순간(상위 k)을 함께, 크기는 둘 사이라 사전학습
+             post_conv 입력 범위에서 크게 벗어나지 않는다.
+    avg 는 이 모듈 대신 원래 AdaptiveAvgPool3d 를 그대로 둔다(지금까지 학습과 계산이 비트 단위로 같게).
+    mean·topk 만 써서 ONNX(TopK)·OpenVINO 로 그대로 바뀐다(infer_runtime 자가 검사로 결과 확인).
+    """
+
+    def __init__(self, mode, k=3):
+        super().__init__()
+        if mode not in ('top3', 'avgtop3'):
+            raise ValueError(f'TemporalPool 은 top3·avgtop3 만: {mode!r}')
+        self.mode, self.k = mode, int(k)
+
+    def forward(self, x):
+        top = torch.topk(x, min(self.k, x.shape[2]), dim=2).values.mean(dim=2, keepdim=True)
+        if self.mode == 'top3':
+            return top
+        return 0.5 * (x.mean(dim=2, keepdim=True) + top)
 
 
 # X3D-M의 마지막 res 스테이지 출력 채널 수(구조 확인으로 검증한 값).
@@ -73,9 +160,16 @@ class HitAndRun3DCNN(nn.Module):
                      불필요한 다운로드를 피한다.
     """
 
-    def __init__(self, num_classes=2, pretrained=False, dropout_p=DROPOUT_P):
+    def __init__(self, num_classes=2, pretrained=False, dropout_p=DROPOUT_P, temporal_pool=None):
         super(HitAndRun3DCNN, self).__init__()
         base = x3d_m(pretrained=pretrained)
+        # 헤드 시간 풀링(config.HEAD_TEMPORAL_POOL) — avg 는 원래 연산, top3·avgtop3 는 TemporalPool. 가중치 키는 같다.
+        if temporal_pool is None:
+            import config
+            temporal_pool = getattr(config, 'HEAD_TEMPORAL_POOL', 'avg')
+        if temporal_pool not in HEAD_POOL_MODES:
+            raise ValueError(f"HEAD_TEMPORAL_POOL 은 {'·'.join(HEAD_POOL_MODES)} 중 하나여야 합니다: {temporal_pool!r}")
+        self.temporal_pool = temporal_pool
 
         # blocks[-1]은 헤드. stem+res 스테이지와 분리한다.
         self.features = nn.Sequential(*list(base.blocks)[:-1])
@@ -83,7 +177,11 @@ class HitAndRun3DCNN(nn.Module):
         # 헤드의 확장부(pre_conv 192→432 → BN → ReLU → pool → post_conv 432→2048
         # → ReLU)는 그대로 살리고, 고정 커널 pool만 교체한다.
         head_pool = base.blocks[-1].pool
-        head_pool.pool = nn.AdaptiveAvgPool3d((1, None, None))
+        if temporal_pool == 'avg':
+            head_pool.pool = nn.AdaptiveAvgPool3d((1, None, None))
+        else:
+            import config
+            head_pool.pool = TemporalPool(temporal_pool, getattr(config, 'HEAD_TEMPORAL_TOPK', 3))
         self.head_pool = head_pool
 
         self.avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))

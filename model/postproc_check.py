@@ -65,9 +65,16 @@ def _label(mp4):
     return bboxes.get(config.TARGET_ID, next(iter(bboxes.values()))), sf, ef
 
 
+def _excluded(name):
+    """10fps 미만 영상(config.EXCLUDE_VIDEOS)인가 — 폴더에 남아 있어도·저장한 P(A)를 다시 집계해도 뺀다."""
+    return name in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
+
+
 def _folder_videos(folder):
     out = []
     for mp4 in sorted(Path(folder).glob('*.mp4')):
+        if _excluded(mp4.stem):
+            continue
         lab = _label(mp4) if mp4.with_suffix('.txt').exists() else None
         if lab:
             out.append((mp4, *lab))
@@ -93,7 +100,11 @@ def _val_videos(split):
         rel = rel.replace('\\', '/')
         if not rel.startswith('realdata/'):
             continue
-        mp4 = Path(config.DATA_DIR) / rel
+        # 검증 폴더(config.VAL_DATA_DIR, 11-04~)로 옮긴 영상도, 예전처럼 학습 폴더에 있는 영상도 찾는다
+        roots = [Path(r) for r in (getattr(config, 'VAL_DATA_DIR', None), config.DATA_DIR) if r]
+        mp4 = next((r / rel for r in roots if (r / rel).exists()), Path(config.DATA_DIR) / rel)
+        if _excluded(mp4.stem):
+            continue
         lab = _label(mp4) if mp4.exists() and mp4.with_suffix('.txt').exists() else None
         if lab:
             out.append((mp4, *lab))
@@ -206,7 +217,7 @@ def _load_probs(wdir, set_key, mode):
     out = {}
     for m in ([mode, 'none'] if mode != 'none' else ['none']):
         for p in sorted((wdir / f'{set_key}_{m}').glob('*.npz')):
-            if p.stem not in out:
+            if p.stem not in out and not _excluded(p.stem):
                 z = np.load(p)
                 out[p.stem] = (z['pa'], json.loads(str(z['meta'])))
     return dict(sorted(out.items()))
@@ -431,6 +442,13 @@ def _wrong_now(wtag, cache):
             continue
         _, rows = _score(data, config.A_THRESHOLD, coarse_prob=config.PREDICT_COARSE_PROB)
         wrong = [r for r in rows if (r['gt'] == 'A' and not r['caught']) or (r['gt'] == 'S' and r['events'])]
+        night = getattr(config, 'NIGHT_VIDEOS', ()) or ()
+        nr = [r for r in rows if r['name'] in night]
+        if nr:     # 야간 영상만 따로(불빛 오탐 추적, config.NIGHT_VIDEOS)
+            na = [r for r in nr if r['gt'] == 'A']
+            ns = [r for r in nr if r['gt'] == 'S']
+            print(f'  {set_name} 야간 {len(nr)}개: 사고 {len(na)}개 중 잡음 {sum(1 for r in na if r["caught"])}개 · '
+                  f'정상 {len(ns)}개 중 오탐 {sum(1 for r in ns if r["events"])}개')
         for r in wrong:
             pa, m = data[r['name']]
             box = f"{m['bbox'][2] - m['bbox'][0]}x{m['bbox'][3] - m['bbox'][1]}"
@@ -440,10 +458,10 @@ def _wrong_now(wtag, cache):
                 p_gt = pa[in_gt].max() if in_gt.any() else float('nan')
                 p_out = pa[~in_gt].max() if (~in_gt).any() else float('nan')
                 why = '모델이 못 봄' if p_gt <= config.A_THRESHOLD else '모델은 반응 — 후처리·거친 탐색에서 빠짐'
-                print(f'  {set_name} 놓침 {_short(r["name"]):<9} {m["fps"]:5.1f}fps 박스 {box:<8} 충돌 구간 최대 {p_gt:.2f} '
+                print(f'  {set_name} 놓침 {_short(r["name"]):<9}{"[야간]" if r["name"] in night else ""} {m["fps"]:5.1f}fps 박스 {box:<8} 충돌 구간 최대 {p_gt:.2f} '
                       f'· 그 밖 {p_out:.2f} · 이벤트 {r["events"] or "-"} — {why}')
             else:
-                print(f'  {set_name} 오탐 {_short(r["name"]):<9} {m["fps"]:5.1f}fps 박스 {box:<8} 최대 {pa.max():.2f}'
+                print(f'  {set_name} 오탐 {_short(r["name"]):<9}{"[야간]" if r["name"] in night else ""} {m["fps"]:5.1f}fps 박스 {box:<8} 최대 {pa.max():.2f}'
                       f'(창 {int(pa.argmax())}) · 이벤트 {r["events"]}')
 
 
@@ -540,12 +558,18 @@ def _run(args, out_dir, suffix):
         sets = {'eval': _folder_videos(args.folder)}
         print(f'평가 영상: {args.folder} — {len(sets["eval"])}개')
         if not args.no_val:
-            split = _split_path(args.weights[0], args.split)
-            if split is None:
+            # 가중치마다 회차의 검증 영상이 다를 수 있어(TRAIN_FORCE_TRAIN_VIDEOS 등) 모두의 검증에 공통인 영상만 쓴다
+            splits = ([Path(args.split)] if args.split else
+                      list(dict.fromkeys(p for p in (_split_path(w, None) for w in args.weights) if p)))
+            if not splits:
                 print('검증 영상: split.json 을 못 찾아 건너뜀(--split 으로 지정)')
             else:
-                sets['val'] = _val_videos(split)
-                print(f'검증 영상: {split} 의 검증 중 실제 영상 {len(sets["val"])}개 (학습에 안 쓴 영상)')
+                per = [_val_videos(p) for p in splits]
+                common = set.intersection(*({str(v[0]) for v in vs} for vs in per))
+                sets['val'] = [v for v in per[0] if str(v[0]) in common]
+                dropped = sorted({v[0].stem for vs in per for v in vs} - {Path(c).stem for c in common})
+                print(f'검증 영상: {" · ".join(str(p) for p in splits)} 의 검증 중 실제 영상 {len(sets["val"])}개 '
+                      f'(학습에 안 쓴 영상' + (f' — 어느 회차에선 학습에 쓴 {", ".join(dropped)} 는 뺌)' if dropped else ')'))
         if args.videos:
             for k, vids in sets.items():
                 sets[k] = ([v for v in vids if v[2] is not None][:(args.videos + 1) // 2]

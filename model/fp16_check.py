@@ -137,7 +137,8 @@ def _run(args):
     mean = torch.tensor(config.NORM_MEAN, device=device).view(1, 3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD, device=device).view(1, 3, 1, 1, 1)
     folder = Path(config.EVAL_FOLDER_PATH)
-    vids = sorted(p for p in folder.glob('*.mp4') if p.with_suffix('.txt').exists())
+    vids = sorted(p for p in folder.glob('*.mp4') if p.with_suffix('.txt').exists()
+                  and p.stem not in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ()))   # 10fps 미만 영상은 뺀다
     print(f'\n[결과 비교] {folder} 영상 {len(vids)}개 × 최대 {args.per_video}창, FP32 기준')
     all32, all16, allstrict, flips, per_video = [], [], [], [], []
     for v in vids:

@@ -72,6 +72,12 @@ def _evaluate_folder_impl(
     mp4_files = [f for f in all_files if f.endswith('.mp4')]
     valid_pairs = [
         mp4 for mp4 in mp4_files if f"{mp4.rsplit('.', 1)[0]}.txt" in all_files_set]
+    # 10fps 미만 영상(config.EXCLUDE_VIDEOS)은 평가에서 뺀다 — 보통은 lowfps_move 로 이미 폴더 밖에 있다
+    excl = set(getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
+    skipped = sorted(m.rsplit('.', 1)[0] for m in valid_pairs if m.rsplit('.', 1)[0] in excl)
+    if skipped:
+        valid_pairs = [m for m in valid_pairs if m.rsplit('.', 1)[0] not in excl]
+        print(f"[제외] 10fps 미만(config.LOW_FPS_VIDEOS) {len(skipped)}개 평가 안 함: {', '.join(skipped)}")
 
     if not valid_pairs:
         print("평가할 수 있는 영상-텍스트 짝이 없습니다.")
@@ -435,10 +441,13 @@ def _training_video_names():
     분할) 수 있어 성능이 부풀려진다. 실제로 eval 24개 중 18개가 학습에 들어간 채로
     평가한 적이 있어, 파일명으로 겹침을 잡아 경고하고 깨끗한 영상만 따로 집계한다.
     """
-    root = pathlib.Path(str(config.DATA_DIR))
-    if not root.exists():
-        return set()
-    return {p.name for p in root.rglob('*.mp4')}
+    # 검증 폴더(config.VAL_DATA_DIR, 2026-11-04~)도 학습 중 쓰는 영상이라 함께 본다
+    names = set()
+    for r in (config.DATA_DIR, getattr(config, 'VAL_DATA_DIR', None)):
+        root = pathlib.Path(str(r)) if r else None
+        if root is not None and root.exists():
+            names |= {p.name for p in root.rglob('*.mp4')}
+    return names
 
 
 def _summarize(rows):
@@ -571,6 +580,8 @@ def evaluate_service_path(
                'base_pred': base_r.get('pred'), 'base_first_a': base_r.get('first_a'),
                'svc_pred': 'A' if events else 'S',
                'in_train': mp4_file in in_train, 'fps': round(fps, 2),
+               # 야간 영상(config.NIGHT_VIDEOS, 눈으로 확인한 목록) — 불빛 오탐을 따로 보려고
+               'night': base in (getattr(config, 'NIGHT_VIDEOS', ()) or ()),
                'frames': frames, 'gt_start': gt_sf, 'gt_end': gt_ef,
                'n_events': len(events),
                'event_starts': ' '.join(str(e['start_frame']) for e in events),
@@ -625,6 +636,18 @@ def evaluate_service_path(
     print("\n" + "-" * 60)
     all_s = _summarize(rows)
     _print_summary(all_s, tol_sec)
+    # 야간 영상만 따로(불빛 오탐 추적) — 사고는 구간 겹침, 정상은 이벤트 1개↑이면 오탐
+    night = [r for r in rows if r.get('night')]
+    night_line = None
+    if night:
+        na = [r for r in night if r['gt'] == 'A']
+        ns = [r for r in night if r['gt'] == 'S']
+        miss = [r['file'].rsplit('.', 1)[0][7:] for r in na if not r['overlap']]
+        fa = [r['file'].rsplit('.', 1)[0][7:] for r in ns if r['n_events']]
+        night_line = (f"영상 {len(night)}개 — 사고 {len(na)}개 중 구간 겹침 {len(na) - len(miss)}개"
+                      + (f"(놓침 {', '.join(miss)})" if miss else "")
+                      + f" · 정상 {len(ns)}개 중 오탐 {len(fa)}개" + (f"({', '.join(fa)})" if fa else ""))
+        print(f"\n[야간 영상(config.NIGHT_VIDEOS)] {night_line}")
 
     n_contam = sum(1 for r in rows if r['in_train'])
     clean_s = None
@@ -648,6 +671,7 @@ def evaluate_service_path(
         out.update({'clean_n': clean_s['n'], 'clean_svc_hit_recall': clean_s['hit_recall'],
                     'clean_svc_false_events': clean_s['false_events'],
                     'clean_svc_video_false_alarm': clean_s['video_false_alarm']})
+    out['night'] = night_line
     out['rows'] = rows
     return out
 
@@ -699,9 +723,14 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
                getattr(config, 'PRETRAIN_TAG', '?'))
     # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다.
     # 묶음 구성(--balance)으로 학습한 가중치는 _bal, 저화질 증강(TRAIN_LQ_AUG_PROB)은 _lq 도 붙인다.
+    # fps 증강(TRAIN_FPS_AUG_PROB)은 _fps, 224 아닌 입력 크기(INPUT_SIZE)는 _s<크기>, 헤드 시간 풀링(HEAD_TEMPORAL_POOL)은 _top3 등.
     name_tag = (tag + ('_span' if '_span_' in weights else '')
                 + ('_bal' if '_bal_' in weights else '')
-                + ('_lq' if '_lq_' in weights else ''))
+                + ('_lq' if '_lq_' in weights else '_lqw' if '_lqw_' in weights else '')
+                + ('_fps' if '_fps_' in weights else '')
+                + ('_light' if '_light_' in weights else '')
+                + (f'_s{config.RESIZE[0]}' if config.RESIZE[0] != 224 else '')
+                + (f"_{config.HEAD_TEMPORAL_POOL}" if getattr(config, 'HEAD_TEMPORAL_POOL', 'avg') != 'avg' else ''))
     # 크롭 r 을 바꿔 평가하면(main --r) 이름에 _r<값> 을 붙인다 — 요약 표의 run 열로 구분된다
     r_value = float(kwargs.get('r_value', config.R_VALUE))
     if abs(r_value - 1.0) > 1e-9:
@@ -715,6 +744,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('시작', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
         ('평가 폴더', str(folder_path)),
+        ('10fps 미만 영상 제외(config.LOW_FPS_VIDEOS)', '켬' if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('크롭 r', f'{r_value:g}'),
         ('후처리 fps 맞춤(거친 탐색 간격·최소 길이)',
          '켬' if config.PREDICT_FPS_SCALED_POSTPROC else '끔'),
@@ -751,6 +781,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         (f"② 서비스 위치 기준 재현율(시작 ±{m.get('svc_hit_tol_sec')}초)", _fmt_pct(m.get('svc_hit_recall'))),
         ('② 서비스 오탐 이벤트', m.get('svc_false_events')),
         ('학습 폴더와 겹친 영상', m.get('n_in_train')),
+        ('야간 영상(config.NIGHT_VIDEOS)', m.get('svc_night') or '없음'),
         ('추론 장치', speed.get('device')),
         ('처리 속도(서비스 경로)', f"초당 {s['proc_fps']:.1f} 프레임, 실시간의 {s['realtime_x']:.2f}배 "
                             f"(클립 렌더링 제외)" if s else None),

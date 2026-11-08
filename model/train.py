@@ -145,9 +145,12 @@ def train_model(
         data_dir=data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=True,
     )
+    val_dir = getattr(config, 'VAL_DATA_DIR', None)
+    val_dir = Path(val_dir) if val_dir else None
+    use_val_dir = val_dir is not None and val_dir.exists() and any(val_dir.rglob('*.mp4'))
     # 검증 클립은 매 에포크 같으므로 처음 만든 것을 저장해 두고 읽는다(config.TRAIN_VAL_CACHE, 결과 같음)
     val_dataset = HitAndRunDataset(
-        data_dir=data_dir, clip_length=clip_length, r_value=r_value,
+        data_dir=val_dir if use_val_dir else data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=False,
         cache_dir=config.TRAIN_VAL_CACHE_DIR if getattr(config, 'TRAIN_VAL_CACHE', False) else None,
     )
@@ -184,23 +187,137 @@ def train_model(
         vkey = s.get('video_key', s['mp4_path'])
         groups.setdefault(key, {}).setdefault(vkey, []).append(i)
 
-    gen = torch.Generator().manual_seed(42)  # 재현 가능한 분할 (seed 고정)
     train_idx, val_rc_idx, val_real_idx = [], [], []
     split_videos = {'train': [], 'val': []}  # 회차 폴더에 남길 영상 목록(나중에 누수 확인용)
     n_train_vid = n_val_vid = 0
-    for (dom, direction, scen), vid_map in sorted(groups.items()):
-        vkeys = sorted(vid_map)                      # 영상 목록(그룹 내)
-        order = torch.randperm(len(vkeys), generator=gen).tolist()
-        shuffled = [vkeys[i] for i in order]
-        cut = int(train_split_ratio * len(vkeys))
-        for vk in shuffled[:cut]:                    # 영상 통째로 train
-            train_idx += vid_map[vk]
+    # 검증 고정 파일(config.TRAIN_SPLIT_LOCK)이 있으면 그 목록이 검증, 나머지 전부 학습 — 폴더에 영상을
+    # 더하거나 빼도 검증이 다시 섞이지 않는다. 없으면 예전처럼 그룹마다 seed 42 로 8:2.
+    lock_path = getattr(config, 'TRAIN_SPLIT_LOCK', None)
+    lock_path = Path(lock_path) if lock_path and Path(lock_path).exists() else None
+    lock_val = set()
+    if lock_path is not None:
+        with open(lock_path, encoding='utf-8') as _f:
+            lock_val = {v.replace('\\', '/') for v in json.load(_f)['val']}
+    if use_val_dir:
+        # 검증 = 검증 폴더 전부. 고정 목록의 검증 영상이 학습 폴더에 남아 있으면(덜 옮김) 학습에 섞이지 않게 뺀다.
+        left = []
+        for (dom, direction, scen), vid_map in sorted(groups.items()):
+            for vk in sorted(vid_map):
+                if os.path.relpath(vk, data_dir).replace('\\', '/') in lock_val:
+                    left.append(vk)
+                    continue
+                train_idx += vid_map[vk]
+                split_videos['train'].append(vk)
+                n_train_vid += 1
+        val_keys = []
+        for i, s in enumerate(val_dataset.samples):
+            (val_real_idx if _domain(s['mp4_path']) == 'real' else val_rc_idx).append(i)
+            vk = s.get('video_key', s['mp4_path'])
+            if not val_keys or val_keys[-1] != vk:
+                val_keys.append(vk)
+        split_videos['val'] = list(dict.fromkeys(val_keys))
+        n_val_vid = len(split_videos['val'])
+        val_rel = {os.path.relpath(v, val_dir).replace('\\', '/') for v in split_videos['val']}
+        not_moved = sorted(lock_val - val_rel)
+        print(f"[분할] 검증 폴더 {val_dir} — 검증 영상 {n_val_vid}개(학습 폴더 {data_dir} 는 전부 학습)"
+              + (f" · 고정 목록 {len(lock_val)}개 중 검증 폴더에 없음 {len(not_moved)}개" if lock_path and not_moved else ""))
+        if left:
+            print(f"[분할] ⚠️ 고정 목록의 검증 영상 {len(left)}개가 학습 폴더에 남아 있어 학습에서 뺐습니다 — "
+                  f"python -m model.val_move --apply 로 옮기세요: "
+                  + ', '.join(os.path.splitext(os.path.basename(v))[0] for v in left[:10])
+                  + (' …' if len(left) > 10 else ''))
+    elif lock_path is not None:
+        seen = set()
+        for (dom, direction, scen), vid_map in sorted(groups.items()):
+            for vk in sorted(vid_map):
+                rel = os.path.relpath(vk, data_dir).replace('\\', '/')
+                if rel in lock_val:
+                    seen.add(rel)
+                    (val_real_idx if dom == 'real' else val_rc_idx).extend(vid_map[vk])
+                    split_videos['val'].append(vk)
+                    n_val_vid += 1
+                else:
+                    train_idx += vid_map[vk]
+                    split_videos['train'].append(vk)
+                    n_train_vid += 1
+        missing = sorted(lock_val - seen)
+        miss_real = [os.path.splitext(os.path.basename(m))[0] for m in missing if m.startswith('realdata/')]
+        print(f"[분할] 검증 고정({lock_path.name}): 목록 {len(lock_val)}개 중 데이터 폴더에 있음 {len(seen)}개"
+              + (f" · ⚠️ 없음 {len(missing)}개(실제 영상 {', '.join(miss_real) or '0개'}, "
+                 f"rc {len(missing) - len(miss_real)}개) — 검증 세트가 기준과 다릅니다" if missing else ""))
+    else:
+        if getattr(config, 'TRAIN_SPLIT_LOCK', None):
+            print(f"[분할] ⚠️ 검증 고정 파일이 없어 예전 방식(seed 42)으로 나눕니다 -> {config.TRAIN_SPLIT_LOCK}")
+        gen = torch.Generator().manual_seed(42)  # 재현 가능한 분할 (seed 고정)
+        for (dom, direction, scen), vid_map in sorted(groups.items()):
+            vkeys = sorted(vid_map)                      # 영상 목록(그룹 내)
+            order = torch.randperm(len(vkeys), generator=gen).tolist()
+            shuffled = [vkeys[i] for i in order]
+            cut = int(train_split_ratio * len(vkeys))
+            for vk in shuffled[:cut]:                    # 영상 통째로 train
+                train_idx += vid_map[vk]
+                split_videos['train'].append(vk)
+            for vk in shuffled[cut:]:                    # 영상 통째로 val
+                (val_real_idx if dom == 'real' else val_rc_idx).extend(vid_map[vk])
+                split_videos['val'].append(vk)
+            n_train_vid += cut
+            n_val_vid += len(vkeys) - cut
+
+    # 검증 대신 학습에 넣을 영상(config.TRAIN_FORCE_TRAIN_VIDEOS) — 분할은 그대로 하고 검증에 뽑힌 것만 옮겨
+    # 다른 영상의 분할이 바뀌지 않게 한다
+    force = {str(n) for n in (getattr(config, 'TRAIN_FORCE_TRAIN_VIDEOS', ()) or ())}
+    forced = []
+    if use_val_dir:
+        # 폴더로 나눈 뒤엔 파일 위치가 곧 분할이다 — 검증 폴더에 들어 있으면 알리기만 한다
+        in_val = sorted(os.path.splitext(os.path.basename(v))[0] for v in split_videos['val']
+                        if os.path.splitext(os.path.basename(v))[0] in force)
+        if in_val:
+            print(f"[분할] ⚠️ TRAIN_FORCE_TRAIN_VIDEOS {', '.join(in_val)} 가 검증 폴더에 있습니다 — 학습 폴더로 옮기세요")
+        force = set()
+    for vk in list(split_videos['val']):
+        if os.path.splitext(os.path.basename(vk))[0] in force:
+            idxs = [i for i, s in enumerate(train_dataset.samples) if s.get('video_key', s['mp4_path']) == vk]
+            moved = set(idxs)
+            val_rc_idx[:] = [i for i in val_rc_idx if i not in moved]
+            val_real_idx[:] = [i for i in val_real_idx if i not in moved]
+            train_idx += idxs
+            split_videos['val'].remove(vk)
             split_videos['train'].append(vk)
-        for vk in shuffled[cut:]:                    # 영상 통째로 val
-            (val_real_idx if dom == 'real' else val_rc_idx).extend(vid_map[vk])
-            split_videos['val'].append(vk)
-        n_train_vid += cut
-        n_val_vid += len(vkeys) - cut
+            n_train_vid += 1
+            n_val_vid -= 1
+            forced.append(os.path.splitext(os.path.basename(vk))[0])
+    if force:
+        missing = sorted(force - set(forced) - {os.path.splitext(os.path.basename(v))[0]
+                                                  for v in split_videos['train']})
+        print(f"[분할] 학습 쪽 고정(config.TRAIN_FORCE_TRAIN_VIDEOS): 검증에서 옮김 {', '.join(forced) or '없음'}"
+              + (f" · ⚠️ 데이터에 없음 {', '.join(missing)}" if missing else ''))
+
+    # 10fps 미만 영상(config.EXCLUDE_VIDEOS) — 보통은 lowfps_move 로 이미 폴더 밖에 있다. 아직 남아 있는
+    # 컴퓨터(옮기기 전 서버 등)에서도 같은 학습이 되게 분할 뒤에 한 번 더 뺀다(다른 영상의 분할은 그대로).
+    excl = set(getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
+    excluded = []
+    if excl:
+        def _stem(v):
+            return os.path.splitext(os.path.basename(v))[0]
+        drop = {i for i, s in enumerate(train_dataset.samples)
+                if _stem(s.get('video_key', s['mp4_path'])) in excl}
+        # 검증 번호는 검증 폴더를 쓰면 val_dataset 기준, 아니면 학습 데이터셋과 같은 번호
+        drop_val = ({i for i, s in enumerate(val_dataset.samples) if _stem(s.get('video_key', s['mp4_path'])) in excl}
+                    if use_val_dir else drop)
+        if drop or drop_val:
+            train_idx[:] = [i for i in train_idx if i not in drop]
+            val_rc_idx[:] = [i for i in val_rc_idx if i not in drop_val]
+            val_real_idx[:] = [i for i in val_real_idx if i not in drop_val]
+            for part in ('train', 'val'):
+                gone = [v for v in split_videos[part] if _stem(v) in excl]
+                split_videos[part] = [v for v in split_videos[part] if _stem(v) not in excl]
+                excluded += [_stem(v) for v in gone]
+                if part == 'train':
+                    n_train_vid -= len(gone)
+                else:
+                    n_val_vid -= len(gone)
+            print(f"[제외] 10fps 미만(config.LOW_FPS_VIDEOS) 중 데이터 폴더에 남아 있던 {len(excluded)}개를 뺌: "
+                  f"{', '.join(sorted(excluded))} — python -m model.lowfps_move --apply 로 옮기세요")
 
     print(f"[분할] 영상 {n_train_vid + n_val_vid}개 → train {n_train_vid} / "
           f"val {n_val_vid} (영상 단위, 누수 없음)")
@@ -283,12 +400,42 @@ def train_model(
 
     # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
     lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
+    lq_default = (abs(float(config.TRAIN_LQ_SIZE_PROB) - 0.5) < 1e-9 and tuple(config.TRAIN_LQ_CRF_RANGE) == (28, 42))
     if lq_p > 0:
-        run_tag = f"{run_tag}_lq"
+        # 10-29 의 설정 그대로면 _lq, 줄이기 비율·CRF 상한을 바꾼 약한 설정이면 _lqw(섞이지 않게)
+        run_tag = f"{run_tag}_{'lq' if lq_default else 'lqw'}"
         lo, hi = config.TRAIN_LQ_SIZE_RANGE
         c_lo, c_hi = config.TRAIN_LQ_CRF_RANGE
         print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
               f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
+
+    # ── 불빛 증강 (config.TRAIN_LIGHT_AUG_PROB, 기본 끔) ── 켜면 이름에 _light
+    light_p = float(getattr(config, 'TRAIN_LIGHT_AUG_PROB', 0) or 0)
+    if light_p > 0:
+        run_tag = f"{run_tag}_light"
+        print(f"[불빛 증강] 켬 — 확률 {light_p:g} · 사고·정상 같은 확률 · 훑기 60%/비추기 40% · "
+              f"{config.TRAIN_LIGHT_DARK_PROB:.0%}는 먼저 어둡게(0.25~0.6)")
+
+    # ── 입력 크기 (config.INPUT_SIZE, 기본 224) ── 다르면 이름에 _s<크기> — 가중치를 읽을 때 이 표시로 크기를 맞춘다
+    if config.RESIZE[0] != 224:
+        run_tag = f"{run_tag}_s{config.RESIZE[0]}"
+        print(f"[입력 크기] {config.RESIZE[0]}×{config.RESIZE[1]} (기본 224) — 평가·서비스도 INPUT_SIZE={config.RESIZE[0]} 로")
+
+    # ── 헤드 시간 풀링 (config.HEAD_TEMPORAL_POOL, 기본 avg) ── 다르면 이름에 _top3·_avgtop3 — 가중치를 읽을 때 이 표시로 맞춘다
+    pool = getattr(config, 'HEAD_TEMPORAL_POOL', 'avg')
+    if pool != 'avg':
+        run_tag = f"{run_tag}_{pool}"
+        print(f"[헤드 시간 풀링] {pool}(채널·칸마다 시간 축 상위 {config.HEAD_TEMPORAL_TOPK}개"
+              f"{' 평균' if pool == 'top3' else ' 평균과 30시점 평균의 평균'}) — 평가·서비스도 HEAD_TEMPORAL_POOL={pool} 로")
+
+    # ── fps 증강 (config.TRAIN_FPS_AUG_PROB, 기본 끔) ── 켜면 이름에 _fps 를 붙여 기존 학습과 구분한다
+    fps_p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0) or 0)
+    fps_ks = tuple(getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3)))
+    if fps_p > 0:
+        run_tag = f"{run_tag}_fps"
+        print(f"[fps 증강] 켬 — 확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장(30fps 원본이면 "
+              f"{'·'.join(f'{30 / k:g}' for k in fps_ks)}fps 처럼) · 결과 {config.TRAIN_FPS_AUG_MIN_FPS:g}fps 미만·"
+              f"짧은 영상·창 묶음 샘플은 그대로")
 
     if dry_run:
         if batch_sampler is not None:
@@ -343,8 +490,11 @@ def train_model(
             'data_dir': str(root),
             'n_train_videos': len(split_videos['train']),
             'n_val_videos': len(split_videos['val']),
+            'val_dir': str(val_dir) if use_val_dir else None,
+            'split_lock': str(lock_path) if lock_path is not None else None,
+            'excluded_in_folder': sorted(excluded),
             'train': sorted(os.path.relpath(v, root) for v in split_videos['train']),
-            'val': sorted(os.path.relpath(v, root) for v in split_videos['val']),
+            'val': sorted(os.path.relpath(v, val_dir if use_val_dir else root) for v in split_videos['val']),
         }, _f, ensure_ascii=False, indent=2)
     run_info = [
         ('종류', '학습'),
@@ -368,6 +518,18 @@ def train_model(
          '켬' if (use_channels_last and is_channels_last_3d_supported(device)) else '끔'),
         ('데이터 폴더', str(data_dir)),
         ('영상 수', f"학습 {len(split_videos['train'])} / 검증 {len(split_videos['val'])}"),
+        ('입력 크기', f'{config.RESIZE[0]}×{config.RESIZE[1]}'),
+        ('헤드 시간 풀링', pool if pool == 'avg' else f'{pool} (상위 {config.HEAD_TEMPORAL_TOPK}개)'),
+        ('검증 영상', f'검증 폴더 {val_dir}' if use_val_dir else
+                    (f'고정 목록 {lock_path.name}' if lock_path is not None else 'seed 42 분할')),
+        ('10fps 미만 제외', f"켬 (목록 {len(getattr(config, 'LOW_FPS_VIDEOS', ()))}개, 폴더에 남아 있어 뺀 것 {len(excluded)}개)"
+                          if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
+        ('학습 쪽 고정 영상', ', '.join(forced) if forced else '없음'),
+        ('크롭 r', f'{r_value:g} (학습 중 r 증강 제거)'),
+        ('저화질 증강', (f'확률 {lq_p:g} · 줄이기 {config.TRAIN_LQ_SIZE_PROB:g} · CRF {config.TRAIN_LQ_CRF_RANGE[0]}~'
+                    f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
+        ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
+        ('불빛 증강', f'확률 {light_p:g} (사고·정상 같은 확률)' if light_p > 0 else '끔'),
     ]
     write_run_info(run_dir, run_info)
 
