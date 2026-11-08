@@ -106,3 +106,61 @@ body.dark-mode .dashboard-layout .filter-pills { background: #0d1b1e; }
 @media (prefers-reduced-motion: reduce) {
   .public-login-page .public-hero h1 em { animation: none; }
 }
+
+/* Retain the existing page sequence while giving each section a clearer job. */
+@media (min-width: 901px) {
+  .public-login-page .premium-showcase {
+    display: grid;
+    grid-template-columns: minmax(270px, .8fr) minmax(0, 1.2fr);
+    align-items: center;
+    gap: clamp(36px, 5vw, 80px);
+    padding: 80px max(28px, calc((100vw - 1184px) / 2)) 0;
+    text-align: left;
+  }
+  .public-login-page .premium-showcase-copy { padding-bottom: 80px; }
+  .public-login-page .premium-showcase h2 { font-size: clamp(32px, 3.4vw, 52px); }
+  .public-login-page .premium-review-window {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    align-self: end;
+    transform: none;
+  }
+  .public-login-page .premium-review-window:hover { transform: none; }
+  .public-login-page .premium-window-bottom { padding-bottom: 20px; }
+}
+
+.public-login-page .premium-feature-grid { align-items: stretch; }
+.public-login-page .premium-feature { display: flex; flex-direction: column; }
+.public-login-page .premium-feature-tag { margin-top: auto; padding-top: 24px; }
+
+/* Keep the overview and its metrics together, with a distinct reading order. */
+.dashboard-layout .incident-overview { align-items: center; }
+.dashboard-layout .incident-overview-copy { min-width: 0; }
+.dashboard-layout .incident-metrics {
+  align-items: stretch;
+  gap: 0;
+  padding: 20px 0;
+  border: 1px solid #a8d4cc38;
+  border-radius: 10px;
+  background: #091f2538;
+}
+.dashboard-layout .incident-metrics > div { padding: 4px 20px; border-top: 0; }
+.dashboard-layout .incident-metrics > div + div { border-left: 1px solid #a8d4cc38; }
+.dashboard-layout .incident-metrics strong { margin-top: 10px; }
+.dashboard-layout .home-toolbar { align-items: center; }
+.dashboard-layout .home-toolbar-filters { flex: 1 1 620px; }
+.dashboard-layout .home-toolbar-actions { margin-left: auto; }
+
+@media (max-width: 768px) {
+  .dashboard-layout .home-toolbar-filters { flex: 0 1 auto; }
+}
+
+@media (max-width: 720px) {
+  .dashboard-layout .incident-metrics { padding: 15px 0; }
+  .dashboard-layout .incident-metrics > div { padding-inline: 12px; min-width: 0; }
+  .dashboard-layout .incident-metrics span { display: block; line-height: 1.4; }
+  .dashboard-layout .incident-metrics strong { font-size: clamp(25px, 8vw, 36px); }
+  .dashboard-layout .home-toolbar-filters { flex-basis: auto; width: 100%; }
+  .dashboard-layout .home-toolbar-actions { margin-left: 0; }
+}
