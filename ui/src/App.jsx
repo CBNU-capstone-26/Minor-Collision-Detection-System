@@ -3434,11 +3434,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     ⏱ {formatTime(clipEvent.timestamp)}
                     {clipEvent.endTimestamp != null ? ` ~ ${formatTime(clipEvent.endTimestamp)}` : ""}
                   </span>
-                  {clipEvent.prob != null && (
-                    <span className="clip-chip clip-chip-danger">
-                      사고 확률 {(clipEvent.prob * 100).toFixed(1)}%
-                    </span>
-                  )}
                 </div>
               </div>
               <button
