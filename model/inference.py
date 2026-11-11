@@ -621,15 +621,25 @@ def predict_events_and_clips(
     window_pred = {}
     window_prob_a = {}
 
-    _mean = torch.tensor(config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
-    _std = torch.tensor(config.NORM_STD, dtype=torch.float32).view(3, 1, 1, 1)
-    buf = {}             # 프레임 번호 → 224 크롭(uint8 RGB). 아직 필요한 최근 프레임만 둔다
+    _mean = np.asarray(config.NORM_MEAN, dtype=np.float32).reshape(3, 1, 1)
+    _std = np.asarray(config.NORM_STD, dtype=np.float32).reshape(3, 1, 1)
+    # 프레임 번호 → 정규화한 224 크롭 (3, H, W) float32 텐서. 아직 필요한 최근 프레임만 둔다.
+    # 버퍼에 넣을 때 한 번만 정규화해, 촘촘한 창에서 같은 프레임을 반복 처리하지 않는다.
+    buf = {}
+    pool = []
+
+    def _normalize(rgb):
+        t = pool.pop() if pool else torch.empty((3,) + rgb.shape[:2], dtype=torch.float32)
+        a = t.numpy()
+        np.copyto(a, rgb.transpose(2, 0, 1), casting='unsafe')
+        np.divide(a, np.float32(255.0), out=a)
+        np.subtract(a, _mean, out=a)
+        np.divide(a, _std, out=a)
+        return t
 
     def _clip(w):
         """창 w 의 입력 텐서 (3, T, H, W) — 예전 '전체 텐서를 자른 것'과 같은 값."""
-        arr = np.stack([buf[i] for i in range(w, w + clip_length)], axis=0).astype(np.float32) / 255.0
-        t = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()
-        return (t - _mean) / _std
+        return torch.stack([buf[i] for i in range(w, w + clip_length)], dim=1)
 
     speed = {"n": 0, "sec": 0.0, "first": True}
     infer_sec = [0.0]       # 속도 측정용: 첫 묶음까지 포함한 3D-CNN 추론 총시간
@@ -759,8 +769,8 @@ def predict_events_and_clips(
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         processed, _ = _crop_square_and_pad(frame_rgb, target_bbox, r_value, resize)
         i = n_read
-        buf[i] = processed
-        last_frame = processed
+        buf[i] = _normalize(processed)
+        last_frame = buf[i]
         n_read += 1
         decode_sec += time.time() - t0
 
@@ -806,7 +816,7 @@ def predict_events_and_clips(
             if refine_pending:
                 need = min(need, min(refine_pending))
         for old in [f for f in buf if f < need]:
-            del buf[old]
+            pool.append(buf.pop(old))
         max_buf[0] = max(max_buf[0], len(buf))
 
         # 진행률: 영상을 읽은 비율(남은 시간 = 남은 프레임 × 지금까지 프레임당 시간).
