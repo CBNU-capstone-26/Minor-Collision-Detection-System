@@ -19,7 +19,8 @@ from app import db_models, api_schemas
 from app.auth_guard import get_current_user, get_media_user
 from app.settings import settings
 from app.object_storage import LocalObjectStorage, get_storage, materialize
-from app.thumbnails import ensure_thumbnail, thumbnail_key, delete_thumbnail_cache
+from app.thumbnails import ensure_thumbnail, thumbnail_key
+from app.file_cleanup import queue_cleanup, try_pending_cleanup
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
@@ -40,18 +41,11 @@ def raw_clip_key(ev: db_models.CrashEvent):
     return f"{Path(ev.clip_path).with_suffix('')}_raw.mp4"
 
 
-def _unlink_event_clips(events, db: Session):
-    """다른 이벤트가 공유하지 않는 R2/로컬 클립만 지운다."""
-    ids = {ev.id for ev in events}
-    storage = get_storage()
+def _queue_event_clips(events, db: Session):
+    """삭제 확정 후 공유 참조가 없는 클립을 정리하도록 기록한다."""
     for path in {ev.clip_path for ev in events if ev.clip_path}:
-        still_used = db.query(db_models.CrashEvent).filter(
-            db_models.CrashEvent.clip_path == path,
-            db_models.CrashEvent.id.notin_(ids),
-        ).count()
-        if not still_used:
-            storage.delete(path)
-            storage.delete(f"{Path(path).with_suffix('')}_raw.mp4")
+        queue_cleanup(db, path, path, 'clip')
+        queue_cleanup(db, f"{Path(path).with_suffix('')}_raw.mp4", path, 'clip')
 
 
 def to_event_out(ev: db_models.CrashEvent) -> api_schemas.EventOut:
@@ -189,10 +183,11 @@ def upload_video(
     stored_name = f"{uuid4().hex}{ext}"
     storage = get_storage()
     object_key = f"uploads/{stored_name}"
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
-        shutil.copyfileobj(file.file, temp_file)
-        temp_path = Path(temp_file.name)
+    temp_path = None
     try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+            shutil.copyfileobj(file.file, temp_file)
         width, height, fps, total_frames = _extract_metadata(temp_path)
         if total_frames <= 0:
             raise HTTPException(status_code=400, detail="영상을 읽을 수 없습니다.")
@@ -202,7 +197,8 @@ def upload_video(
         except Exception as exc:
             logging.getLogger(__name__).warning("Thumbnail preparation failed: %s", type(exc).__name__)
     finally:
-        temp_path.unlink(missing_ok=True)
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
     video = db_models.Video(
         user_id=user.id,
@@ -262,6 +258,7 @@ def delete_video(
 
     purge_video(video, db)
     db.commit()
+    try_pending_cleanup(db)
     return {"deleted": video_id}
 
 
@@ -282,12 +279,13 @@ def clear_video_analysis_history(
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.video_id == video.id
     ).all()
-    _unlink_event_clips(events, db)
+    _queue_event_clips(events, db)
     for event in events:
         db.delete(event)
     for task in tasks:
         db.delete(task)
     db.commit()
+    try_pending_cleanup(db)
     return {"deleted_history_count": len(tasks), "deleted_event_count": len(events)}
 
 
@@ -296,7 +294,7 @@ def purge_video(video: db_models.Video, db: Session) -> None:
     # 1) 관련 CAM 클립 파일 삭제 + crash_events 행 삭제
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.video_id == video.id).all()
-    _unlink_event_clips(events, db)
+    _queue_event_clips(events, db)
     for ev in events:
         db.delete(ev)
 
@@ -319,11 +317,10 @@ def purge_video(video: db_models.Video, db: Session) -> None:
         db.delete(task)
 
     # 3) 원본 영상 + 썸네일 파일 삭제
-    storage = get_storage()
-    storage.delete(video.video_path)
-    storage.delete(f"thumbnails/{Path(video.video_path).stem}.jpg")
-    storage.delete(thumbnail_key(video.video_path))
-    delete_thumbnail_cache(video.video_path, settings.THUMBNAIL_DIR)
+    queue_cleanup(db, video.video_path, video.video_path, 'video')
+    queue_cleanup(db, f"thumbnails/{Path(video.video_path).stem}.jpg", video.video_path, 'video')
+    queue_cleanup(db, thumbnail_key(video.video_path), video.video_path, 'video')
+    queue_cleanup(db, video.video_path, video.video_path, 'video', cleanup_kind='cache')
 
     # 4) 영상 행 삭제
     db.delete(video)
@@ -345,10 +342,11 @@ def delete_crash_event(
     if event is None:
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
 
-    _unlink_event_clips([event], db)
+    _queue_event_clips([event], db)
 
     db.delete(event)
     db.commit()
+    try_pending_cleanup(db)
     return {"deleted_event_id": event_id}
 
 
@@ -364,10 +362,11 @@ def clear_all_crash_events(
         db_models.CrashEvent.video_id == video.id
     ).all()
     count = len(events)
-    _unlink_event_clips(events, db)
+    _queue_event_clips(events, db)
     for ev in events:
         db.delete(ev)
     db.commit()
+    try_pending_cleanup(db)
     return {"deleted_count": count}
 
 
@@ -507,9 +506,12 @@ def _vehicle_detection_progress(task: db_models.VehicleDetectionTask) -> dict:
     if task.status != "PROCESSING" or not task.celery_task_id:
         return {"progress": None, "stage": None}
     from app.worker import celery_app
-    result = celery_app.AsyncResult(task.celery_task_id)
-    if result.state == "PROGRESS" and isinstance(result.info, dict):
-        return {"progress": result.info.get("percent"), "stage": result.info.get("stage")}
+    try:
+        result = celery_app.AsyncResult(task.celery_task_id)
+        if result.state == "PROGRESS" and isinstance(result.info, dict):
+            return {"progress": result.info.get("percent"), "stage": result.info.get("stage")}
+    except Exception as exc:
+        logging.getLogger(__name__).warning('Detection progress unavailable: %s', type(exc).__name__)
     return {"progress": None, "stage": None}
 
 
@@ -524,10 +526,12 @@ def _vehicle_detection_rows(task: db_models.VehicleDetectionTask) -> list[dict]:
 
 
 def _enqueue_vehicle_detection(video: db_models.Video, timestamp_sec: float, db: Session):
+    # Keep concurrent requests from creating duplicate active detections.
+    db.query(db_models.Video.id).filter(db_models.Video.id == video.id).with_for_update().one()
     existing = (db.query(db_models.VehicleDetectionTask)
                 .filter(db_models.VehicleDetectionTask.video_id == video.id,
                         db_models.VehicleDetectionTask.status.in_(VEHICLE_DETECTION_ACTIVE_STATUSES))
-                .order_by(db_models.VehicleDetectionTask.id).first())
+                .order_by(db_models.VehicleDetectionTask.id).with_for_update().first())
     if existing is not None:
         return api_schemas.VehicleDetectionTaskOut(
             task_id=existing.id,

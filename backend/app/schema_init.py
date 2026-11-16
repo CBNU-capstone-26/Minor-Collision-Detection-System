@@ -31,3 +31,11 @@ def create_tables_safely(engine, metadata):
             if public_roles:
                 role_names = ", ".join(preparer.quote_identifier(role) for role in public_roles)
                 connection.execute(text(f"REVOKE ALL PRIVILEGES ON TABLE {table_name} FROM {role_names}"))
+            if table.name == "file_cleanup_queue":
+                sequence = connection.execute(text(
+                    "SELECT pg_get_serial_sequence(:table_name, 'id')"
+                ), {"table_name": table_name}).scalar_one_or_none()
+                if sequence:
+                    connection.execute(text(f"REVOKE ALL PRIVILEGES ON SEQUENCE {sequence} FROM PUBLIC"))
+                    if public_roles:
+                        connection.execute(text(f"REVOKE ALL PRIVILEGES ON SEQUENCE {sequence} FROM {role_names}"))

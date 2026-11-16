@@ -25,6 +25,14 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/signup", response_model=api_schemas.UserOut)
 def signup(req: api_schemas.SignupRequest, db: Session = Depends(get_db)):
+    if not req.username.strip() or len(req.username) > 255:
+        raise HTTPException(status_code=400, detail="아이디는 1자 이상 255자 이하여야 합니다.")
+    if not req.name.strip() or len(req.name) > 100:
+        raise HTTPException(status_code=400, detail="이름은 1자 이상 100자 이하여야 합니다.")
+    if req.email is not None and len(req.email) > 255:
+        raise HTTPException(status_code=400, detail="이메일은 255자 이하여야 합니다.")
+    if not req.password:
+        raise HTTPException(status_code=400, detail="비밀번호를 입력해 주세요.")
     if db.query(db_models.User).filter(
             db_models.User.username == req.username).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 아이디입니다.")

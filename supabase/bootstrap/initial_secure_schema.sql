@@ -3,7 +3,7 @@
 BEGIN;
 
 DO $$ BEGIN
-  IF to_regclass('public.users') IS NOT NULL OR to_regclass('public.videos') IS NOT NULL OR to_regclass('public.analysis_tasks') IS NOT NULL OR to_regclass('public.vehicle_detection_tasks') IS NOT NULL OR to_regclass('public.crash_events') IS NOT NULL THEN
+  IF to_regclass('public.users') IS NOT NULL OR to_regclass('public.videos') IS NOT NULL OR to_regclass('public.analysis_tasks') IS NOT NULL OR to_regclass('public.vehicle_detection_tasks') IS NOT NULL OR to_regclass('public.crash_events') IS NOT NULL OR to_regclass('public.file_cleanup_queue') IS NOT NULL THEN
     RAISE EXCEPTION 'Initial schema requires an empty application database';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') OR

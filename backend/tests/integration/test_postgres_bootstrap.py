@@ -46,6 +46,10 @@ class PostgresBootstrapTests(unittest.TestCase):
                 self.assertFalse(anon_read, name)
                 self.assertFalse(authenticated_write, name)
             conn.execute(text("SELECT 1 FROM public.vehicle_detection_tasks LIMIT 1")).all()
+            for role in ('anon', 'authenticated'):
+                self.assertFalse(conn.execute(text(
+                    "SELECT has_sequence_privilege(:role, 'public.file_cleanup_queue_id_seq', 'USAGE')"
+                ), {'role': role}).scalar_one())
 
         # Existing tables are not silently given a new access policy on restart.
         with self.engine.begin() as conn:

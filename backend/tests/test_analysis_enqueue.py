@@ -11,7 +11,7 @@ from app.routers.analysis import _enqueue
 class AnalysisEnqueueTests(unittest.TestCase):
     def test_queue_failure_marks_task_failed_and_returns_service_unavailable(self):
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
+        db.query.return_value.filter.return_value.order_by.return_value.with_for_update.return_value.first.return_value = None
         db.refresh.side_effect = lambda task: setattr(task, "id", 42)
 
         with patch(

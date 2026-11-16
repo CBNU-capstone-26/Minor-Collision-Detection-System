@@ -4,6 +4,7 @@ torch/opencv/모델 임포트는 모두 **태스크 내부에서 지연 로딩**
 → FastAPI 웹 프로세스는 ML 의존성 없이도 이 모듈을 임포트(.delay 호출)할 수 있다.
 """
 import tempfile
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -73,8 +74,14 @@ def run_prediction_task(self, task_id: int):
         if task.status != "PENDING":
             return {"task_id": task_id, "skipped": task.status}
 
-        task.status = "PROCESSING"
+        updated = (db.query(db_models.AnalysisTask)
+                   .filter(db_models.AnalysisTask.id == task_id,
+                           db_models.AnalysisTask.status == "PENDING")
+                   .update({"status": "PROCESSING"}, synchronize_session=False))
         db.commit()
+        db.refresh(task)
+        if not updated:
+            return {"task_id": task_id, "skipped": task.status}
         self.update_state(state="PROGRESS", meta={"percent": 0, "stage": "loading"})
 
         video = db.get(db_models.Video, task.video_id)
@@ -106,6 +113,7 @@ def run_prediction_task(self, task_id: int):
                     "count": count, "index": index})
 
         storage = get_storage()
+        uploaded_keys = []
         with materialize(storage, video.video_path, suffix=Path(video.video_path).suffix) as source_path, \
                 tempfile.TemporaryDirectory(prefix="collision-clips-") as output_dir:
             results = predict_events_and_clips(
@@ -126,10 +134,13 @@ def run_prediction_task(self, task_id: int):
                 clip_path = Path(r["clip_path"])
                 clip_key = f"clips/{clip_path.name}"
                 storage.upload_path(clip_path, clip_key, content_type="video/mp4")
+                uploaded_keys.append(clip_key)
                 raw_path = r.get("raw_clip_path")
                 if raw_path:
                     raw_path = Path(raw_path)
-                    storage.upload_path(raw_path, f"clips/{raw_path.name}", content_type="video/mp4")
+                    raw_key = f"clips/{raw_path.name}"
+                    storage.upload_path(raw_path, raw_key, content_type="video/mp4")
+                    uploaded_keys.append(raw_key)
                 db.add(db_models.CrashEvent(
                     task_id=task.id,
                     video_id=video.id,
@@ -143,20 +154,31 @@ def run_prediction_task(self, task_id: int):
                 ))
 
         # 분석 도중 취소됐는데(revoke 실패 등) 끝까지 돌았다면 결과를 버린다
-        task.status = "SUCCESS"
-        task.finished_at = datetime.utcnow()
-        task.event_count = len(results)
+        updated = (db.query(db_models.AnalysisTask)
+                   .filter(db_models.AnalysisTask.id == task_id,
+                           db_models.AnalysisTask.status == "PROCESSING")
+                   .update({"status": "SUCCESS", "finished_at": datetime.utcnow(),
+                            "event_count": len(results)}, synchronize_session=False))
+        if not updated:
+            db.rollback()
+            for key in uploaded_keys:
+                try:
+                    storage.delete(key)
+                except Exception as exc:
+                    logging.getLogger(__name__).warning('Cancelled clip cleanup failed: %s', type(exc).__name__)
+            current = db.get(db_models.AnalysisTask, task_id)
+            return {"task_id": task_id, "skipped": current.status if current else "missing"}
         db.commit()
         return {"task_id": task_id, "events": len(results)}
 
     except Exception as exc:  # noqa: BLE001
         db.rollback()
-        task = db.get(db_models.AnalysisTask, task_id)
-        if task is not None:
-            task.status = "FAILURE"
-            task.error_message = str(exc)[:2000]
-            task.finished_at = datetime.utcnow()
-            db.commit()
+        (db.query(db_models.AnalysisTask)
+         .filter(db_models.AnalysisTask.id == task_id,
+                 db_models.AnalysisTask.status.in_(("PENDING", "PROCESSING")))
+         .update({"status": "FAILURE", "error_message": str(exc)[:2000],
+                  "finished_at": datetime.utcnow()}, synchronize_session=False))
+        db.commit()
         raise
     finally:
         db.close()
