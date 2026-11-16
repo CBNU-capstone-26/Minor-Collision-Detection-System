@@ -302,7 +302,7 @@ class HitAndRunDataset(Dataset):
         veh_w, veh_h = (x_max - x_min) * r, (y_max - y_min) * r
         cx, cy = x_min + (x_max - x_min) // 2, y_min + (y_max - y_min) // 2
 
-        square_size = int(max(veh_w, veh_h))
+        square_size = max(2, int(max(veh_w, veh_h)))
         new_x_min, new_y_min = cx - square_size // 2, cy - square_size // 2
         new_x_max, new_y_max = cx + square_size // 2, cy + square_size // 2
 

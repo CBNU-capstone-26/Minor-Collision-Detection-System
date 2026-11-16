@@ -49,7 +49,7 @@ def _evaluate_folder_impl(
         x_min, y_min, x_max, y_max = bbox
         vw, vh = (x_max - x_min) * r, (y_max - y_min) * r
         cx, cy = x_min + (x_max - x_min) // 2, y_min + (y_max - y_min) // 2
-        side = int(max(vw, vh))
+        side = max(2, int(max(vw, vh)))
         nx1, ny1 = cx - side // 2, cy - side // 2
         nx2, ny2 = cx + side // 2, cy + side // 2
         v_x1, v_y1 = max(0, nx1), max(0, ny1)
