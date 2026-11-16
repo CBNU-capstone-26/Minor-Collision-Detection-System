@@ -35,6 +35,20 @@ class FakeS3:
 
 
 class BackupArchiveTests(unittest.TestCase):
+    def test_role_definitions_are_backed_up_and_verified(self):
+        output = io.BytesIO()
+        build_archive(output, io.BytesIO(b'db'), lambda: 0, FakeS3({}), 'source',
+                      roles_dump=b'CREATE ROLE example;\n')
+        data = output.getvalue()
+        self.assertEqual(verify_archive(io.BytesIO(data)), {'objects': 0})
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as archive:
+            self.assertEqual(archive.extractfile('roles.sql').read(), b'CREATE ROLE example;\n')
+            offset = archive.getmember('roles.sql').offset_data
+        corrupted = bytearray(data)
+        corrupted[offset] ^= 1
+        with self.assertRaises(BackupError):
+            verify_archive(io.BytesIO(corrupted))
+
     def test_dump_connection_does_not_put_password_in_uri(self):
         from sqlalchemy.engine import make_url
 

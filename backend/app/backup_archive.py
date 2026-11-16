@@ -52,7 +52,7 @@ def verify_archive(source):
                     if member.name != expected:
                         raise BackupError("database chunks are out of order")
                     database_chunks.append(member.name)
-                elif not member.name.startswith("objects/"):
+                elif member.name != "roles.sql" and not member.name.startswith("objects/"):
                     raise BackupError("unexpected archive path")
                 digest = hashlib.sha256()
                 size = 0
@@ -69,7 +69,7 @@ def verify_archive(source):
     except (tarfile.TarError, json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
         raise BackupError("cannot read backup archive") from exc
 
-    if not isinstance(manifest, dict) or manifest.get("version") != 1:
+    if not isinstance(manifest, dict) or manifest.get("version") not in (1, 2):
         raise BackupError("missing or unsupported backup manifest")
     db = manifest.get("database")
     objects = manifest.get("objects")
@@ -82,6 +82,11 @@ def verify_archive(source):
 
     keys = set()
     paths = set(database_chunks)
+    if manifest['version'] == 2:
+        roles = manifest.get('roles')
+        if not isinstance(roles, dict) or roles.get('size', 0) <= 0 or observed.get('roles.sql') != roles:
+            raise BackupError('role definitions checksum mismatch')
+        paths.add('roles.sql')
     for obj in objects:
         if not isinstance(obj, dict) or not isinstance(obj.get("key"), str):
             raise BackupError("invalid object manifest")
@@ -126,7 +131,7 @@ class _HashingReader:
         return b"".join(chunks)
 
 
-def build_archive(output, database_stream, database_status, client, bucket, *, chunk_size=8 * 1024 * 1024, required_keys=()):
+def build_archive(output, database_stream, database_status, client, bucket, *, chunk_size=8 * 1024 * 1024, required_keys=(), roles_dump=None):
     """Do not complete an archive when pg_dump or any source object fails."""
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
@@ -147,6 +152,11 @@ def build_archive(output, database_stream, database_status, client, bucket, *, c
             db_size += len(chunk)
         if database_status() != 0 or not db_size:
             raise BackupError("database dump failed or was empty")
+
+        if roles_dump is not None:
+            if not roles_dump or len(roles_dump) > 10 * 1024 * 1024:
+                raise BackupError('role definitions are empty or too large')
+            _add_bytes(archive, 'roles.sql', roles_dump)
 
         pages = client.get_paginator("list_objects_v2").paginate(Bucket=bucket)
         entries = [item for page in pages for item in page.get("Contents", [])]
@@ -183,12 +193,14 @@ def build_archive(output, database_stream, database_status, client, bucket, *, c
                 body.close()
 
         manifest = {
-            "version": 1,
+            "version": 2 if roles_dump is not None else 1,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "database": {"chunks": db_chunks, "size": db_size, "sha256": db_hash.hexdigest()},
             "required_keys": sorted(required),
             "objects": objects,
         }
+        if roles_dump is not None:
+            manifest['roles'] = {'size': len(roles_dump), 'sha256': hashlib.sha256(roles_dump).hexdigest()}
         _add_bytes(archive, "manifest.json", json.dumps(manifest, ensure_ascii=False).encode("utf-8"))
 
 
@@ -202,6 +214,14 @@ def main():
     if not isinstance(storage, S3ObjectStorage) or engine.dialect.name != "postgresql":
         raise BackupError("backup requires PostgreSQL and S3 object storage")
     url, password = dump_connection(engine.url)
+    roles_command = [
+        'docker', 'run', '--rm', '-i', 'postgres:17-alpine', 'sh', '-c',
+        'IFS= read -r SIOT_DB_URL; IFS= read -r SIOT_DB_PASSWORD; '
+        'export PGPASSWORD="$SIOT_DB_PASSWORD"; exec pg_dumpall --no-password '
+        '--roles-only --no-role-passwords --no-comments --dbname="$SIOT_DB_URL"',
+    ]
+    role_result = subprocess.run(roles_command, input=(url + '\n' + password + '\n').encode(),
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
     command = [
         "docker", "run", "--rm", "-i", "postgres:17-alpine", "sh", "-c",
         'IFS= read -r SIOT_DB_URL; IFS= read -r SIOT_DB_PASSWORD; '
@@ -234,7 +254,7 @@ def main():
 
                     with storage._use_client() as client:
                         build_archive(sys.stdout.buffer, process.stdout, finish_dump, client, storage.bucket,
-                                      required_keys=required)
+                                      required_keys=required, roles_dump=role_result.stdout)
                 finally:
                     process.stdout.close()
                     if process.poll() is None:

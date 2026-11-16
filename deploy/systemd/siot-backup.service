@@ -2,6 +2,7 @@
 Description=SIOT encrypted database and video backup
 After=network-online.target docker.service
 Wants=network-online.target
+OnFailure=siot-backup-alert.service
 
 [Service]
 Type=oneshot
