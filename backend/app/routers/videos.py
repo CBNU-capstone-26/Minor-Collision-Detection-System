@@ -406,6 +406,15 @@ def video_thumbnail(video_id: int, request: Request, db: Session = Depends(get_d
     return response
 
 
+def _detection_timestamp(timestamp_sec, video):
+    timestamp = timestamp_sec if timestamp_sec is not None else 0.0
+    if not math.isfinite(timestamp):
+        raise HTTPException(status_code=400, detail="탐지 시각이 올바르지 않습니다.")
+    fps = video.fps if video.fps and math.isfinite(video.fps) and video.fps > 0 else 30.0
+    last_second = max(0, video.total_frames - 1) / fps
+    return min(max(0.0, timestamp), last_second)
+
+
 @router.post("/{video_id}/detect-vehicles-sync", response_model=api_schemas.VehicleDetectionResponse)
 def detect_vehicles_in_video(
     video_id: int,
@@ -417,6 +426,7 @@ def detect_vehicles_in_video(
     import json
 
     video = _get_owned_video(video_id, db, user)
+    timestamp_sec = _detection_timestamp(timestamp_sec, video)
     storage = get_storage()
     if not storage.exists(video.video_path):
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
@@ -427,7 +437,8 @@ def detect_vehicles_in_video(
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"차량 탐지 모듈 로드 실패: {err}")
 
-    frame_index = int((timestamp_sec or 0.0) * (video.fps or 30.0))
+    fps = video.fps if video.fps and math.isfinite(video.fps) and video.fps > 0 else 30.0
+    frame_index = int(timestamp_sec * fps)
     frame_index = max(0, min(frame_index, max(0, video.total_frames - 1)))
 
     try:
@@ -576,7 +587,7 @@ def enqueue_vehicle_detection(
 ):
     """GPU 워커에 차량 탐지를 맡기고, UI가 추적할 작업 ID를 반환한다."""
     video = _get_owned_video(video_id, db, user)
-    return _enqueue_vehicle_detection(video, timestamp_sec or 0.0, db)
+    return _enqueue_vehicle_detection(video, _detection_timestamp(timestamp_sec, video), db)
 
 
 @router.get("/{video_id}/vehicle-detection-tasks/{task_id}",

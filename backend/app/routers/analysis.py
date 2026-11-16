@@ -103,6 +103,9 @@ def analyze_video(
     user: db_models.User = Depends(get_current_user),
 ):
     video = _get_owned_video(video_id, db, user)
+    if not (0 <= req.bbox_xmin < req.bbox_xmax <= video.width and
+            0 <= req.bbox_ymin < req.bbox_ymax <= video.height):
+        raise HTTPException(status_code=400, detail="차량 영역이 영상 범위에 맞지 않습니다.")
     return _enqueue(video.id, req.model_dump(), db)
 
 

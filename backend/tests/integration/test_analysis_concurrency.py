@@ -291,3 +291,82 @@ class ConcurrentAnalysisTests(unittest.TestCase):
             self.assertEqual(task.status, 'SUCCESS')
             self.assertEqual(task.event_count, 1)
             self.assertEqual(db.query(db_models.CrashEvent).filter_by(task_id=task_id).count(), 1)
+
+    def test_cancelled_clip_cleanup_is_retried_after_storage_failure(self):
+        from app import prediction_job
+
+        with self.sessions.begin() as db:
+            user = db_models.User(username='cancel-cleanup-retry-test', password_hash='test')
+            db.add(user)
+            db.flush()
+            video = db_models.Video(user_id=user.id, video_name='test.mp4', video_path='uploads/test.mp4',
+                                    camera_location='test', width=10, height=10, fps=10, total_frames=10)
+            db.add(video)
+            db.flush()
+            task = db_models.AnalysisTask(video_id=video.id, status='PENDING', bbox_xmin=1,
+                                          bbox_ymin=1, bbox_xmax=5, bbox_ymax=5)
+            db.add(task)
+            db.flush()
+            task_id = task.id
+        inference = ModuleType('inference')
+        inference.predict_events_and_clips = lambda *args, **kwargs: [{
+            'clip_path': '/tmp/siot-cancel-retry-test.mp4', 'start_sec': 0, 'start_frame': 0,
+            'end_sec': 1, 'end_frame': 1, 'crash_prob': 0.5,
+        }]
+
+        def cancel_while_uploading(*args, **kwargs):
+            with self.sessions.begin() as db:
+                db.get(db_models.AnalysisTask, task_id).status = 'CANCELLED'
+
+        storage = SimpleNamespace(upload_path=cancel_while_uploading, delete=Mock(side_effect=OSError('down')))
+        with patch.object(prediction_job, 'SessionLocal', self.sessions), \
+             patch.object(prediction_job, '_get_model', return_value=object()), \
+             patch.object(prediction_job, 'get_storage', return_value=storage), \
+             patch.object(prediction_job, 'materialize', return_value=nullcontext(Path('/tmp/test.mp4'))), \
+             patch.object(prediction_job.run_prediction_task, 'update_state'), \
+             patch.dict(sys.modules, {'inference': inference}):
+            prediction_job.run_prediction_task.run(task_id)
+        with self.sessions() as db:
+            self.assertEqual(db.get(db_models.AnalysisTask, task_id).status, 'CANCELLED')
+            self.assertEqual(db.query(db_models.FileCleanup).filter_by(
+                object_key='clips/siot-cancel-retry-test.mp4').count(), 1)
+
+    def test_failed_raw_clip_upload_keeps_cleanup_retry_for_uploaded_clip(self):
+        from app import prediction_job
+
+        with self.sessions.begin() as db:
+            user = db_models.User(username='upload-cleanup-retry-test', password_hash='test')
+            db.add(user)
+            db.flush()
+            video = db_models.Video(user_id=user.id, video_name='test.mp4', video_path='uploads/test.mp4',
+                                    camera_location='test', width=10, height=10, fps=10, total_frames=10)
+            db.add(video)
+            db.flush()
+            task = db_models.AnalysisTask(video_id=video.id, status='PENDING', bbox_xmin=1,
+                                          bbox_ymin=1, bbox_xmax=5, bbox_ymax=5)
+            db.add(task)
+            db.flush()
+            task_id = task.id
+        inference = ModuleType('inference')
+        inference.predict_events_and_clips = lambda *args, **kwargs: [{
+            'clip_path': '/tmp/siot-upload-retry.mp4', 'raw_clip_path': '/tmp/siot-upload-retry_raw.mp4',
+            'start_sec': 0, 'start_frame': 0, 'end_sec': 1, 'end_frame': 1, 'crash_prob': 0.5,
+        }]
+
+        def fail_raw_upload(source, key, **kwargs):
+            if key.endswith('_raw.mp4'):
+                raise OSError('raw upload failed')
+
+        storage = SimpleNamespace(upload_path=fail_raw_upload, delete=Mock(side_effect=OSError('down')))
+        with patch.object(prediction_job, 'SessionLocal', self.sessions), \
+             patch.object(prediction_job, '_get_model', return_value=object()), \
+             patch.object(prediction_job, 'get_storage', return_value=storage), \
+             patch.object(prediction_job, 'materialize', return_value=nullcontext(Path('/tmp/test.mp4'))), \
+             patch.object(prediction_job.run_prediction_task, 'update_state'), \
+             patch.dict(sys.modules, {'inference': inference}):
+            with self.assertRaises(OSError):
+                prediction_job.run_prediction_task.run(task_id)
+        with self.sessions() as db:
+            self.assertEqual(db.get(db_models.AnalysisTask, task_id).status, 'FAILURE')
+            self.assertEqual(db.query(db_models.FileCleanup).filter_by(
+                object_key='clips/siot-upload-retry.mp4').count(), 1)

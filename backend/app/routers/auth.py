@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db_connection import get_db
@@ -33,22 +34,31 @@ def signup(req: api_schemas.SignupRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="이메일은 255자 이하여야 합니다.")
     if not req.password:
         raise HTTPException(status_code=400, detail="비밀번호를 입력해 주세요.")
+    email = (req.email.strip() or None) if req.email is not None else None
     if db.query(db_models.User).filter(
             db_models.User.username == req.username).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 아이디입니다.")
-    if req.email and db.query(db_models.User).filter(
-            db_models.User.email == req.email).first():
+    if email and db.query(db_models.User).filter(
+            db_models.User.email == email).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 이메일입니다.")
 
     user = db_models.User(
         username=req.username,
         password_hash=hash_password(req.password),
         name=req.name,
-        email=req.email,
+        email=email,
         role="USER",
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if db.query(db_models.User.id).filter(db_models.User.username == req.username).first():
+            raise HTTPException(status_code=400, detail="이미 사용 중인 아이디입니다.")
+        if email and db.query(db_models.User.id).filter(db_models.User.email == email).first():
+            raise HTTPException(status_code=400, detail="이미 사용 중인 이메일입니다.")
+        raise
     db.refresh(user)
     return user
 
@@ -104,21 +114,37 @@ def update_me(
     db: Session = Depends(get_db),
 ):
     """현재 로그인한 사용자의 프로필(이름, 이메일, 연락처)을 수정합니다."""
-    if req.email and req.email != current_user.email:
-        existing = db.query(db_models.User).filter(
-            db_models.User.email == req.email,
-            db_models.User.id != current_user.id
-        ).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="이미 사용 중인 이메일 주소입니다.")
-        current_user.email = req.email
+    if req.name is not None and len(req.name.strip()) > 100:
+        raise HTTPException(status_code=400, detail="이름은 100자 이하여야 합니다.")
+    if req.email is not None and len(req.email) > 255:
+        raise HTTPException(status_code=400, detail="이메일은 255자 이하여야 합니다.")
+    if req.phone is not None and len(req.phone.strip()) > 50:
+        raise HTTPException(status_code=400, detail="연락처는 50자 이하여야 합니다.")
+    user_id = current_user.id
+    email = (req.email.strip() or None) if req.email is not None else None
+    if req.email is not None:
+        if email and email != current_user.email:
+            existing = db.query(db_models.User).filter(
+                db_models.User.email == email,
+                db_models.User.id != current_user.id
+            ).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="이미 사용 중인 이메일 주소입니다.")
+        current_user.email = email
 
     if req.name is not None:
         current_user.name = req.name.strip()
     if req.phone is not None:
         current_user.phone = req.phone.strip()
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if email and db.query(db_models.User.id).filter(
+                db_models.User.email == email, db_models.User.id != user_id).first():
+            raise HTTPException(status_code=400, detail="이미 사용 중인 이메일 주소입니다.")
+        raise
     db.refresh(current_user)
     return current_user
 
