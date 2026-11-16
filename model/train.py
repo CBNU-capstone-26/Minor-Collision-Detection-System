@@ -560,6 +560,14 @@ def train_model(
         print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
               f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
 
+    # ── r 증강 (config.TRAIN_R_AUGMENT_PROB, 기본 끔 — 2026-11-16 비교용으로 되살림) ── 켜면 이름에 _raug
+    r_aug_p = float(getattr(config, 'TRAIN_R_AUGMENT_PROB', 0) or 0)
+    r_aug_vals = tuple(getattr(config, 'TRAIN_R_AUGMENT_VALUES', ()) or ())
+    if r_aug_p > 0 and r_aug_vals:
+        run_tag = f"{run_tag}_raug"
+        print(f"[r 증강] 켬 — 학습 클립의 {r_aug_p:.0%} 를 r {'·'.join(f'{v:g}' for v in r_aug_vals)} 중 하나로 넓게 자름"
+              f"(검증·서비스는 r=1)")
+
     # ── 불빛 증강 (config.TRAIN_LIGHT_AUG_PROB, 기본 끔) ── 켜면 이름에 _light
     light_p = float(getattr(config, 'TRAIN_LIGHT_AUG_PROB', 0) or 0)
     if light_p > 0:
@@ -688,7 +696,9 @@ def train_model(
         ('10fps 미만 제외', f"켬 (목록 {len(getattr(config, 'LOW_FPS_VIDEOS', ()))}개, 폴더에 남아 있어 뺀 것 {len(excluded)}개)"
                           if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('학습 쪽 고정 영상', ', '.join(forced) if forced else '없음'),
-        ('크롭 r', f'{r_value:g} (학습 중 r 을 넓히던 r 증강은 2026-11-05 삭제 — 그 전 학습은 40% 를 r 1.5~3)'),
+        ('크롭 r', f'{r_value:g} · r 증강 '
+                   + (f"{r_aug_p:.0%} 를 r {'·'.join(f'{v:g}' for v in r_aug_vals)}" if r_aug_p > 0 and r_aug_vals else '끔')
+                   + ' (11-05~11-15 학습은 r 증강 없음, 그 전은 40% 를 r 1.5·2·2.33·3)'),
         ('저화질 증강', (f'확률 {lq_p:g} · 줄이기 {config.TRAIN_LQ_SIZE_PROB:g} · CRF {config.TRAIN_LQ_CRF_RANGE[0]}~'
                     f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),

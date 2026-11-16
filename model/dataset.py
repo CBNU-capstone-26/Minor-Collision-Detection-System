@@ -575,8 +575,13 @@ class HitAndRunDataset(Dataset):
             hw, hh = int(bw * s / 2), int(bh * s / 2)
             bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
 
-        # 크롭 배율은 학습·검증·서비스 모두 self.r_value(=config.R_VALUE, 1.0). 학습 중 r 을 넓히던 r 증강은 2026-11-05 삭제
+        # 크롭 배율: 검증·서비스는 self.r_value(=config.R_VALUE, 1.0). 학습은 r 증강(config.TRAIN_R_AUGMENT_*)으로
+        # 일부 클립만 넓게 자른다 — 그 클립의 모든 프레임·창에 같은 r. 확률 0 이면 난수를 쓰지 않는다.
         r = self.r_value
+        r_p = float(getattr(config, 'TRAIN_R_AUGMENT_PROB', 0.0) or 0.0)
+        r_vals = tuple(getattr(config, 'TRAIN_R_AUGMENT_VALUES', ()) or ())
+        if self.augment and r_p > 0 and r_vals and random.random() < r_p:
+            r = random.choice(r_vals)
 
         # 첫 창 시작부터 마지막 창 끝까지 한 번에 읽는다(창 1개면 clip_length 프레임).
         # 모든 창이 같은 박스·r·증강을 쓰게 되어, 같은 충돌의 다른 시점일 뿐이 된다.
