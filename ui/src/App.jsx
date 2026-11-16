@@ -20,7 +20,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { api, saveAuth, clearAuth, getToken, getStoredUser } from "./api";
+import { api, saveAuth, clearAuth, getToken, getStoredUser, isRetryableRequestError } from "./api";
 import "./App.css";
 import "./incident-ui.css";
 import "./premium-ui.css";
@@ -1022,13 +1022,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     if (!window.confirm(`선택한 ${selectedForDelete.length}개 영상을 삭제하시겠습니까? 되돌릴 수 없습니다.`)) {
       return;
     }
-    try {
-      await Promise.all(selectedForDelete.map((id) => api.deleteVideo(id)));
-      showToast(`${selectedForDelete.length}개 영상을 삭제했습니다.`, "success");
+    const { deletedCount, failedIds } = await api.deleteVideos(selectedForDelete);
+    await loadVideos();
+    if (failedIds.length) {
+      setSelectedForDelete(failedIds);
+      showToast(`${deletedCount}개 삭제 완료, ${failedIds.length}개 삭제 실패. 다시 시도해 주세요.`, "error");
+    } else {
       exitDeleteMode();
-      await loadVideos();
-    } catch (e) {
-      showToast(`삭제 실패: ${e.message}`, "error");
+      showToast(`${deletedCount}개 영상을 삭제했습니다.`, "success");
     }
   };
 
@@ -1485,17 +1486,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       removeJob(taskId);
     };
     const poll = async () => {
-      if (!aliveRef.current) return; // 화면이 닫히면 멈춤 — 다시 열리면 복원하면서 새로 시작
+      if (!aliveRef.current || !pollingRef.current.has(taskId)) return; // 화면 종료나 취소 시 중단
       try {
         const status = await api.getTaskStatus(taskId);
-        if (!aliveRef.current) return;
+        if (!aliveRef.current || !pollingRef.current.has(taskId)) return;
         if (status.status === "SUCCESS") {
           finish();
           notifyDone("분석 완료", `사고 의심 구간 ${status.events.length}건`, "success");
           // 분석한 영상을 아직 보고 있을 때만 화면 갱신 (다른 영상으로 이동했으면 덮어쓰지 않음)
           if (selectedVideoIdRef.current === videoId) {
-            const v = await api.getVideo(videoId);
-            setSelectedVideo(v);
+            await refreshSelectedVideo(videoId);
           }
           loadVideos();
           return;
@@ -1504,8 +1504,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
           finish();
           notifyDone("분석 실패", status.error_message || "오류", "error");
           if (selectedVideoIdRef.current === videoId) {
-            const v = await api.getVideo(videoId); // '다시 실행' 안내를 띄우기 위해 갱신
-            setSelectedVideo(v);
+            await refreshSelectedVideo(videoId); // 다시 실행 안내를 갱신한다
           }
           return;
         }
@@ -1536,6 +1535,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
           }));
         setTimeout(poll, 2000); // PENDING/PROCESSING → 재시도
       } catch (e) {
+        if (!aliveRef.current || !pollingRef.current.has(taskId)) return;
+        if (isRetryableRequestError(e)) {
+          showToast("분석 상태 연결이 끊겨 다시 확인합니다.", "warning");
+          setTimeout(poll, 10000);
+          return;
+        }
         finish();
         showToast(`상태 조회 실패: ${e.message}`, "error");
       }
@@ -4307,7 +4312,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
   };
 
   return (
-    <div className="settings-modal-overlay" onClick={onClose}>
+    <div className="settings-modal-overlay" onClick={uploading ? undefined : onClose}>
       <div className="upload-modal multi-upload-modal" onClick={(e) => e.stopPropagation()}>
         <div className="upload-modal-header">
           <div>
