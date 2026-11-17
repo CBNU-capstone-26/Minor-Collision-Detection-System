@@ -8,8 +8,8 @@
   ① GPU 계산: 학습·검증 한 단계를 channels_last 켬/끔으로(무작위 입력, 데이터 안 읽음).
      AMP·cudnn.benchmark·gradient checkpointing·기울기 자르기(1.0)는 train.py 와 같다.
   ② 클립 하나 만들기 단계별 시간(한 프로세스): 영상 열기 / 시작 프레임으로 이동 / 프레임 풀기 /
-     전체 화면 색 변환 / 자르기·줄이기 / 증강 / 텐서 변환 — dataset.py __getitem__ 과 같은 순서.
-     '자른 뒤 색 변환'이면 얼마나 줄어드는지도 잰다(결과는 같다).
+     자르기·줄이기 / 색 변환(자른 뒤) / 증강 / 텐서 변환 — dataset.py __getitem__ 과 같은 순서.
+     (2026-11-16 부터 색 변환은 자른 뒤에 한다 — 전체 화면에서 하던 것과 화소가 같다)
   ③ 데이터 로더 처리량: 학습과 같은 설정(묶음 15·셔플·미리 만들 묶음 train.loader_prefetch)의 DataLoader 로
      묶음 하나 준비 시간을 작업자 수별(기본: 학습 로더 작업자 수 · CPU 코어 수) × 작업자당 OpenCV 스레드
      (기본 / 1개 — config.TRAIN_CV2_THREADS)로.
@@ -292,14 +292,15 @@ def part_compile(args, dev, amp, state, x, y):
 # ───────────────────────── ② 클립 하나 만들기 단계별 ─────────────────────────
 def part_clip(ds, idxs):
     """② 학습 데이터셋과 같은 순서로 클립을 만들며 단계별 시간을 잰다 → 클립 하나 평균 시간(초)."""
-    keys = ['열기', '이동', '풀기', '색 변환(전체 화면)', '자르기·줄이기', '증강', '텐서 변환']
+    keys = ['열기', '이동', '풀기', '자르기·줄이기', '색 변환(자른 뒤)', '증강', '텐서 변환']
     tot = dict.fromkeys(keys, 0.0)
-    color_small, n_frames, n_clips = 0.0, 0, 0
+    n_frames, n_clips = 0, 0
     pc = time.perf_counter
     for i in idxs:
         s = ds.samples[i]
         starts = list(s.get('win_starts') or [s['start_f']])
         s0, n_read = min(starts), max(starts) - min(starts) + ds.clip_length
+        r = ds._sample_crop_r()
         t = pc()
         cap = cv2.VideoCapture(s['mp4_path'])
         tot['열기'] += pc() - t
@@ -314,14 +315,11 @@ def part_clip(ds, idxs):
             if not ok:
                 break
             t = pc()
-            rgb = cv2.cvtColor(f, cv2.COLOR_BGR2RGB)
-            tot['색 변환(전체 화면)'] += pc() - t
-            t = pc()
-            crop = ds._crop_and_pad(rgb, s['bbox'], ds.r_value)
+            crop = ds._crop_and_pad(f, s['bbox'], r)
             tot['자르기·줄이기'] += pc() - t
             t = pc()
-            cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)       # 비교용: 자른 뒤(224) 색 변환이면 드는 시간
-            color_small += pc() - t
+            crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+            tot['색 변환(자른 뒤)'] += pc() - t
             frames.append(crop)
             n_frames += 1
         cap.release()
@@ -343,11 +341,7 @@ def part_clip(ds, idxs):
     for k in keys:
         print(f'  {k:<16}{per[k] * 1000:>9.1f} ms  {per[k] / total * 100:>5.1f}%')
     print(f'  {"합계":<16}{total * 1000:>9.1f} ms')
-    small = color_small / n_clips
-    save = (per['색 변환(전체 화면)'] - small) / total
-    print(f'  ※ 색 변환을 자른 뒤(224)에 하면 {per["색 변환(전체 화면)"] * 1000:.1f} → {small * 1000:.1f} ms '
-          f'(클립당 {save * 100:.0f}% 단축, 결과는 같음)')
-    return {'total': total, 'per': per, 'color_save': save}
+    return {'total': total, 'per': per}
 
 
 # ───────────────────────── ③ 데이터 로더 처리량 ─────────────────────────

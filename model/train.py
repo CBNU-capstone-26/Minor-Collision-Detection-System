@@ -398,6 +398,14 @@ def train_model(
         print(f"[묶음] 기본(무작위) — 에포크당 충돌 {n_a} · 정상 {n_s} = 1:{n_s / max(n_a, 1):.1f} · "
               f"묶음 {nb}개 · 충돌 없는 묶음 기대 {nb * (n_s / len(train_idx)) ** batch_size:.0f}개")
 
+    # ── r 증강 (기본 끔) ── 켜면 이름에 _raug
+    r_aug_p = float(getattr(config, 'TRAIN_R_AUGMENT_PROB', 0) or 0)
+    r_aug_vals = tuple(getattr(config, 'TRAIN_R_AUGMENT_VALUES', ()) or ())
+    if r_aug_p > 0 and r_aug_vals:
+        run_tag = f"{run_tag}_raug"
+        print(f"[r 증강] 켬 — 학습 클립의 {r_aug_p:.0%} 를 r {'·'.join(f'{v:g}' for v in r_aug_vals)} 중 하나로 넓게 자름"
+              f"(검증·서비스는 r=1)")
+
     # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
     lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
     lq_default = (abs(float(config.TRAIN_LQ_SIZE_PROB) - 0.5) < 1e-9 and tuple(config.TRAIN_LQ_CRF_RANGE) == (28, 42))
@@ -471,6 +479,7 @@ def train_model(
     # 지우지 않는다. 학습이 끝나면 규칙 파일명으로 weights_dir(= save_path 의 폴더)에 옮긴다.
     # 중간에 멈춘 학습의 best 는 이 폴더의 work_best.pth 에 남는다.
     weights_dir = Path(save_path).parent
+    weights_dir.mkdir(parents=True, exist_ok=True)
     work_best = run_dir / 'work_best.pth'
     # 에포크별 가중치(config.TRAIN_SAVE_ALL_EPOCHS) — 회차 폴더 안이라 학습끼리 섞이지 않는다
     epochs_dir = run_dir / 'epochs' if getattr(config, 'TRAIN_SAVE_ALL_EPOCHS', False) else None
@@ -525,7 +534,9 @@ def train_model(
         ('10fps 미만 제외', f"켬 (목록 {len(getattr(config, 'LOW_FPS_VIDEOS', ()))}개, 폴더에 남아 있어 뺀 것 {len(excluded)}개)"
                           if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('학습 쪽 고정 영상', ', '.join(forced) if forced else '없음'),
-        ('크롭 r', f'{r_value:g} (학습 중 r 증강 제거)'),
+        ('크롭 r', f'{r_value:g} · r 증강 '
+                   + (f"{r_aug_p:.0%} 를 r {'·'.join(f'{v:g}' for v in r_aug_vals)}" if r_aug_p > 0 and r_aug_vals else '끔')
+                   + ' (11-05~11-15 학습은 r 증강 없음, 그 전은 40% 를 r 1.5·2·2.33·3)'),
         ('저화질 증강', (f'확률 {lq_p:g} · 줄이기 {config.TRAIN_LQ_SIZE_PROB:g} · CRF {config.TRAIN_LQ_CRF_RANGE[0]}~'
                     f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
