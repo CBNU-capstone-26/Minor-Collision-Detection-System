@@ -101,6 +101,7 @@ def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.
         id=v.id,
         video_name=v.video_name,
         title=v.title,
+        video_type=v.video_type,
         recording_date=v.recording_date,
         camera_location=v.camera_location or "주차장",
         width=v.width,
@@ -165,6 +166,7 @@ def upload_video(
     file: UploadFile = File(...),
     recording_date: str | None = Form(None),
     title: str | None = Form(None),
+    video_type: api_schemas.VideoType | None = Form(None),
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
@@ -204,6 +206,7 @@ def upload_video(
         user_id=user.id,
         video_name=file.filename,
         title=title or None,
+        video_type=video_type,
         video_path=object_key,
         recording_date=rec_date,
         width=width,
@@ -245,6 +248,20 @@ def get_video(
     user: db_models.User = Depends(get_current_user),
 ):
     return to_video_out(_get_owned_video(video_id, db, user), with_history=True)
+
+
+@router.patch("/{video_id}/type", response_model=api_schemas.VideoOut)
+def update_video_type(
+    video_id: int,
+    data: api_schemas.VideoTypeUpdate,
+    db: Session = Depends(get_db),
+    user: db_models.User = Depends(get_current_user),
+):
+    video = _get_owned_video(video_id, db, user)
+    video.video_type = data.video_type
+    db.commit()
+    db.refresh(video)
+    return to_video_out(video)
 
 
 @router.delete("/{video_id}")

@@ -43,6 +43,55 @@ const VIDEO_FEEDBACK_ICONS = {
   fullscreenExit: fullscreenExitIcon,
 };
 
+const VIDEO_TYPES = [
+  { value: "real", label: "실제 영상" },
+  { value: "render_3d", label: "3D 렌더링 영상" },
+  { value: "game", label: "게임 렌더링 영상" },
+];
+
+function FilterPills({ children, className = "", label, selected }) {
+  const groupRef = useRef(null);
+  const indicatorRef = useRef(null);
+  useLayoutEffect(() => {
+    const group = groupRef.current;
+    const indicator = indicatorRef.current;
+    if (!group || !indicator) return;
+    const update = () => {
+      const active = group.querySelector("button.active");
+      if (!active) return;
+      indicator.style.width = `${active.offsetWidth}px`;
+      indicator.style.height = `${active.offsetHeight}px`;
+      indicator.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+      indicator.style.opacity = "1";
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(group);
+    group.querySelectorAll("button").forEach((button) => observer.observe(button));
+    const search = group.classList.contains("video-type-filters")
+      ? group.closest(".video-search-row")?.querySelector(".list-search-bar") : null;
+    let resizeTimer;
+    const followSearchResize = () => {
+      group.dataset.searchResizing = "true";
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { delete group.dataset.searchResizing; }, 350);
+    };
+    search?.addEventListener("focusin", followSearchResize);
+    search?.addEventListener("focusout", followSearchResize);
+    return () => {
+      observer.disconnect();
+      clearTimeout(resizeTimer);
+      delete group.dataset.searchResizing;
+      search?.removeEventListener("focusin", followSearchResize);
+      search?.removeEventListener("focusout", followSearchResize);
+    };
+  }, [selected]);
+  return <div ref={groupRef} className={`filter-pills sliding-filter ${className}`} role="group" aria-label={label}>
+    <span ref={indicatorRef} className="filter-selection-indicator" aria-hidden="true" />
+    {children}
+  </div>;
+}
+
 function InterfaceIcon({ name }) {
   const paths = {
     user: <><circle cx="12" cy="8" r="3" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></>,
@@ -906,6 +955,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [videoLoadError, setVideoLoadError] = useState(null);
   const [filterDays, setFilterDays] = useState(9999); // 기본 전체
+  const [videoTypeFilter, setVideoTypeFilter] = useState("real");
+  const [savingVideoType, setSavingVideoType] = useState(false);
   const [searchQuery, setSearchQuery] = useState(""); // 상단 검색어
 
   const [selectedVideo, setSelectedVideo] = useState(null); // null이면 홈(그리드) 화면, 값이 있으면 영상 재생 화면
@@ -1166,6 +1217,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const filteredVideos = useMemo(() => {
     let list = periodVideos;
 
+    if (videoTypeFilter) list = list.filter((video) => videoTypeFilter === "unclassified" ? !video.videoType : video.videoType === videoTypeFilter);
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       // 제목은 카드에 보이는 그대로('2026-10-12 녹화본 #5')로 찾는다
@@ -1182,7 +1235,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
       return b.id - a.id;
     });
-  }, [periodVideos, searchQuery, videos]);
+  }, [periodVideos, searchQuery, videos, videoTypeFilter]);
 
   // 메인화면 영상 목록 페이지네이션 — 한 페이지 = 지금 열 수 × 줄 수(두 줄 이상, 최소 6개).
   // 3열 이하(보통 화면)는 예전처럼 6개, 화면이 넓거나 축소해 열이 늘면 줄을 꽉 채운다(예: 6열 → 12개)
@@ -2839,13 +2892,18 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
           {/* 기간 필터 및 영상 관리 툴바 */}
           <div className="home-toolbar">
             <div className="home-toolbar-filters">
-              <div className="filter-pills">
+              <FilterPills label="영상 표시 기간" selected={filterDays}>
                 <button className={filterDays === 9999 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(9999); }}>전체</button>
                 <button className={filterDays === 7 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(7); }}>1주일</button>
                 <button className={filterDays === 14 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(14); }}>2주일</button>
                 <button className={filterDays === 30 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(30); }}>1개월</button>
                 <button className={filterDays === 90 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(90); }}>3개월</button>
-              </div>
+              </FilterPills>
+
+              <div className="video-search-row">
+              <FilterPills className="video-type-filters" label="영상 유형 필터" selected={videoTypeFilter}>
+                {[...VIDEO_TYPES, { value: "unclassified", label: "미분류" }].map(({ value, label }) => <button key={value} type="button" className={videoTypeFilter === value ? "active" : ""} aria-pressed={videoTypeFilter === value} onClick={() => { setCurrentPage(1); setVideoTypeFilter(value); }}>{label}</button>)}
+              </FilterPills>
 
               <div className="list-search-bar">
                 <span className="search-icon"><SearchIcon /></span>
@@ -2861,6 +2919,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                     ✕
                   </button>
                 )}
+              </div>
               </div>
             </div>
 
@@ -2891,10 +2950,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
               ) : (
                 <>
                   <button className="toolbar-upload-btn" onClick={() => setShowUpload(true)}>
-                    ⬆ 영상 업로드
+                    <span aria-hidden="true">⬆</span><span>영상 업로드</span>
                   </button>
                   <button className="toolbar-delete-btn" onClick={() => setDeleteMode(true)}>
-                    🗑 영상 삭제
+                    <span aria-hidden="true">🗑</span><span>영상 삭제</span>
                   </button>
                 </>
               )}
@@ -2914,7 +2973,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                     </button>
                   </>
                 ) : (
-                  "선택한 기간에 해당하는 영상이 없습니다."
+                  "선택한 조건에 해당하는 영상이 없습니다."
                 )}
               </div>
             ) : (
@@ -4048,6 +4107,18 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                 </button>
               </div>
               <dl className="video-info-list">
+                <div><dt><label htmlFor="video-info-type">영상 유형</label></dt><dd><select id="video-info-type" value={v.videoType || ""} disabled={savingVideoType} onChange={async (e) => {
+                  const type = e.target.value;
+                  if (!type) return;
+                  setSavingVideoType(true);
+                  try {
+                    const updated = await api.updateVideoType(v.id, type);
+                    setVideos((previous) => previous.map((item) => item.id === updated.id ? updated : item));
+                    setInfoVideo(updated);
+                    showToast("영상 유형을 변경했습니다.", "success");
+                  } catch (error) { showToast(`영상 유형 변경 실패: ${error.message}`, "error"); }
+                  finally { setSavingVideoType(false); }
+                }}><option value="" disabled>미분류</option>{VIDEO_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></dd></div>
                 {rows.map(([k, val]) => (
                   <div key={k}>
                     <dt>{k}</dt>
@@ -4229,6 +4300,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
       file,
       recordingDate: todayStr,
       title: "", // 선택 — 비우면 '녹화일 녹화본 #N'
+      videoType: "",
     }));
     setFilesList((prev) => [...prev, ...items]);
   };
@@ -4280,6 +4352,10 @@ function UploadModal({ onClose, onUploaded, onError }) {
       onError("업로드할 영상 파일을 선택해 주세요.");
       return;
     }
+    if (filesList.some((item) => !item.videoType)) {
+      onError("각 영상의 유형을 선택해 주세요.");
+      return;
+    }
     setUploading(true);
     let successCount = 0;
     let failCount = 0;
@@ -4292,7 +4368,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
         currentName: item.file.name,
       });
       try {
-        await api.uploadVideo(item.file, item.recordingDate || null, item.title);
+        await api.uploadVideo(item.file, item.recordingDate || null, item.title, item.videoType);
         successCount += 1;
       } catch (e) {
         failCount += 1;
@@ -4418,6 +4494,13 @@ function UploadModal({ onClose, onUploaded, onError }) {
                       onChange={(e) => updateFileTitle(item.id, e.target.value)}
                       disabled={uploading}
                     />
+                  </div>
+                  <div className="file-item-title-group video-type-field">
+                    <label htmlFor={`upload-type-${item.id}`}>영상 유형:</label>
+                    <select id={`upload-type-${item.id}`} value={item.videoType} disabled={uploading} onChange={(e) => setFilesList((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, videoType: e.target.value } : entry))}>
+                      <option value="">유형 선택</option>
+                      {VIDEO_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                    </select>
                   </div>
                 </div>
               ))}

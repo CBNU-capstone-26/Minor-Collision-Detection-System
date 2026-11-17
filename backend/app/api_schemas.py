@@ -1,6 +1,6 @@
 """Pydantic 요청/응답 스키마."""
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -128,10 +128,18 @@ class AnalysisHistoryOut(BaseModel):
     event_count: Optional[int] = None       # 찾은 클립 수 — 이력 기능 전 분석은 모름(None)
 
 
+VideoType = Literal["real", "render_3d", "game"]
+
+
+class VideoTypeUpdate(BaseModel):
+    video_type: VideoType
+
+
 class VideoOut(BaseModel):
     id: int
     video_name: str
     title: Optional[str] = None   # 업로드할 때 넣은 제목 (없으면 None)
+    video_type: Optional[VideoType] = None
     recording_date: Optional[date] = None
     camera_location: str = "주차장"
     width: int
