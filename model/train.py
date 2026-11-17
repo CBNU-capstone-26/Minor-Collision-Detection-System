@@ -631,6 +631,9 @@ def train_model(
     # 지우지 않는다. 학습이 끝나면 규칙 파일명으로 weights_dir(= save_path 의 폴더)에 옮긴다.
     # 중간에 멈춘 학습의 best 는 이 폴더의 work_best.pth 에 남는다.
     weights_dir = Path(save_path).parent
+    # 학습 시작 때 만들어 둔다 — weights/ 는 git 에 없어 새 서버에선 clone 해도 없고, 끝에 옮길 때 없으면
+    # 몇 시간 학습한 뒤 최종 가중치 저장에서 멈춘다(2026-11-16 vast 대조군에서 그렇게 멈춤)
+    weights_dir.mkdir(parents=True, exist_ok=True)
     work_best = run_dir / 'work_best.pth'
     # 에포크별 가중치(config.TRAIN_SAVE_ALL_EPOCHS) — 회차 폴더 안이라 학습끼리 섞이지 않는다
     epochs_dir = run_dir / 'epochs' if getattr(config, 'TRAIN_SAVE_ALL_EPOCHS', False) else None
