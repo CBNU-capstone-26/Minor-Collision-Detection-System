@@ -1,4 +1,5 @@
 """회원가입 / 로그인 라우터."""
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -22,9 +23,25 @@ from app.settings import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+# 이메일 형식: 로컬@도메인.최상위 (공백 없음). 시스템 시험 STC-01-002-10 에서 'not-an-email' 로도 가입되던 결함
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _clean_email(email):
+    """빈 값은 None(선택 항목), 형식이 틀리면 400 — 화면이 detail 문자열을 그대로 보여 주므로 422 대신 400."""
+    if email is None:
+        return None
+    email = email.strip()
+    if not email:
+        return None
+    if len(email) > 255 or not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="이메일 형식이 올바르지 않습니다.")
+    return email
+
 
 @router.post("/signup", response_model=api_schemas.UserOut)
 def signup(req: api_schemas.SignupRequest, db: Session = Depends(get_db)):
+    req.email = _clean_email(req.email)
     if db.query(db_models.User).filter(
             db_models.User.username == req.username).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 아이디입니다.")
@@ -96,6 +113,8 @@ def update_me(
     db: Session = Depends(get_db),
 ):
     """현재 로그인한 사용자의 프로필(이름, 이메일, 연락처)을 수정합니다."""
+    if req.email is not None:
+        req.email = _clean_email(req.email)
     if req.email and req.email != current_user.email:
         existing = db.query(db_models.User).filter(
             db_models.User.email == req.email,
