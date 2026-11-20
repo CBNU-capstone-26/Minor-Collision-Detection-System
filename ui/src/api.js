@@ -20,19 +20,24 @@ export function clearAuth() {
   localStorage.removeItem(USER_KEY);
 }
 
-export async function retryRequest(operation, { attempts = 3, delayMs = 500 } = {}) {
+export async function retryRequest(operation, { attempts = 3, delayMs = 500, shouldRetry = () => true } = {}) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
       lastError = error;
+      if (!shouldRetry(error)) throw error;
       if (attempt < attempts) {
         await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
       }
     }
   }
   throw lastError;
+}
+
+export function isRetryableRequestError(error) {
+  return error.status == null || error.status === 429 || error.status >= 500;
 }
 
 export async function withRequestTimeout(operation, timeoutMs) {
@@ -62,7 +67,9 @@ async function request(path, { method = "GET", body, isForm = false, signal } = 
     if (!window.location.pathname.startsWith("/login")) {
       window.location.replace("/login?expired=1");
     }
-    throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+    const error = new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+    error.status = 401;
+    throw error;
   }
   if (!res.ok) {
     let detail = `요청 실패 (${res.status})`;
@@ -72,7 +79,9 @@ async function request(path, { method = "GET", body, isForm = false, signal } = 
     } catch {
       /* ignore */
     }
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = res.status;
+    throw error;
   }
   if (res.status === 204) return null;
   return res.json();
@@ -105,6 +114,8 @@ export function normalizeVideo(v) {
   return {
     id: v.id,
     title: v.title || "", // 업로드할 때 넣은 제목 (없으면 화면이 '녹화일 녹화본 #N')
+    videoType: v.video_type || null,
+    collisionLabel: v.collision_label || null,
     fileName: v.video_name || "", // 업로드한 원본 파일 이름
     uploadedAt: v.created_at || null, // 업로드 시각(ISO, UTC)
     // 보관 기간이 끝나 영상·클립이 지워질 때까지 남은 날(서버 시계 기준). 보관 기간을 끄면 null
@@ -152,16 +163,25 @@ export const api = {
     return list.map(normalizeVideo);
   },
   getVideo: async (id) => normalizeVideo(await request(`/videos/${id}`)),
-  uploadVideo: (file, recordingDate, title) => {
+  uploadVideo: (file, recordingDate, title, videoType, collisionLabel) => {
     const form = new FormData();
     form.append("file", file);
     if (recordingDate) form.append("recording_date", recordingDate);
     if (title && title.trim()) form.append("title", title.trim());
+    if (videoType) form.append("video_type", videoType);
+    if (collisionLabel) form.append("collision_label", collisionLabel);
     return request("/videos", { method: "POST", body: form, isForm: true });
   },
+  updateVideoType: async (id, videoType) => normalizeVideo(await request(`/videos/${id}/type`, { method: "PATCH", body: { video_type: videoType } })),
+  updateCollisionLabel: async (id, collisionLabel) => normalizeVideo(await request(`/videos/${id}/collision-label`, { method: "PATCH", body: { collision_label: collisionLabel } })),
   streamUrl: (id) => `/api/videos/${id}/stream`,
   thumbnailUrl: (id) => `/api/videos/${id}/thumbnail`,
   deleteVideo: (id) => request(`/videos/${id}`, { method: "DELETE" }),
+  deleteVideos: async (ids) => {
+    const results = await Promise.allSettled(ids.map((id) => request(`/videos/${id}`, { method: "DELETE" })));
+    const failedIds = ids.filter((_, index) => results[index].status === "rejected");
+    return { deletedCount: ids.length - failedIds.length, failedIds };
+  },
   clearAnalysisHistory: (id) => request(`/videos/${id}/analysis-history`, { method: "DELETE" }),
   deleteEvent: (videoId, eventId) =>
     request(`/videos/${videoId}/events/${eventId}`, { method: "DELETE" }),
@@ -178,7 +198,10 @@ export const api = {
     request(`/videos/${videoId}/vehicle-detection-tasks/${taskId}`, { signal }),
   analyze: (videoId, bbox, signal) =>
     request(`/videos/${videoId}/analyze`, { method: "POST", body: bbox, signal }),
-  getTaskStatus: (taskId) => request(`/tasks/${taskId}`),
+  getTaskStatus: (taskId) => retryRequest(
+    () => withRequestTimeout((signal) => request(`/tasks/${taskId}`, { signal }), 7000),
+    { shouldRetry: isRetryableRequestError },
+  ),
   cancelTask: (taskId) => request(`/tasks/${taskId}/cancel`, { method: "POST" }),
   // 로그인한 사용자의 대기·진행 중 분석(창을 다시 열 때 진행 상황 복원용)
   listActiveTasks: () => request("/tasks/active"),

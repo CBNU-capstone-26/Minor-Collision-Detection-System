@@ -12,6 +12,7 @@ from app.settings import settings
 from app.db_connection import SessionLocal
 from app import db_models
 from app.object_storage import get_storage, materialize
+from app.file_cleanup import queue_cleanup, try_pending_cleanup
 
 # 워커 프로세스당 모델 1회 로드 후 재사용
 _model = None
@@ -64,6 +65,8 @@ def _get_model():
 def run_prediction_task(self, task_id: int):
     """AnalysisTask를 받아 추론 → 사고구간 클립 생성 → CrashEvent 저장."""
     db = SessionLocal()
+    uploaded_keys = []
+    storage = None
     try:
         task = db.get(db_models.AnalysisTask, task_id)
         if task is None:
@@ -73,8 +76,14 @@ def run_prediction_task(self, task_id: int):
         if task.status != "PENDING":
             return {"task_id": task_id, "skipped": task.status}
 
-        task.status = "PROCESSING"
+        updated = (db.query(db_models.AnalysisTask)
+                   .filter(db_models.AnalysisTask.id == task_id,
+                           db_models.AnalysisTask.status == "PENDING")
+                   .update({"status": "PROCESSING"}, synchronize_session=False))
         db.commit()
+        db.refresh(task)
+        if not updated:
+            return {"task_id": task_id, "skipped": task.status}
         self.update_state(state="PROGRESS", meta={"percent": 0, "stage": "loading"})
 
         video = db.get(db_models.Video, task.video_id)
@@ -125,11 +134,14 @@ def run_prediction_task(self, task_id: int):
             for r in results:
                 clip_path = Path(r["clip_path"])
                 clip_key = f"clips/{clip_path.name}"
+                uploaded_keys.append((clip_key, clip_key))
                 storage.upload_path(clip_path, clip_key, content_type="video/mp4")
                 raw_path = r.get("raw_clip_path")
                 if raw_path:
                     raw_path = Path(raw_path)
-                    storage.upload_path(raw_path, f"clips/{raw_path.name}", content_type="video/mp4")
+                    raw_key = f"clips/{raw_path.name}"
+                    uploaded_keys.append((raw_key, clip_key))
+                    storage.upload_path(raw_path, raw_key, content_type="video/mp4")
                 db.add(db_models.CrashEvent(
                     task_id=task.id,
                     video_id=video.id,
@@ -143,20 +155,34 @@ def run_prediction_task(self, task_id: int):
                 ))
 
         # 분석 도중 취소됐는데(revoke 실패 등) 끝까지 돌았다면 결과를 버린다
-        task.status = "SUCCESS"
-        task.finished_at = datetime.utcnow()
-        task.event_count = len(results)
+        updated = (db.query(db_models.AnalysisTask)
+                   .filter(db_models.AnalysisTask.id == task_id,
+                           db_models.AnalysisTask.status == "PROCESSING")
+                   .update({"status": "SUCCESS", "finished_at": datetime.utcnow(),
+                            "event_count": len(results)}, synchronize_session=False))
+        if not updated:
+            db.rollback()
+            for key, guard_key in uploaded_keys:
+                queue_cleanup(db, key, guard_key, 'clip')
+            db.commit()
+            try_pending_cleanup(db, storage)
+            current = db.get(db_models.AnalysisTask, task_id)
+            return {"task_id": task_id, "skipped": current.status if current else "missing"}
         db.commit()
         return {"task_id": task_id, "events": len(results)}
 
     except Exception as exc:  # noqa: BLE001
         db.rollback()
-        task = db.get(db_models.AnalysisTask, task_id)
-        if task is not None:
-            task.status = "FAILURE"
-            task.error_message = str(exc)[:2000]
-            task.finished_at = datetime.utcnow()
-            db.commit()
+        (db.query(db_models.AnalysisTask)
+         .filter(db_models.AnalysisTask.id == task_id,
+                 db_models.AnalysisTask.status.in_(("PENDING", "PROCESSING")))
+         .update({"status": "FAILURE", "error_message": str(exc)[:2000],
+                  "finished_at": datetime.utcnow()}, synchronize_session=False))
+        for key, guard_key in uploaded_keys:
+            queue_cleanup(db, key, guard_key, 'clip')
+        db.commit()
+        if uploaded_keys:
+            try_pending_cleanup(db, storage)
         raise
     finally:
         db.close()

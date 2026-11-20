@@ -6,7 +6,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date, ForeignKey, Index, Text,
+    Column, Integer, String, Float, DateTime, Date, ForeignKey, Index, Text, text,
 )
 from sqlalchemy.orm import relationship
 
@@ -36,6 +36,8 @@ class Video(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     video_name = Column(String(255), nullable=False)   # 원본 파일명
     title = Column(String(100), nullable=True)         # 업로드할 때 넣은 표시 제목
+    video_type = Column(String(20), nullable=True)     # 기존 영상은 미분류
+    collision_label = Column(String(20), nullable=True)
     video_path = Column(String(500), nullable=False)   # storage 기준 상대경로
     recording_date = Column(Date, nullable=True)       # 업로드 시 지정한 녹화일자
     camera_location = Column(String(255), nullable=False, default="주차장")   # 녹화 CCTV 위치
@@ -94,6 +96,18 @@ class VehicleDetectionTask(Base):
     finished_at = Column(DateTime, nullable=True)
 
     video = relationship("Video", back_populates="vehicle_detection_tasks")
+
+
+class FileCleanup(Base):
+    """Durable record of a file to remove after its database reference is deleted."""
+    __tablename__ = "file_cleanup_queue"
+
+    id = Column(Integer, primary_key=True)
+    object_key = Column(Text, nullable=False)
+    guard_key = Column(Text, nullable=False)
+    guard_kind = Column(String(16), nullable=False)
+    cleanup_kind = Column(String(16), nullable=False, default="object")
+    attempts = Column(Integer, nullable=False, default=0, server_default=text('0'))
 
 
 class CrashEvent(Base):

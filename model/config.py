@@ -1,4 +1,5 @@
 import os
+import math
 from pathlib import Path
 
 # ==========================================
@@ -34,7 +35,15 @@ RESIZE = (INPUT_SIZE, INPUT_SIZE)
 HEAD_TEMPORAL_POOL = (os.getenv("HEAD_TEMPORAL_POOL", "avg") or "avg").strip().lower()
 HEAD_TEMPORAL_TOPK = 3
 R_VALUE = 1.0
-# 서비스와 같은 크롭 배율을 사용한다. 학습 중 크롭을 넓히던 r 증강은 2026-11-05 제거.
+# 학습 전용 r 증강은 기본적으로 꺼져 있으며, 검증과 서비스에서는 R_VALUE를 사용한다.
+TRAIN_R_AUGMENT_PROB = float(os.getenv("TRAIN_R_AUGMENT_PROB", "0") or 0)
+TRAIN_R_AUGMENT_VALUES = tuple(float(v) for v in (os.getenv("TRAIN_R_AUGMENT_VALUES", "1.5,2") or "").split(",") if v.strip())
+if not math.isfinite(TRAIN_R_AUGMENT_PROB) or not 0 <= TRAIN_R_AUGMENT_PROB <= 1:
+    raise ValueError("TRAIN_R_AUGMENT_PROB must be finite and between 0 and 1")
+if any(not math.isfinite(v) or v <= 0 for v in TRAIN_R_AUGMENT_VALUES):
+    raise ValueError("TRAIN_R_AUGMENT_VALUES must contain finite positive numbers")
+if TRAIN_R_AUGMENT_PROB > 0 and not TRAIN_R_AUGMENT_VALUES:
+    raise ValueError("TRAIN_R_AUGMENT_VALUES must not be empty when augmentation is enabled")
 TRAIN_AUG_BRIGHTNESS = (0.4, 1.4)
 TRAIN_AUG_GRAY_PROB = 0.2
 TRAIN_AUG_NOISE_PROB = 0.2
@@ -89,12 +98,13 @@ TRAIN_LIGHT_DARK_PROB = 0.7          # 불빛을 넣을 때 먼저 밤처럼 어
 # 낮 영상(검은 테두리, ReA_0022)·흐린 낮(ReA_0051)을 야간으로, 화면 UI 가 밝은 야간(ReA_0021)을 낮으로 틀려서 목록으로 둔다.
 # 새 야간 영상을 넣으면 여기에 이름(확장자 없이)을 더한다.
 NIGHT_VIDEOS = frozenset({
-    # 학습: 사고 3 · 정상 2
+    # 학습: 사고 3 · 정상 3
     '260827_ReA_0021', '260827_ReA_0032', '260827_ReA_0044', '260909_ReS_0019', '260909_ReS_0035',
+    '260909_ReS_0039',
     # 검증: 사고 1 · 정상 3
     '260827_ReA_0031', '260909_ReS_0024', '260909_ReS_0026', '260909_ReS_0036',
-    # 평가: 사고 1 · 정상 1
-    '260828_TA_0020', '260909_TS_0007',
+    # 평가: 사고 1 · 정상 2
+    '260828_TA_0020', '260909_TS_0007', '260909_TS_0011',
 })
 
 # ---------- 검증 대신 학습에 넣을 영상 (2026-10-30) ----------

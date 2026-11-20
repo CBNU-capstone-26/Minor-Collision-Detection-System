@@ -7357,11 +7357,6 @@ body.dark-mode .confirm-danger-btn {
   white-space: nowrap;
 }
 
-.clip-chip-danger {
-  background: rgba(239, 68, 68, 0.18);
-  color: #fca5a5;
-}
-
 .clip-close-btn {
   flex-shrink: 0;
   width: 32px;
@@ -7474,11 +7469,6 @@ body.dark-mode .clip-modal-title {
 body.dark-mode .clip-chip {
   background: #1f2b36;
   color: #94a3b8;
-}
-
-body.dark-mode .clip-chip-danger {
-  background: rgba(239, 68, 68, 0.16);
-  color: #f87171;
 }
 
 body.dark-mode .clip-close-btn {

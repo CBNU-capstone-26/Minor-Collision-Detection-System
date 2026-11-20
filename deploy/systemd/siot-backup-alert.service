@@ -1,0 +1,13 @@
+[Unit]
+Description=Email alert for SIOT backup failure
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__REPO__/backend
+EnvironmentFile=/home/__USER__/.config/siot-backup/notify.env
+ExecStart=__REPO__/venv311/bin/python -m app.backup_notify
+UMask=0077
+TimeoutStartSec=90s

@@ -1,5 +1,6 @@
 """분석 요청 / 태스크 상태 / 이벤트·클립 조회 라우터."""
 from datetime import datetime
+import logging
 from pathlib import Path
 from urllib.parse import quote
 
@@ -33,7 +34,7 @@ def _active_task_for_video(video_id: int, db: Session):
     return (db.query(db_models.AnalysisTask)
             .filter(db_models.AnalysisTask.video_id == video_id,
                     db_models.AnalysisTask.status.in_(ACTIVE_STATUSES))
-            .order_by(db_models.AnalysisTask.id).first())
+            .order_by(db_models.AnalysisTask.id).with_for_update().first())
 
 
 def _progress(task: db_models.AnalysisTask) -> dict:
@@ -43,12 +44,15 @@ def _progress(task: db_models.AnalysisTask) -> dict:
     if task.status != "PROCESSING" or not task.celery_task_id:
         return empty
     from app.worker import celery_app
-    res = celery_app.AsyncResult(task.celery_task_id)
-    if res.state == "PROGRESS" and isinstance(res.info, dict):
-        info = res.info
-        return {"progress": info.get("percent"), "eta_sec": info.get("eta"),
-                "eta_is_min": bool(info.get("eta_min")), "stage": info.get("stage"),
-                "stage_count": info.get("count"), "stage_index": info.get("index")}
+    try:
+        res = celery_app.AsyncResult(task.celery_task_id)
+        if res.state == "PROGRESS" and isinstance(res.info, dict):
+            info = res.info
+            return {"progress": info.get("percent"), "eta_sec": info.get("eta"),
+                    "eta_is_min": bool(info.get("eta_min")), "stage": info.get("stage"),
+                    "stage_count": info.get("count"), "stage_index": info.get("index")}
+    except Exception as exc:
+        logging.getLogger(__name__).warning('Task progress unavailable: %s', type(exc).__name__)
     return empty
 
 
@@ -56,6 +60,9 @@ def _enqueue(video_id: int, bbox: dict, db: Session) -> api_schemas.AnalyzeRespo
     """분석 작업을 만들어 Celery 큐에 넣는다. 같은 영상에 대기·진행 중인 분석이
     있으면 새로 만들지 않고 그 작업을 돌려준다(같은 영상 중복 분석 방지 —
     워커가 하나라 중복 요청은 앞 작업이 끝날 때까지 기다리기만 한다)."""
+    # Serialize the check and creation for this video across concurrent requests.
+    # The lock is released by the commit immediately after the task is inserted.
+    db.query(db_models.Video.id).filter(db_models.Video.id == video_id).with_for_update().one()
     existing = _active_task_for_video(video_id, db)
     if existing is not None:
         return api_schemas.AnalyzeResponse(
@@ -68,8 +75,18 @@ def _enqueue(video_id: int, bbox: dict, db: Session) -> api_schemas.AnalyzeRespo
     db.refresh(task)
 
     # Celery 큐에 적재 (torch 미설치 웹 프로세스에서도 .delay는 동작)
-    from app.prediction_job import run_prediction_task
-    async_result = run_prediction_task.delay(task.id)
+    try:
+        from app.prediction_job import run_prediction_task
+        async_result = run_prediction_task.delay(task.id)
+    except Exception as exc:
+        task.status = "FAILURE"
+        task.error_message = f"분석 작업을 큐에 넣지 못했습니다: {exc}"[:2000]
+        task.finished_at = datetime.utcnow()
+        db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="분석 작업을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        ) from exc
     task.celery_task_id = async_result.id
     db.commit()
 
@@ -86,6 +103,9 @@ def analyze_video(
     user: db_models.User = Depends(get_current_user),
 ):
     video = _get_owned_video(video_id, db, user)
+    if not (0 <= req.bbox_xmin < req.bbox_xmax <= video.width and
+            0 <= req.bbox_ymin < req.bbox_ymax <= video.height):
+        raise HTTPException(status_code=400, detail="차량 영역이 영상 범위에 맞지 않습니다.")
     return _enqueue(video.id, req.model_dump(), db)
 
 
@@ -136,17 +156,19 @@ def cancel_task(
     user: db_models.User = Depends(get_current_user),
 ):
     task = _get_owned_task(task_id, db, user)
-    if task.status in ACTIVE_STATUSES:
-        task.status = "CANCELLED"
-        task.error_message = "사용자가 작업을 취소함"
-        task.finished_at = datetime.utcnow()
-        if task.celery_task_id:
-            try:
-                from app.worker import celery_app
-                celery_app.control.revoke(task.celery_task_id, terminate=True)
-            except Exception:
-                pass
-        db.commit()
+    updated = (db.query(db_models.AnalysisTask)
+               .filter(db_models.AnalysisTask.id == task.id,
+                       db_models.AnalysisTask.status.in_(ACTIVE_STATUSES))
+               .update({"status": "CANCELLED", "error_message": "사용자가 작업을 취소함",
+                        "finished_at": datetime.utcnow()}, synchronize_session=False))
+    db.commit()
+    db.refresh(task)
+    if updated and task.celery_task_id:
+        try:
+            from app.worker import celery_app
+            celery_app.control.revoke(task.celery_task_id, terminate=True)
+        except Exception:
+            pass
     events = db.query(db_models.CrashEvent).filter(
         db_models.CrashEvent.task_id == task.id).all()
     return api_schemas.TaskStatusOut(

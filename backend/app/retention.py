@@ -11,6 +11,7 @@ from app.db_connection import SessionLocal
 from app.routers.analysis import ACTIVE_STATUSES
 from app.routers.videos import purge_video
 from app.settings import settings
+from app.file_cleanup import try_pending_cleanup
 
 CHECK_INTERVAL_SEC = 60 * 60   # 1시간마다
 
@@ -30,6 +31,7 @@ def delete_expired_videos() -> list[int]:
     db = SessionLocal()
     deleted = []
     try:
+        try_pending_cleanup(db)
         for video in expired_videos(db):
             if any(t.status in ACTIVE_STATUSES for t in video.analysis_tasks):
                 continue   # 분석이 끝나면 다음 정리 때
@@ -38,6 +40,7 @@ def delete_expired_videos() -> list[int]:
             video_id = video.id
             purge_video(video, db)
             db.commit()
+            try_pending_cleanup(db)
             deleted.append(video_id)
     finally:
         db.close()

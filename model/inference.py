@@ -104,7 +104,8 @@ def _crop_square_and_pad(frame, bbox, r, resize):
     x_min, y_min, x_max, y_max = bbox
     vw, vh = (x_max - x_min) * r, (y_max - y_min) * r
     cx, cy = x_min + (x_max - x_min) // 2, y_min + (y_max - y_min) // 2
-    side = int(max(vw, vh))
+    # A one-pixel box otherwise produces identical crop start/end coordinates.
+    side = max(2, int(max(vw, vh)))
     nx1, ny1 = cx - side // 2, cy - side // 2
     nx2, ny2 = cx + side // 2, cy + side // 2
     v_x1, v_y1 = max(0, nx1), max(0, ny1)
@@ -269,11 +270,15 @@ def predict_full_video(
         target_bbox = bboxes[target_id]
 
         cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if not np.isfinite(fps) or fps <= 0:
+            fps = 30.0
         original_full_frames = []
         processed_frames = []
 
         ret, first_frame = cap.read()
         if not ret:
+            cap.release()
             return None, []
         _, (rx1, ry1, rx2, ry2) = _crop_square_and_pad(
             first_frame, target_bbox, r_value, resize)
@@ -295,7 +300,6 @@ def predict_full_video(
 
         while len(processed_frames) < clip_length:
             processed_frames.append(processed_frames[-1])
-            original_full_frames.append(original_full_frames[-1])
 
         full_video_tensor = _frames_to_video_tensor(
             processed_frames).to(device)
@@ -305,7 +309,7 @@ def predict_full_video(
         os.makedirs(out_path.parent, exist_ok=True)
         out_stem = str(out_path.with_suffix(""))
         out_video, out_rendered = _open_clip_writer(
-            out_stem, 30.0, (orig_w, orig_h + _state_bar_height(orig_h)))
+            out_stem, fps, (orig_w, orig_h + _state_bar_height(orig_h)))
 
         write_queue = queue.Queue(maxsize=64)
         writer_thread = threading.Thread(
@@ -322,7 +326,8 @@ def predict_full_video(
         v_nx2, v_ny2 = min(orig_w, target_bbox[2]), min(orig_h, target_bbox[3])
 
         # 창 판정은 '창 시작 + display_offset' 프레임에 그린다(config 주석 참고).
-        display_offset = max(0, min(int(display_offset), clip_length - 1))
+        display_offset = max(0, min(int(display_offset), clip_length - 1,
+                                    len(original_full_frames) - 1))
         # 첫 display_offset 개 프레임: 아직 판정을 그릴 창이 없음 → 상태 S로 출력
         for i in range(min(display_offset, len(original_full_frames))):
             f = cv2.cvtColor(original_full_frames[i], cv2.COLOR_RGB2BGR)
@@ -474,7 +479,7 @@ def fps_scaled_event_params(fps, coarse_step=None, min_span=None, clip_length=No
     min_span = config.PREDICT_MIN_EVENT_SPAN_FRAMES if min_span is None else min_span
     clip_length = config.CLIP_LENGTH if clip_length is None else clip_length
     enabled = config.PREDICT_FPS_SCALED_POSTPROC if enabled is None else enabled
-    if not enabled or not fps or fps <= 0:
+    if not enabled or not fps or not np.isfinite(fps) or fps <= 0:
         return int(coarse_step), int(min_span)
 
     scale = float(fps) / float(config.PREDICT_POSTPROC_REF_FPS)
@@ -568,7 +573,9 @@ def predict_events_and_clips(
     #   촘촘한 창: 전체를 정렬한 순서로 묶는다. 앞으로 나올 의심 창은 '아직 판정 안 한
     #   거친 창 - coarse_pad' 이후에만 생기므로, 그보다 앞선 창은 순서가 확정된다.
     cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if not np.isfinite(fps) or fps <= 0:
+        fps = 30.0
     coarse_step, min_span = fps_scaled_event_params(
         fps, coarse_step, config.PREDICT_MIN_EVENT_SPAN_FRAMES, clip_length
     )
@@ -576,7 +583,7 @@ def predict_events_and_clips(
     ret, first_frame = cap.read()
     if not ret:
         cap.release()
-        return []
+        raise ValueError("영상 프레임을 읽을 수 없습니다.")
     orig_h, orig_w = first_frame.shape[:2]
     _, (rx1, ry1, rx2, ry2) = _crop_square_and_pad(
         first_frame, target_bbox, r_value, resize)
@@ -753,7 +760,8 @@ def predict_events_and_clips(
     prev_gray = None
     qx1, qy1, qx2, qy2 = _roi
 
-    total_frames_hint = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    frame_count_hint = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    total_frames_hint = int(frame_count_hint) if np.isfinite(frame_count_hint) and frame_count_hint > 0 else 0
     decode_sec = flow_sec = 0.0
     t_stream = time.time()
     n_read = 0
@@ -831,8 +839,12 @@ def predict_events_and_clips(
     cap.release()
 
     if n_read == 0:
-        return []
+        raise ValueError("영상 프레임을 읽을 수 없습니다.")
     real_frame_count = n_read
+    # The event filter cannot accept any interval shorter than min_span + 1
+    # frames; reporting an empty result for such input would be misleading.
+    if real_frame_count <= min_span:
+        raise ValueError(f"영상이 너무 짧아 사고 구간을 판별할 수 없습니다. 최소 {min_span + 1}프레임이 필요합니다.")
     # 창 길이보다 짧은 영상은 마지막 프레임을 반복해 창 하나를 채운다(예전과 동일)
     n_total = n_read
     while n_total < clip_length:

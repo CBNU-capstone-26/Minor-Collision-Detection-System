@@ -4,9 +4,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from app.db_connection import engine, Base
 from app import db_models  # noqa: F401  (테이블 등록을 위해 임포트)
+from app.schema_init import create_tables_safely
 from app.settings import settings
 from app.routers import auth, videos, analysis
 
@@ -66,37 +68,35 @@ def _wait_for_db(timeout_sec=60):
 
 # 서버 시작 시 테이블이 없으면 자동 생성 — DB 가 준비될 때까지 기다린 뒤
 _wait_for_db()
-Base.metadata.create_all(bind=engine)
+create_tables_safely(engine, Base.metadata)
 
-def _ensure_column(table, column_ddl):
+def _ensure_column(table, column, column_type):
     """나중에 추가한 컬럼을 기존 테이블에도 넣는다 (create_all 은 이미 있는 테이블을 고치지 않는다).
-    이미 있으면 MySQL 이 오류를 내므로 그냥 넘어간다."""
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        try:
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_ddl};"))
-            conn.commit()
-        except Exception:
-            pass
+    이미 있는 컬럼은 건너뛰고, 마이그레이션 오류는 서버 시작 오류로 드러낸다."""
+    if column in {item["name"] for item in inspect(engine).get_columns(table)}:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {column_type};"))
 
 
-_ensure_column("videos", "detected_vehicles TEXT NULL")
-_ensure_column("videos", "title VARCHAR(100) NULL")             # 업로드할 때 넣은 제목
-_ensure_column("analysis_tasks", "finished_at DATETIME NULL")   # 분석 이력: 끝난 시각
-_ensure_column("analysis_tasks", "event_count INT NULL")        # 분석 이력: 찾은 클립 수
-_ensure_column("crash_events", "clip_start_sec FLOAT NULL")     # CAM 클립이 원본의 몇 초부터인지
+_ensure_column("videos", "detected_vehicles", "TEXT NULL")
+_ensure_column("videos", "title", "VARCHAR(100) NULL")             # 업로드할 때 넣은 제목
+_ensure_column("videos", "video_type", "VARCHAR(20) NULL")
+_ensure_column("videos", "collision_label", "VARCHAR(20) NULL")
+# 모델과 같은 DateTime을 각 DB 방언에 맞게 생성한다(MySQL DATETIME, PostgreSQL TIMESTAMP).
+_finished_at_type = db_models.AnalysisTask.__table__.c.finished_at.type.compile(dialect=engine.dialect)
+_ensure_column("analysis_tasks", "finished_at", f"{_finished_at_type} NULL")
+_ensure_column("analysis_tasks", "event_count", "INT NULL")        # 분석 이력: 찾은 클립 수
+_ensure_column("crash_events", "clip_start_sec", "FLOAT NULL")    # CAM 클립이 원본의 몇 초부터인지
 
 
 def _drop_column(table, column):
     """더 이상 쓰지 않는 컬럼을 기존 테이블에서 지운다.
-    이미 없으면 MySQL 이 오류를 내므로 그냥 넘어간다."""
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        try:
-            conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column};"))
-            conn.commit()
-        except Exception:
-            pass
+    이미 없으면 건너뛰고, 마이그레이션 오류는 서버 시작 오류로 드러낸다."""
+    if column not in {item["name"] for item in inspect(engine).get_columns(table)}:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column};"))
 
 
 # 녹화 시작 시각 — 입력받지 않아 늘 기본값(20:30)이었다. 시간대별 통계와 함께 삭제(2026-10-18)

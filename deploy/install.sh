@@ -72,19 +72,33 @@ if [[ -z "$DATABASE_URL" ]]; then
   warn "DATABASE_URL 이 비어 있어 loopback 전용 로컬 MySQL을 사용합니다"
 fi
 REDIS_URL="$(env_get REDIS_URL)"
+AZURE_REDIS_CONNECTION="$(env_get AZURE_REDIS_CONNECTIONSTRING)"
+if [[ -z "$REDIS_URL" && "$AZURE_REDIS_CONNECTION" == *://* ]]; then
+  REDIS_URL="$AZURE_REDIS_CONNECTION"
+fi
 LOCAL_REDIS="1"
 if [[ -n "$REDIS_URL" ]]; then
-  case "$REDIS_URL" in
-    redis://*localhost:*|redis://*127.0.0.1:*|rediss://*localhost:*|rediss://*127.0.0.1:*) ;;
-    *) LOCAL_REDIS="0" ;;
-  esac
+  # URL의 사용자 정보가 아니라 실제 호스트를 확인한다(포트 생략·IPv6도 허용).
+  REDIS_AUTHORITY="${REDIS_URL#*://}"
+  REDIS_AUTHORITY="${REDIS_AUTHORITY%%[/?#]*}"
+  REDIS_AUTHORITY="${REDIS_AUTHORITY##*@}"
+  if [[ "$REDIS_AUTHORITY" == \[*\]* ]]; then
+    REDIS_HOST="${REDIS_AUTHORITY#\[}"
+    REDIS_HOST="${REDIS_HOST%%\]*}"
+  else
+    REDIS_HOST="${REDIS_AUTHORITY%%:*}"
+  fi
 else
   REDIS_HOST="$(env_first REDIS_HOST AZURE_REDIS_HOST)"
-  case "$REDIS_HOST" in
-    ""|localhost|127.0.0.1|::1) ;;
-    *) LOCAL_REDIS="0" ;;
-  esac
+  AZURE_REDIS_SERVER="${AZURE_REDIS_CONNECTION%%,*}"
+  if [[ -z "$REDIS_HOST" && "$AZURE_REDIS_SERVER" == *:* ]]; then
+    REDIS_HOST="${AZURE_REDIS_SERVER%:*}"
+  fi
 fi
+case "$REDIS_HOST" in
+  ""|localhost|127.0.0.1|::1) ;;
+  *) LOCAL_REDIS="0" ;;
+esac
 [[ -n "$(env_get AUTH_SECRET_KEY)" ]] || warn "AUTH_SECRET_KEY 가 비어 있어 backend/.auth_secret 에 키를 만들어 씁니다"
 STORAGE_BACKEND="$(env_get STORAGE_BACKEND)"
 STORAGE_BACKEND="${STORAGE_BACKEND:-local}"
@@ -110,9 +124,19 @@ chown "$RUN_USER" "$REPO/.env"
 chmod 600 "$REPO/.env"   # 비밀번호가 들어 있다
 
 # ── 1) 화면 빌드 → /var/www/siot ───────────────────────────────────────
-NODE_MAJOR="$(sudo -u "$RUN_USER" bash -lc 'node -v 2>/dev/null' | sed -n 's/^v\([0-9]*\).*/\1/p')"
-if [[ -n "$NODE_MAJOR" && "$NODE_MAJOR" -ge 20 ]]; then
-  log "화면 빌드 (node v$NODE_MAJOR)"
+NODE_VERSION="$(sudo -u "$RUN_USER" bash -lc 'node -v 2>/dev/null' || true)"
+NODE_VERSION="${NODE_VERSION#v}"
+NODE_MAJOR="${NODE_VERSION%%.*}"
+NODE_REST="${NODE_VERSION#*.}"
+NODE_MINOR="${NODE_REST%%.*}"
+NODE_SUPPORTED=0
+if [[ "$NODE_MAJOR" =~ ^[0-9]+$ && "$NODE_MINOR" =~ ^[0-9]+$ ]]; then
+  if (( (NODE_MAJOR == 20 && NODE_MINOR >= 19) || (NODE_MAJOR == 22 && NODE_MINOR >= 13) || NODE_MAJOR >= 24 )); then
+    NODE_SUPPORTED=1
+  fi
+fi
+if [[ "$NODE_SUPPORTED" == "1" ]]; then
+  log "화면 빌드 (node v$NODE_VERSION)"
   sudo -u "$RUN_USER" bash -lc "
     set -e; cd '$REPO/ui'
     # package-lock.json 이 바뀌었거나 처음이면 패키지를 새로 설치한다
@@ -121,9 +145,9 @@ if [[ -n "$NODE_MAJOR" && "$NODE_MAJOR" -ge 20 ]]; then
     fi
     npm run build"
 elif [[ -f "$REPO/ui/dist/index.html" ]]; then
-  warn "node 20 이상이 없어 이미 있는 ui/dist 를 그대로 씁니다(로컬에서 빌드해 복사한 것인지 확인하세요)"
+  warn "Vite 빌드를 지원하는 Node 버전(20.19+, 22.13+, 24+)이 없어 이미 있는 ui/dist 를 그대로 씁니다(로컬에서 빌드해 복사한 것인지 확인하세요)"
 else
-  die "화면 빌드 파일(ui/dist)이 없고 node 20 이상도 없습니다 — deploy/DEPLOY.md 1단계(Node) 또는 로컬 빌드 복사"
+  die "화면 빌드 파일(ui/dist)이 없고 Vite 지원 Node 버전(20.19+, 22.13+, 24+)도 없습니다 — deploy/DEPLOY.md 1단계(Node) 또는 로컬 빌드 복사"
 fi
 install -d -m 755 /var/www/siot
 if command -v rsync >/dev/null; then
@@ -182,6 +206,9 @@ systemctl reload nginx 2>/dev/null || systemctl restart nginx
 log "백엔드가 뜨기를 기다립니다(최대 90초)"
 for _ in $(seq 1 45); do
   if curl -fsS http://127.0.0.1:8000/ >/dev/null 2>&1; then
+    for unit in siot-backend siot-worker nginx; do
+      systemctl is-active --quiet "$unit" || die "$unit 서비스가 실행 중이 아닙니다 — systemctl status $unit 및 journalctl -u $unit -n 50 을 확인하세요"
+    done
     if [[ -n "$HTTPS" ]]; then URL="https://$DOMAIN"; else URL="http://${DOMAIN:-<서버 공인 IP>}"; fi
     log "완료 — 접속 주소: $URL"
     [[ -n "$DOMAIN" && -z "$HTTPS" ]] && log "HTTPS 는 deploy/DEPLOY.md 6단계(certbot) 후 이 스크립트를 한 번 더 실행하면 켜집니다"

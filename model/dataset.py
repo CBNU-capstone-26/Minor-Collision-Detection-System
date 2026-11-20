@@ -144,6 +144,9 @@ class HitAndRunDataset(Dataset):
             config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
         self.std = torch.tensor(
             config.NORM_STD, dtype=torch.float32).view(3, 1, 1, 1)
+        # 같은 값의 numpy float32 — _frames_to_tensor 가 배열 하나에 제자리로 정규화할 때 쓴다
+        self._mean_np = np.asarray(config.NORM_MEAN, dtype=np.float32).reshape(3, 1, 1, 1)
+        self._std_np = np.asarray(config.NORM_STD, dtype=np.float32).reshape(3, 1, 1, 1)
 
         # data_dir 하위 폴더(rcdata/realdata 등)까지 재귀적으로 mp4를 수집한다.
         # → 최상위에 파일이 있어도(기존 방식) 하위 폴더에 있어도 모두 포함.
@@ -302,7 +305,7 @@ class HitAndRunDataset(Dataset):
         veh_w, veh_h = (x_max - x_min) * r, (y_max - y_min) * r
         cx, cy = x_min + (x_max - x_min) // 2, y_min + (y_max - y_min) // 2
 
-        square_size = int(max(veh_w, veh_h))
+        square_size = max(2, int(max(veh_w, veh_h)))
         new_x_min, new_y_min = cx - square_size // 2, cy - square_size // 2
         new_x_max, new_y_max = cx + square_size // 2, cy + square_size // 2
 
@@ -353,24 +356,32 @@ class HitAndRunDataset(Dataset):
             h, w = frames[0].shape[:2]
             grain = np.random.normal(0.0, noise_sigma, (h, w, 1 if do_gray else 3)).astype(np.float32)
 
+        # 계산 순서는 예전 그대로(뒤집기 → 밝기·대비·채도·색조 → 흑백 → 흐림 → 잔무늬). 2026-11-16 속도만 다듬었고
+        # 결과는 화소까지 같다(해시 확인): PIL 연산이 없는 클립은 PIL 을 거치지 않고(뒤집기는 numpy 로 — 같은 화소),
+        # 흐림은 30프레임을 한 번에 합성곱한다(프레임마다 PIL→텐서→합성곱→PIL 보다 약 3.7배 빠름)
+        use_pil = do_jitter or do_gray
         aug_frames = []
         for frame in frames:
-            img = Image.fromarray(frame)
-            if do_hflip:
-                img = TF.hflip(img)
-            if do_jitter:
-                img = TF.adjust_brightness(img, brightness)
-                img = TF.adjust_contrast(img, contrast)
-                img = TF.adjust_saturation(img, saturation)
-                img = TF.adjust_hue(img, hue)
-            if do_gray:
-                img = TF.rgb_to_grayscale(img, num_output_channels=3)
-            if do_blur:
-                img = TF.gaussian_blur(img, kernel_size=3)
-            arr = np.array(img)
-            if grain is not None:
-                arr = np.clip(arr.astype(np.float32) + grain, 0, 255).astype(np.uint8)
-            aug_frames.append(arr)
+            if use_pil:
+                img = Image.fromarray(frame)
+                if do_hflip:
+                    img = TF.hflip(img)
+                if do_jitter:
+                    img = TF.adjust_brightness(img, brightness)
+                    img = TF.adjust_contrast(img, contrast)
+                    img = TF.adjust_saturation(img, saturation)
+                    img = TF.adjust_hue(img, hue)
+                if do_gray:
+                    img = TF.rgb_to_grayscale(img, num_output_channels=3)
+                aug_frames.append(np.array(img))
+            else:
+                aug_frames.append(np.ascontiguousarray(frame[:, ::-1]) if do_hflip else frame)
+        if do_blur:
+            batch = torch.from_numpy(np.stack(aug_frames)).permute(0, 3, 1, 2)    # (T, 3, H, W) uint8
+            batch = TF.gaussian_blur(batch, kernel_size=3)                         # 프레임별 PIL 경로와 같은 커널·σ(0.8)
+            aug_frames = list(batch.permute(0, 2, 3, 1).contiguous().numpy())
+        if grain is not None:
+            aug_frames = [np.clip(arr.astype(np.float32) + grain, 0, 255).astype(np.uint8) for arr in aug_frames]
 
         return aug_frames
 
@@ -426,8 +437,9 @@ class HitAndRunDataset(Dataset):
             ret, frame = cap.read()
             if not ret:
                 break
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append(self._crop_and_pad(frame, bbox, r))
+            # 색 변환(BGR→RGB)은 채널 순서만 바꾸고, 자르기·여백·줄이기는 채널마다 같은 계산이라 자른 뒤에 해도
+            # 화소가 같다(2026-11-16 해시 확인). 1080p 전체 화면 대신 224 크롭만 바꿔 클립당 수~수십 ms 줄인다
+            frames.append(cv2.cvtColor(self._crop_and_pad(frame, bbox, r), cv2.COLOR_BGR2RGB))
         cap.release()
 
         while len(frames) < n_read:
@@ -531,9 +543,23 @@ class HitAndRunDataset(Dataset):
         return self._read_frames(sample['mp4_path'], s0, n, bbox, r)[::k]
 
     def _frames_to_tensor(self, frames):
-        arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
-        video_tensor = torch.from_numpy(arr).permute(3, 0, 1, 2).contiguous()
-        return (video_tensor - self.mean) / self.std
+        """uint8 RGB 프레임 목록 → 정규화한 (3, T, H, W) float32. ÷255 → −평균 → ÷표준편차를 같은 순서·같은 float32
+        계산으로 하되, 배열 하나에 제자리로 해서 임시 배열·복사를 줄였다(2026-11-16 — 예전 np.stack·astype·permute·
+        contiguous·torch 두 번 계산과 결과 같음, 30프레임 약 28 → 10 ms)."""
+        out = np.empty((3, len(frames)) + frames[0].shape[:2], dtype=np.float32)
+        for t, f in enumerate(frames):
+            np.copyto(out[:, t], f.transpose(2, 0, 1), casting='unsafe')     # uint8 → float32 는 정확히 같은 값
+        np.divide(out, np.float32(255.0), out=out)
+        np.subtract(out, self._mean_np, out=out)
+        np.divide(out, self._std_np, out=out)
+        return torch.from_numpy(out)
+
+    def _sample_crop_r(self):
+        r_p = float(getattr(config, 'TRAIN_R_AUGMENT_PROB', 0.0) or 0.0)
+        r_vals = tuple(getattr(config, 'TRAIN_R_AUGMENT_VALUES', ()) or ())
+        if self.augment and r_p > 0 and r_vals and random.random() < r_p:
+            return random.choice(r_vals)
+        return self.r_value
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
@@ -568,8 +594,9 @@ class HitAndRunDataset(Dataset):
             hw, hh = int(bw * s / 2), int(bh * s / 2)
             bbox = [cx - hw, cy - hh, cx + hw, cy + hh]
 
-        # 크롭 배율은 학습·검증·서비스 모두 self.r_value(=config.R_VALUE, 1.0). 학습 중 r 을 넓히던 r 증강은 2026-11-05 삭제
-        r = self.r_value
+        # 크롭 배율: 검증·서비스는 self.r_value(=config.R_VALUE, 1.0). 학습은 r 증강(config.TRAIN_R_AUGMENT_*)으로
+        # 일부 클립만 넓게 자른다 — 그 클립의 모든 프레임·창에 같은 r. 확률 0 이면 난수를 쓰지 않는다.
+        r = self._sample_crop_r()
 
         # 첫 창 시작부터 마지막 창 끝까지 한 번에 읽는다(창 1개면 clip_length 프레임).
         # 모든 창이 같은 박스·r·증강을 쓰게 되어, 같은 충돌의 다른 시점일 뿐이 된다.

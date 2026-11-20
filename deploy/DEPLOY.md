@@ -97,6 +97,11 @@ nano .env
 
 URL에 비밀번호를 넣을 때 `@`, `#`, `/`, `:` 같은 문자는 percent-encode 해야 한다. 로컬 MySQL·Redis 컨테이너는 loopback 주소에만 포트를 연다.
 
+로컬 Redis를 사용할 때는 `REDIS_URL`을 비우고 `REDIS_PORT`와 `REDIS_PASSWORD`를 설정하는 것이 간단하다.
+로컬 `REDIS_URL`을 직접 지정하면 URL의 포트와 비밀번호가 `REDIS_PORT`·`REDIS_PASSWORD`와 같아야 한다.
+로컬 Redis 컨테이너는 `127.0.0.1`에서 TLS 없이 수신하므로 `redis://127.0.0.1:포트/0` 형식을 사용한다.
+비밀번호를 URL에 넣을 때는 인코딩하고 `REDIS_PASSWORD`에는 원래 값을 넣는다.
+
 ## 5. 설치 — 처음에도, 코드 갱신 후에도 이것 하나
 
 ```bash

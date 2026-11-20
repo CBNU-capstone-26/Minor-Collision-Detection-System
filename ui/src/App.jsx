@@ -20,7 +20,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { api, saveAuth, clearAuth, getToken, getStoredUser } from "./api";
+import { api, saveAuth, clearAuth, getToken, getStoredUser, isRetryableRequestError } from "./api";
 import "./App.css";
 import "./incident-ui.css";
 import "./premium-ui.css";
@@ -42,6 +42,40 @@ const VIDEO_FEEDBACK_ICONS = {
   fullscreen: fullscreenIcon,
   fullscreenExit: fullscreenExitIcon,
 };
+
+const VIDEO_TYPES = [
+  { value: "real", label: "실제 영상" },
+  { value: "render_3d", label: "3D 렌더링 영상" },
+  { value: "game", label: "게임 렌더링 영상" },
+];
+const COLLISION_LABELS = [{ value: "collision", label: "충돌 영상" }, { value: "no_collision", label: "비충돌 영상" }];
+
+function FilterPills({ children, className = "", label, selected }) {
+  const groupRef = useRef(null);
+  const indicatorRef = useRef(null);
+  useLayoutEffect(() => {
+    const group = groupRef.current;
+    const indicator = indicatorRef.current;
+    if (!group || !indicator) return;
+    const update = () => {
+      const active = group.querySelector("button.active");
+      if (!active) return;
+      indicator.style.width = `${active.offsetWidth}px`;
+      indicator.style.height = `${active.offsetHeight}px`;
+      indicator.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+      indicator.style.opacity = "1";
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(group);
+    group.querySelectorAll("button").forEach((button) => observer.observe(button));
+    return () => observer.disconnect();
+  }, [selected]);
+  return <div ref={groupRef} className={`filter-pills sliding-filter ${className}`} role="group" aria-label={label}>
+    <span ref={indicatorRef} className="filter-selection-indicator" aria-hidden="true" />
+    {children}
+  </div>;
+}
 
 function InterfaceIcon({ name }) {
   const paths = {
@@ -906,6 +940,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [videoLoadError, setVideoLoadError] = useState(null);
   const [filterDays, setFilterDays] = useState(9999); // 기본 전체
+  const [videoTypeFilter, setVideoTypeFilter] = useState("real");
+  const [collisionFilter, setCollisionFilter] = useState("all");
+  const [savingVideoType, setSavingVideoType] = useState(false);
   const [searchQuery, setSearchQuery] = useState(""); // 상단 검색어
 
   const [selectedVideo, setSelectedVideo] = useState(null); // null이면 홈(그리드) 화면, 값이 있으면 영상 재생 화면
@@ -929,6 +966,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const [clearingHistory, setClearingHistory] = useState(false);
   const [clipView, setClipView] = useState("cam");
   const [isPlayerSettingsOpen, setIsPlayerSettingsOpen] = useState(false);
+  const [isDragSeeking, setIsDragSeeking] = useState(false);
   const camChipRef = useRef(null);
   const camOverlayChipRef = useRef(null);
   const playerSettingsRef = useRef(null);
@@ -1021,13 +1059,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     if (!window.confirm(`선택한 ${selectedForDelete.length}개 영상을 삭제하시겠습니까? 되돌릴 수 없습니다.`)) {
       return;
     }
-    try {
-      await Promise.all(selectedForDelete.map((id) => api.deleteVideo(id)));
-      showToast(`${selectedForDelete.length}개 영상을 삭제했습니다.`, "success");
+    const { deletedCount, failedIds } = await api.deleteVideos(selectedForDelete);
+    await loadVideos();
+    if (failedIds.length) {
+      setSelectedForDelete(failedIds);
+      showToast(`${deletedCount}개 삭제 완료, ${failedIds.length}개 삭제 실패. 다시 시도해 주세요.`, "error");
+    } else {
       exitDeleteMode();
-      await loadVideos();
-    } catch (e) {
-      showToast(`삭제 실패: ${e.message}`, "error");
+      showToast(`${deletedCount}개 영상을 삭제했습니다.`, "success");
     }
   };
 
@@ -1164,6 +1203,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const filteredVideos = useMemo(() => {
     let list = periodVideos;
 
+    if (videoTypeFilter !== "all") list = list.filter((video) => videoTypeFilter === "unclassified" ? !video.videoType : video.videoType === videoTypeFilter);
+    if (collisionFilter !== "all") list = list.filter((video) => collisionFilter === "unclassified" ? !video.collisionLabel : video.collisionLabel === collisionFilter);
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       // 제목은 카드에 보이는 그대로('2026-10-12 녹화본 #5')로 찾는다
@@ -1180,7 +1222,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
       return b.id - a.id;
     });
-  }, [periodVideos, searchQuery, videos]);
+  }, [periodVideos, searchQuery, videos, videoTypeFilter, collisionFilter]);
 
   // 메인화면 영상 목록 페이지네이션 — 한 페이지 = 지금 열 수 × 줄 수(두 줄 이상, 최소 6개).
   // 3열 이하(보통 화면)는 예전처럼 6개, 화면이 넓거나 축소해 열이 늘면 줄을 꽉 채운다(예: 6열 → 12개)
@@ -1484,17 +1526,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       removeJob(taskId);
     };
     const poll = async () => {
-      if (!aliveRef.current) return; // 화면이 닫히면 멈춤 — 다시 열리면 복원하면서 새로 시작
+      if (!aliveRef.current || !pollingRef.current.has(taskId)) return; // 화면 종료나 취소 시 중단
       try {
         const status = await api.getTaskStatus(taskId);
-        if (!aliveRef.current) return;
+        if (!aliveRef.current || !pollingRef.current.has(taskId)) return;
         if (status.status === "SUCCESS") {
           finish();
           notifyDone("분석 완료", `사고 의심 구간 ${status.events.length}건`, "success");
           // 분석한 영상을 아직 보고 있을 때만 화면 갱신 (다른 영상으로 이동했으면 덮어쓰지 않음)
           if (selectedVideoIdRef.current === videoId) {
-            const v = await api.getVideo(videoId);
-            setSelectedVideo(v);
+            await refreshSelectedVideo(videoId);
           }
           loadVideos();
           return;
@@ -1503,8 +1544,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
           finish();
           notifyDone("분석 실패", status.error_message || "오류", "error");
           if (selectedVideoIdRef.current === videoId) {
-            const v = await api.getVideo(videoId); // '다시 실행' 안내를 띄우기 위해 갱신
-            setSelectedVideo(v);
+            await refreshSelectedVideo(videoId); // 다시 실행 안내를 갱신한다
           }
           return;
         }
@@ -1535,6 +1575,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
           }));
         setTimeout(poll, 2000); // PENDING/PROCESSING → 재시도
       } catch (e) {
+        if (!aliveRef.current || !pollingRef.current.has(taskId)) return;
+        if (isRetryableRequestError(e)) {
+          showToast("분석 상태 연결이 끊겨 다시 확인합니다.", "warning");
+          setTimeout(poll, 10000);
+          return;
+        }
         finish();
         showToast(`상태 조회 실패: ${e.message}`, "error");
       }
@@ -1856,22 +1902,22 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     pendingSeekTimeRef.current = time;
     if (videoElRef.current?.seeking) return;
     if (seekPreviewFrameRef.current || seekPreviewTimerRef.current) return;
-    const delay = seekPointerTypeRef.current === "touch"
-      ? Math.max(0, 150 - (performance.now() - seekPreviewLastAppliedAtRef.current))
-      : 0;
-    if (delay > 0) {
-      seekPreviewTimerRef.current = setTimeout(() => {
-        seekPreviewTimerRef.current = null;
-        if (isSeekingRef.current && pendingSeekTimeRef.current != null) {
-          queueSeekPreview(pendingSeekTimeRef.current);
-        }
-      }, delay);
-      return;
-    }
     seekPreviewFrameRef.current = requestAnimationFrame(() => {
       seekPreviewFrameRef.current = 0;
       const v = videoElRef.current;
       if (!isSeekingRef.current || !v || v.seeking || pendingSeekTimeRef.current == null) return;
+      const delay = seekPointerTypeRef.current === "touch"
+        ? Math.max(0, 150 - (performance.now() - seekPreviewLastAppliedAtRef.current))
+        : 0;
+      if (delay > 0) {
+        seekPreviewTimerRef.current = setTimeout(() => {
+          seekPreviewTimerRef.current = null;
+          if (isSeekingRef.current && pendingSeekTimeRef.current != null) {
+            queueSeekPreview(pendingSeekTimeRef.current);
+          }
+        }, delay);
+        return;
+      }
       const nextTime = pendingSeekTimeRef.current;
       pendingSeekTimeRef.current = null;
       if (Math.abs(v.currentTime - nextTime) < 0.001) return;
@@ -1903,6 +1949,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     seekPointerTypeRef.current = e.pointerType;
     seekPreviewLastAppliedAtRef.current = -Infinity;
     didDragSeekRef.current = false;
+    setIsDragSeeking(false);
     isSeekingRef.current = true;
     setIsSeeking(true);
     const ratio = seekRatioAt(e);
@@ -1915,8 +1962,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   };
 
   const handleSeekMove = (e) => {
-    if (isSeekingRef.current && Math.abs(e.clientX - seekStartXRef.current) > seekDragThresholdRef.current) {
+    if (isSeekingRef.current && !didDragSeekRef.current
+      && Math.abs(e.clientX - seekStartXRef.current) > seekDragThresholdRef.current) {
       didDragSeekRef.current = true;
+      setIsDragSeeking(true);
     }
     const ratio = seekRatioAt(e);
     updateSeekBubble(e, ratio);
@@ -1970,12 +2019,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     seekPointerTypeRef.current = null;
     setIsSeeking(false);
     didDragSeekRef.current = false;
+    setIsDragSeeking(false);
     if (Math.abs(seekDelta) > 0.05) {
       showPlayerFeedback(seekDelta < 0 ? "fastRewind" : "fastForward");
     }
     // Touch 브라우저의 합성 click이 이동량에 따라 취소돼도 빨간 구간 탭은 재생되게 한다.
     if (tappedEvent) {
-      const video = videoElRef.current;
       seekToEvent(
         tappedEvent,
         pendingTime ?? (tappedEvent.startSec ?? tappedEvent.timestamp),
@@ -2008,6 +2057,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     seekPointerTypeRef.current = null;
     didDragSeekRef.current = false;
     setIsSeeking(false);
+    setIsDragSeeking(false);
     if (videoElRef.current) setCurrentTime(videoElRef.current.currentTime);
     if (shouldResumePlayback) {
       const video = videoElRef.current;
@@ -2303,10 +2353,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const isCompactScreen = useMediaQuery("(max-width: 480px)");
   const useCompactFullscreenSettings = isFullscreen && isCompactScreen;
   const actionsInSide = isWideScreen && !!selectedVideo;
-
-  useEffect(() => {
-    if (!useCompactFullscreenSettings) setIsPlayerSettingsOpen(false);
-  }, [useCompactFullscreenSettings]);
 
   useEffect(() => {
     if (!isPlayerSettingsOpen) return undefined;
@@ -2829,18 +2875,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
               <div><span>분석 진행</span><strong>{analyzingJobs.length}<small>개</small></strong></div>
             </div>
           </section>
-          <div className="incident-section-title"><div><span className="incident-eyebrow" translate="no">VIDEO LIBRARY</span><h2>영상 보관함</h2></div></div>
-          {/* 기간 필터 및 영상 관리 툴바 */}
-          <div className="home-toolbar">
-            <div className="home-toolbar-filters">
-              <div className="filter-pills">
-                <button className={filterDays === 9999 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(9999); }}>전체</button>
-                <button className={filterDays === 7 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(7); }}>1주일</button>
-                <button className={filterDays === 14 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(14); }}>2주일</button>
-                <button className={filterDays === 30 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(30); }}>1개월</button>
-                <button className={filterDays === 90 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(90); }}>3개월</button>
-              </div>
-
+          <div className="incident-section-title">
+            <div><span className="incident-eyebrow" translate="no">VIDEO LIBRARY</span><h2>영상 보관함</h2></div>
+            <div className="home-toolbar-actions">
               <div className="list-search-bar">
                 <span className="search-icon"><SearchIcon /></span>
                 <input
@@ -2856,9 +2893,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                   </button>
                 )}
               </div>
-            </div>
-
-            <div className="home-toolbar-actions">
               {deleteMode ? (
                 <>
                   <button
@@ -2885,14 +2919,35 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
               ) : (
                 <>
                   <button className="toolbar-upload-btn" onClick={() => setShowUpload(true)}>
-                    ⬆ 영상 업로드
+                    <span aria-hidden="true">⬆</span><span>영상 업로드</span>
                   </button>
                   <button className="toolbar-delete-btn" onClick={() => setDeleteMode(true)}>
-                    🗑 영상 삭제
+                    <span aria-hidden="true">🗑</span><span>영상 삭제</span>
                   </button>
                 </>
               )}
             </div>
+          </div>
+          {/* 기간 필터 및 영상 관리 툴바 */}
+          <div className="home-toolbar">
+            <div className="home-toolbar-filters">
+              <FilterPills label="영상 표시 기간" selected={filterDays}>
+                <button className={filterDays === 9999 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(9999); }}>전체</button>
+                <button className={filterDays === 7 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(7); }}>1주일</button>
+                <button className={filterDays === 14 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(14); }}>2주일</button>
+                <button className={filterDays === 30 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(30); }}>1개월</button>
+                <button className={filterDays === 90 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(90); }}>3개월</button>
+              </FilterPills>
+
+              <FilterPills className="video-type-filters" label="영상 유형 필터" selected={videoTypeFilter}>
+                {[{ value: "all", label: "전체" }, ...VIDEO_TYPES, { value: "unclassified", label: "미분류" }].map(({ value, label }) => <button key={value} type="button" className={videoTypeFilter === value ? "active" : ""} aria-pressed={videoTypeFilter === value} onClick={() => { setCurrentPage(1); setVideoTypeFilter(value); }}>{label}</button>)}
+              </FilterPills>
+              <FilterPills className="collision-filters" label="충돌 여부 필터" selected={collisionFilter}>
+                {[{ value: "all", label: "전체" }, ...COLLISION_LABELS, { value: "unclassified", label: "미지정" }].map(({ value, label }) => <button key={value} type="button" className={collisionFilter === value ? "active" : ""} aria-pressed={collisionFilter === value} onClick={() => { setCurrentPage(1); setCollisionFilter(value); }}>{label}</button>)}
+              </FilterPills>
+            </div>
+
+
           </div>
 
 
@@ -2908,7 +2963,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                     </button>
                   </>
                 ) : (
-                  "선택한 기간에 해당하는 영상이 없습니다."
+                  "선택한 조건에 해당하는 영상이 없습니다."
                 )}
               </div>
             ) : (
@@ -3618,7 +3673,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                 {/* 재생바 + 재생 컨트롤 (영상 화면을 가리지 않게 화면 바깥 하단) */}
                 <div className="custom-progress-bar">
                   <div
-                    className={`progress-track ${isSeeking && didDragSeekRef.current ? "seeking" : ""} ${isSeeking && !didDragSeekRef.current ? "click-seeking" : ""} ${isDetectingVehicles ? "locked" : ""} ${isCurrentTimeInEvent ? "event-current" : ""}`}
+                    className={`progress-track ${isSeeking && isDragSeeking ? "seeking" : ""} ${isSeeking && !isDragSeeking ? "click-seeking" : ""} ${isDetectingVehicles ? "locked" : ""} ${isCurrentTimeInEvent ? "event-current" : ""}`}
                     title={isDetectingVehicles ? "차량 탐지 중에는 이동할 수 없습니다" : undefined}
                     onPointerDown={handleSeekStart}
                     onPointerMove={handleSeekMove}
@@ -4042,6 +4097,28 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                 </button>
               </div>
               <dl className="video-info-list">
+                <div><dt><label htmlFor="video-info-type">영상 유형</label></dt><dd><select id="video-info-type" value={v.videoType || ""} disabled={savingVideoType} onChange={async (e) => {
+                  const type = e.target.value;
+                  if (!type) return;
+                  setSavingVideoType(true);
+                  try {
+                    const updated = await api.updateVideoType(v.id, type);
+                    setVideos((previous) => previous.map((item) => item.id === updated.id ? updated : item));
+                    setInfoVideo(updated);
+                    showToast("영상 유형을 변경했습니다.", "success");
+                  } catch (error) { showToast(`영상 유형 변경 실패: ${error.message}`, "error"); }
+                  finally { setSavingVideoType(false); }
+                }}><option value="" disabled>미분류</option>{VIDEO_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></dd></div>
+                <div><dt><label htmlFor="video-info-collision">충돌 여부</label></dt><dd><select id="video-info-collision" value={v.collisionLabel || ""} disabled={savingVideoType} onChange={async (e) => {
+                  setSavingVideoType(true);
+                  try {
+                    const updated = await api.updateCollisionLabel(v.id, e.target.value || null);
+                    setVideos((previous) => previous.map((item) => item.id === updated.id ? updated : item));
+                    setInfoVideo(updated);
+                    showToast("충돌 여부를 변경했습니다.", "success");
+                  } catch (error) { showToast(`충돌 여부 변경 실패: ${error.message}`, "error"); }
+                  finally { setSavingVideoType(false); }
+                }}><option value="">미지정</option>{COLLISION_LABELS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></dd></div>
                 {rows.map(([k, val]) => (
                   <div key={k}>
                     <dt>{k}</dt>
@@ -4135,11 +4212,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                     ⏱ {formatTime(clipEvent.timestamp)}
                     {clipEvent.endTimestamp != null ? ` ~ ${formatTime(clipEvent.endTimestamp)}` : ""}
                   </span>
-                  {clipEvent.prob != null && (
-                    <span className="clip-chip clip-chip-danger">
-                      사고 확률 {(clipEvent.prob * 100).toFixed(1)}%
-                    </span>
-                  )}
                 </div>
               </div>
               <button
@@ -4228,6 +4300,8 @@ function UploadModal({ onClose, onUploaded, onError }) {
       file,
       recordingDate: todayStr,
       title: "", // 선택 — 비우면 '녹화일 녹화본 #N'
+      videoType: "",
+      collisionLabel: "",
     }));
     setFilesList((prev) => [...prev, ...items]);
   };
@@ -4279,6 +4353,10 @@ function UploadModal({ onClose, onUploaded, onError }) {
       onError("업로드할 영상 파일을 선택해 주세요.");
       return;
     }
+    if (filesList.some((item) => !item.videoType)) {
+      onError("각 영상의 유형을 선택해 주세요.");
+      return;
+    }
     setUploading(true);
     let successCount = 0;
     let failCount = 0;
@@ -4291,7 +4369,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
         currentName: item.file.name,
       });
       try {
-        await api.uploadVideo(item.file, item.recordingDate || null, item.title);
+        await api.uploadVideo(item.file, item.recordingDate || null, item.title, item.videoType, item.collisionLabel);
         successCount += 1;
       } catch (e) {
         failCount += 1;
@@ -4311,7 +4389,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
   };
 
   return (
-    <div className="settings-modal-overlay" onClick={onClose}>
+    <div className="settings-modal-overlay" onClick={uploading ? undefined : onClose}>
       <div className="upload-modal multi-upload-modal" onClick={(e) => e.stopPropagation()}>
         <div className="upload-modal-header">
           <div>
@@ -4417,6 +4495,20 @@ function UploadModal({ onClose, onUploaded, onError }) {
                       onChange={(e) => updateFileTitle(item.id, e.target.value)}
                       disabled={uploading}
                     />
+                  </div>
+                  <div className="file-item-title-group video-type-field">
+                    <label htmlFor={`upload-type-${item.id}`}>영상 유형:</label>
+                    <select id={`upload-type-${item.id}`} value={item.videoType} disabled={uploading} onChange={(e) => setFilesList((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, videoType: e.target.value } : entry))}>
+                      <option value="">유형 선택</option>
+                      {VIDEO_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </div>
+                  <div className="file-item-title-group video-type-field">
+                    <label htmlFor={`upload-collision-${item.id}`}>충돌 여부:</label>
+                    <select id={`upload-collision-${item.id}`} value={item.collisionLabel} disabled={uploading} onChange={(e) => setFilesList((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, collisionLabel: e.target.value } : entry))}>
+                      <option value="">미지정</option>
+                      {COLLISION_LABELS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                    </select>
                   </div>
                 </div>
               ))}
