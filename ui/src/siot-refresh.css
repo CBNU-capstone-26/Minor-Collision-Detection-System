@@ -81,6 +81,10 @@ body.dark-mode .dashboard-layout {
 .dashboard-layout .incident-metrics span { color: #c3d7d5; }
 .dashboard-layout .incident-section-title { margin-bottom: 20px; }
 .dashboard-layout .incident-section-title h2 { letter-spacing: -.035em; }
+.dashboard-layout .incident-section-title .home-toolbar-actions { width: auto; flex-wrap: wrap; justify-content: flex-end; }
+.dashboard-layout .incident-section-title .home-toolbar-actions > button { flex: 0 0 auto; }
+.dashboard-layout .incident-section-title .list-search-bar,
+.dashboard-layout .incident-section-title .list-search-bar:focus-within { width: 260px; max-width: 100%; }
 .dashboard-layout .filter-pills { border-radius: 10px; background: #e6efed; }
 .dashboard-layout .filter-pills button { border-radius: 7px; }
 .dashboard-layout .sliding-filter { position: relative; isolation: isolate; }
@@ -108,6 +112,11 @@ body.dark-mode .dashboard-layout .filter-pills { background: #0d1b1e; }
 .dashboard-layout :is(.auto-detect-btn, .bbox-designate-btn, .detect-run-btn) { border-radius: 8px; }
 
 @media (max-width: 720px) {
+  .dashboard-layout .incident-section-title { gap: 14px; }
+  .dashboard-layout .incident-section-title .home-toolbar-actions { width: 100%; justify-content: stretch; }
+  .dashboard-layout .incident-section-title .home-toolbar-actions > button { flex: 1 1 auto; }
+  .dashboard-layout .incident-section-title .list-search-bar,
+  .dashboard-layout .incident-section-title .list-search-bar:focus-within { width: 100%; flex: 1 1 100%; }
   .public-login-page .public-hero { gap: 36px; padding-top: 56px; }
   .public-login-page .public-hero-panel { border-radius: 10px; }
   .public-login-page .premium-feature { padding: 26px; }

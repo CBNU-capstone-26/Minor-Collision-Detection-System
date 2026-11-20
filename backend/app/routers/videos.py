@@ -102,6 +102,7 @@ def to_video_out(v: db_models.Video, with_history: bool = False) -> api_schemas.
         video_name=v.video_name,
         title=v.title,
         video_type=v.video_type,
+        collision_label=v.collision_label,
         recording_date=v.recording_date,
         camera_location=v.camera_location or "주차장",
         width=v.width,
@@ -167,6 +168,7 @@ def upload_video(
     recording_date: str | None = Form(None),
     title: str | None = Form(None),
     video_type: api_schemas.VideoType | None = Form(None),
+    collision_label: api_schemas.CollisionLabel | None = Form(None),
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
@@ -207,6 +209,7 @@ def upload_video(
         video_name=file.filename,
         title=title or None,
         video_type=video_type,
+        collision_label=collision_label,
         video_path=object_key,
         recording_date=rec_date,
         width=width,
@@ -259,6 +262,16 @@ def update_video_type(
 ):
     video = _get_owned_video(video_id, db, user)
     video.video_type = data.video_type
+    db.commit()
+    db.refresh(video)
+    return to_video_out(video)
+
+
+@router.patch("/{video_id}/collision-label", response_model=api_schemas.VideoOut)
+def update_collision_label(video_id: int, data: api_schemas.CollisionLabelUpdate,
+                           db: Session = Depends(get_db), user: db_models.User = Depends(get_current_user)):
+    video = _get_owned_video(video_id, db, user)
+    video.collision_label = data.collision_label
     db.commit()
     db.refresh(video)
     return to_video_out(video)

@@ -115,6 +115,7 @@ export function normalizeVideo(v) {
     id: v.id,
     title: v.title || "", // 업로드할 때 넣은 제목 (없으면 화면이 '녹화일 녹화본 #N')
     videoType: v.video_type || null,
+    collisionLabel: v.collision_label || null,
     fileName: v.video_name || "", // 업로드한 원본 파일 이름
     uploadedAt: v.created_at || null, // 업로드 시각(ISO, UTC)
     // 보관 기간이 끝나 영상·클립이 지워질 때까지 남은 날(서버 시계 기준). 보관 기간을 끄면 null
@@ -162,15 +163,17 @@ export const api = {
     return list.map(normalizeVideo);
   },
   getVideo: async (id) => normalizeVideo(await request(`/videos/${id}`)),
-  uploadVideo: (file, recordingDate, title, videoType) => {
+  uploadVideo: (file, recordingDate, title, videoType, collisionLabel) => {
     const form = new FormData();
     form.append("file", file);
     if (recordingDate) form.append("recording_date", recordingDate);
     if (title && title.trim()) form.append("title", title.trim());
     if (videoType) form.append("video_type", videoType);
+    if (collisionLabel) form.append("collision_label", collisionLabel);
     return request("/videos", { method: "POST", body: form, isForm: true });
   },
   updateVideoType: async (id, videoType) => normalizeVideo(await request(`/videos/${id}/type`, { method: "PATCH", body: { video_type: videoType } })),
+  updateCollisionLabel: async (id, collisionLabel) => normalizeVideo(await request(`/videos/${id}/collision-label`, { method: "PATCH", body: { collision_label: collisionLabel } })),
   streamUrl: (id) => `/api/videos/${id}/stream`,
   thumbnailUrl: (id) => `/api/videos/${id}/thumbnail`,
   deleteVideo: (id) => request(`/videos/${id}`, { method: "DELETE" }),

@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app import api_schemas, db_models
 from app.db_connection import Base
-from app.routers.videos import update_video_type
+from app.routers.videos import update_video_type, update_collision_label
 
 
 class VideoTypeTests(unittest.TestCase):
@@ -44,6 +44,20 @@ class VideoTypeTests(unittest.TestCase):
     def test_invalid_type_is_rejected(self):
         with self.assertRaises(ValidationError):
             api_schemas.VideoTypeUpdate(video_type="unknown")
+
+    def test_collision_label_is_independent_and_can_be_cleared(self):
+        result = update_collision_label(self.video.id, api_schemas.CollisionLabelUpdate(collision_label="collision"), self.db, self.owner)
+        self.assertEqual(result.collision_label, "collision")
+        self.assertIsNone(result.video_type)
+        result = update_collision_label(self.video.id, api_schemas.CollisionLabelUpdate(collision_label=None), self.db, self.owner)
+        self.assertIsNone(result.collision_label)
+
+    def test_collision_label_requires_owner_and_valid_value(self):
+        with self.assertRaises(HTTPException) as raised:
+            update_collision_label(self.video.id, api_schemas.CollisionLabelUpdate(collision_label="no_collision"), self.db, self.other)
+        self.assertEqual(raised.exception.status_code, 404)
+        with self.assertRaises(ValidationError):
+            api_schemas.CollisionLabelUpdate(collision_label="unknown")
 
 
 if __name__ == "__main__":

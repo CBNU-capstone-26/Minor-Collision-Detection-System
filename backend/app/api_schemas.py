@@ -129,10 +129,15 @@ class AnalysisHistoryOut(BaseModel):
 
 
 VideoType = Literal["real", "render_3d", "game"]
+CollisionLabel = Literal["collision", "no_collision"]
 
 
 class VideoTypeUpdate(BaseModel):
     video_type: VideoType
+
+
+class CollisionLabelUpdate(BaseModel):
+    collision_label: Optional[CollisionLabel]
 
 
 class VideoOut(BaseModel):
@@ -140,6 +145,7 @@ class VideoOut(BaseModel):
     video_name: str
     title: Optional[str] = None   # 업로드할 때 넣은 제목 (없으면 None)
     video_type: Optional[VideoType] = None
+    collision_label: Optional[CollisionLabel] = None
     recording_date: Optional[date] = None
     camera_location: str = "주차장"
     width: int

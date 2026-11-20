@@ -48,6 +48,7 @@ const VIDEO_TYPES = [
   { value: "render_3d", label: "3D 렌더링 영상" },
   { value: "game", label: "게임 렌더링 영상" },
 ];
+const COLLISION_LABELS = [{ value: "collision", label: "충돌 영상" }, { value: "no_collision", label: "비충돌 영상" }];
 
 function FilterPills({ children, className = "", label, selected }) {
   const groupRef = useRef(null);
@@ -68,23 +69,7 @@ function FilterPills({ children, className = "", label, selected }) {
     const observer = new ResizeObserver(update);
     observer.observe(group);
     group.querySelectorAll("button").forEach((button) => observer.observe(button));
-    const search = group.classList.contains("video-type-filters")
-      ? group.closest(".video-search-row")?.querySelector(".list-search-bar") : null;
-    let resizeTimer;
-    const followSearchResize = () => {
-      group.dataset.searchResizing = "true";
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => { delete group.dataset.searchResizing; }, 350);
-    };
-    search?.addEventListener("focusin", followSearchResize);
-    search?.addEventListener("focusout", followSearchResize);
-    return () => {
-      observer.disconnect();
-      clearTimeout(resizeTimer);
-      delete group.dataset.searchResizing;
-      search?.removeEventListener("focusin", followSearchResize);
-      search?.removeEventListener("focusout", followSearchResize);
-    };
+    return () => observer.disconnect();
   }, [selected]);
   return <div ref={groupRef} className={`filter-pills sliding-filter ${className}`} role="group" aria-label={label}>
     <span ref={indicatorRef} className="filter-selection-indicator" aria-hidden="true" />
@@ -956,6 +941,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const [videoLoadError, setVideoLoadError] = useState(null);
   const [filterDays, setFilterDays] = useState(9999); // 기본 전체
   const [videoTypeFilter, setVideoTypeFilter] = useState("real");
+  const [collisionFilter, setCollisionFilter] = useState("all");
   const [savingVideoType, setSavingVideoType] = useState(false);
   const [searchQuery, setSearchQuery] = useState(""); // 상단 검색어
 
@@ -1217,7 +1203,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const filteredVideos = useMemo(() => {
     let list = periodVideos;
 
-    if (videoTypeFilter) list = list.filter((video) => videoTypeFilter === "unclassified" ? !video.videoType : video.videoType === videoTypeFilter);
+    if (videoTypeFilter !== "all") list = list.filter((video) => videoTypeFilter === "unclassified" ? !video.videoType : video.videoType === videoTypeFilter);
+    if (collisionFilter !== "all") list = list.filter((video) => collisionFilter === "unclassified" ? !video.collisionLabel : video.collisionLabel === collisionFilter);
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -1235,7 +1222,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
       return b.id - a.id;
     });
-  }, [periodVideos, searchQuery, videos, videoTypeFilter]);
+  }, [periodVideos, searchQuery, videos, videoTypeFilter, collisionFilter]);
 
   // 메인화면 영상 목록 페이지네이션 — 한 페이지 = 지금 열 수 × 줄 수(두 줄 이상, 최소 6개).
   // 3열 이하(보통 화면)는 예전처럼 6개, 화면이 넓거나 축소해 열이 늘면 줄을 꽉 채운다(예: 6열 → 12개)
@@ -2888,23 +2875,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
               <div><span>분석 진행</span><strong>{analyzingJobs.length}<small>개</small></strong></div>
             </div>
           </section>
-          <div className="incident-section-title"><div><span className="incident-eyebrow" translate="no">VIDEO LIBRARY</span><h2>영상 보관함</h2></div></div>
-          {/* 기간 필터 및 영상 관리 툴바 */}
-          <div className="home-toolbar">
-            <div className="home-toolbar-filters">
-              <FilterPills label="영상 표시 기간" selected={filterDays}>
-                <button className={filterDays === 9999 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(9999); }}>전체</button>
-                <button className={filterDays === 7 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(7); }}>1주일</button>
-                <button className={filterDays === 14 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(14); }}>2주일</button>
-                <button className={filterDays === 30 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(30); }}>1개월</button>
-                <button className={filterDays === 90 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(90); }}>3개월</button>
-              </FilterPills>
-
-              <div className="video-search-row">
-              <FilterPills className="video-type-filters" label="영상 유형 필터" selected={videoTypeFilter}>
-                {[...VIDEO_TYPES, { value: "unclassified", label: "미분류" }].map(({ value, label }) => <button key={value} type="button" className={videoTypeFilter === value ? "active" : ""} aria-pressed={videoTypeFilter === value} onClick={() => { setCurrentPage(1); setVideoTypeFilter(value); }}>{label}</button>)}
-              </FilterPills>
-
+          <div className="incident-section-title">
+            <div><span className="incident-eyebrow" translate="no">VIDEO LIBRARY</span><h2>영상 보관함</h2></div>
+            <div className="home-toolbar-actions">
               <div className="list-search-bar">
                 <span className="search-icon"><SearchIcon /></span>
                 <input
@@ -2920,10 +2893,6 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                   </button>
                 )}
               </div>
-              </div>
-            </div>
-
-            <div className="home-toolbar-actions">
               {deleteMode ? (
                 <>
                   <button
@@ -2958,6 +2927,27 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                 </>
               )}
             </div>
+          </div>
+          {/* 기간 필터 및 영상 관리 툴바 */}
+          <div className="home-toolbar">
+            <div className="home-toolbar-filters">
+              <FilterPills label="영상 표시 기간" selected={filterDays}>
+                <button className={filterDays === 9999 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(9999); }}>전체</button>
+                <button className={filterDays === 7 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(7); }}>1주일</button>
+                <button className={filterDays === 14 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(14); }}>2주일</button>
+                <button className={filterDays === 30 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(30); }}>1개월</button>
+                <button className={filterDays === 90 ? "active" : ""} onClick={() => { setCurrentPage(1); setFilterDays(90); }}>3개월</button>
+              </FilterPills>
+
+              <FilterPills className="video-type-filters" label="영상 유형 필터" selected={videoTypeFilter}>
+                {[{ value: "all", label: "전체" }, ...VIDEO_TYPES, { value: "unclassified", label: "미분류" }].map(({ value, label }) => <button key={value} type="button" className={videoTypeFilter === value ? "active" : ""} aria-pressed={videoTypeFilter === value} onClick={() => { setCurrentPage(1); setVideoTypeFilter(value); }}>{label}</button>)}
+              </FilterPills>
+              <FilterPills className="collision-filters" label="충돌 여부 필터" selected={collisionFilter}>
+                {[{ value: "all", label: "전체" }, ...COLLISION_LABELS, { value: "unclassified", label: "미지정" }].map(({ value, label }) => <button key={value} type="button" className={collisionFilter === value ? "active" : ""} aria-pressed={collisionFilter === value} onClick={() => { setCurrentPage(1); setCollisionFilter(value); }}>{label}</button>)}
+              </FilterPills>
+            </div>
+
+
           </div>
 
 
@@ -4119,6 +4109,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                   } catch (error) { showToast(`영상 유형 변경 실패: ${error.message}`, "error"); }
                   finally { setSavingVideoType(false); }
                 }}><option value="" disabled>미분류</option>{VIDEO_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></dd></div>
+                <div><dt><label htmlFor="video-info-collision">충돌 여부</label></dt><dd><select id="video-info-collision" value={v.collisionLabel || ""} disabled={savingVideoType} onChange={async (e) => {
+                  setSavingVideoType(true);
+                  try {
+                    const updated = await api.updateCollisionLabel(v.id, e.target.value || null);
+                    setVideos((previous) => previous.map((item) => item.id === updated.id ? updated : item));
+                    setInfoVideo(updated);
+                    showToast("충돌 여부를 변경했습니다.", "success");
+                  } catch (error) { showToast(`충돌 여부 변경 실패: ${error.message}`, "error"); }
+                  finally { setSavingVideoType(false); }
+                }}><option value="">미지정</option>{COLLISION_LABELS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></dd></div>
                 {rows.map(([k, val]) => (
                   <div key={k}>
                     <dt>{k}</dt>
@@ -4301,6 +4301,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
       recordingDate: todayStr,
       title: "", // 선택 — 비우면 '녹화일 녹화본 #N'
       videoType: "",
+      collisionLabel: "",
     }));
     setFilesList((prev) => [...prev, ...items]);
   };
@@ -4368,7 +4369,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
         currentName: item.file.name,
       });
       try {
-        await api.uploadVideo(item.file, item.recordingDate || null, item.title, item.videoType);
+        await api.uploadVideo(item.file, item.recordingDate || null, item.title, item.videoType, item.collisionLabel);
         successCount += 1;
       } catch (e) {
         failCount += 1;
@@ -4500,6 +4501,13 @@ function UploadModal({ onClose, onUploaded, onError }) {
                     <select id={`upload-type-${item.id}`} value={item.videoType} disabled={uploading} onChange={(e) => setFilesList((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, videoType: e.target.value } : entry))}>
                       <option value="">유형 선택</option>
                       {VIDEO_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </div>
+                  <div className="file-item-title-group video-type-field">
+                    <label htmlFor={`upload-collision-${item.id}`}>충돌 여부:</label>
+                    <select id={`upload-collision-${item.id}`} value={item.collisionLabel} disabled={uploading} onChange={(e) => setFilesList((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, collisionLabel: e.target.value } : entry))}>
+                      <option value="">미지정</option>
+                      {COLLISION_LABELS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                     </select>
                   </div>
                 </div>

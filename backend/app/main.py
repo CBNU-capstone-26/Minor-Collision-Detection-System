@@ -82,6 +82,7 @@ def _ensure_column(table, column, column_type):
 _ensure_column("videos", "detected_vehicles", "TEXT NULL")
 _ensure_column("videos", "title", "VARCHAR(100) NULL")             # 업로드할 때 넣은 제목
 _ensure_column("videos", "video_type", "VARCHAR(20) NULL")
+_ensure_column("videos", "collision_label", "VARCHAR(20) NULL")
 # 모델과 같은 DateTime을 각 DB 방언에 맞게 생성한다(MySQL DATETIME, PostgreSQL TIMESTAMP).
 _finished_at_type = db_models.AnalysisTask.__table__.c.finished_at.type.compile(dialect=engine.dialect)
 _ensure_column("analysis_tasks", "finished_at", f"{_finished_at_type} NULL")
