@@ -1,4 +1,5 @@
 """회원가입 / 로그인 라우터."""
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -23,6 +24,20 @@ from app.settings import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _clean_email(email):
+    """선택 항목인 이메일을 정리하고 입력된 값의 형식을 검사합니다."""
+    if email is None:
+        return None
+    email = email.strip()
+    if not email:
+        return None
+    if len(email) > 255 or not _EMAIL_RE.fullmatch(email):
+        raise HTTPException(status_code=400, detail="이메일 형식이 올바르지 않습니다.")
+    return email
+
 
 @router.post("/signup", response_model=api_schemas.UserOut)
 def signup(req: api_schemas.SignupRequest, db: Session = Depends(get_db)):
@@ -34,7 +49,7 @@ def signup(req: api_schemas.SignupRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="이메일은 255자 이하여야 합니다.")
     if not req.password:
         raise HTTPException(status_code=400, detail="비밀번호를 입력해 주세요.")
-    email = (req.email.strip() or None) if req.email is not None else None
+    email = _clean_email(req.email)
     if db.query(db_models.User).filter(
             db_models.User.username == req.username).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 아이디입니다.")
@@ -121,7 +136,7 @@ def update_me(
     if req.phone is not None and len(req.phone.strip()) > 50:
         raise HTTPException(status_code=400, detail="연락처는 50자 이하여야 합니다.")
     user_id = current_user.id
-    email = (req.email.strip() or None) if req.email is not None else None
+    email = _clean_email(req.email)
     if req.email is not None:
         if email and email != current_user.email:
             existing = db.query(db_models.User).filter(
