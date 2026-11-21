@@ -52,6 +52,9 @@ def h264_roundtrip(frames, crf, gop):
     buf.seek(0)
     inp = av.open(buf, mode='r', format='h264')
     try:
+        # 푸는 쪽도 스레드 1개: 기본값(0 = 자동)은 풀 때마다 보이는 CPU 수만큼 스레드를 만들어,
+        # CPU 가 256개로 보이는 vast 컨테이너에선 작업자 수십 개가 동시에 수백 개씩 만들어 할당 코어를 넘을 수 있다
+        inp.streams.video[0].thread_count = 1
         dec = [fr.to_ndarray(format='rgb24') for fr in inp.decode(video=0)]
     finally:
         inp.close()
