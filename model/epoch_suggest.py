@@ -121,4 +121,9 @@ def suggest(run_dir, k=None, gap=None):
         lines += [f"      {p} \\" for p in have[:-1]] + [f"      {have[-1]}; do"]
         lines.append(f"      {env}python -u -m model.main --mode eval --weights \"$w\"; done 2>&1 "
                      f"| tee outputs/console/eval_{run_dir.name}_$(date +%y%m%d_%H%M).log")
+        # 위 기준들은 후보끼리의 실제 평가 순서를 무작위 수준으로만 맞혔다(11-22 outputs/analysis/suggest_audit_261122) —
+        # 검증 영상 서비스 판정으로 다시 순위를 매긴 뒤 상위 1~2개만 평가하는 쪽을 권한다
+        lines.append("  권장: 검증 영상 서비스 판정으로 순위(후반 절반 에포크를 재고 상위 2개 평가 명령을 냄):")
+        lines.append(f"    {env}python -u -m model.epoch_rank --run {run_dir} 2>&1 "
+                     f"| tee outputs/console/rank_{run_dir.name}_$(date +%y%m%d_%H%M).log")
     return pick, lines
