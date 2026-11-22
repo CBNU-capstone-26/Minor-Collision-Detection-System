@@ -318,6 +318,20 @@ if TRAIN_A_CONTEXT_NEG not in (None, "real", "all"):
     raise ValueError(f"TRAIN_A_CONTEXT_NEG 는 real · all · 빈 값 중 하나여야 합니다: {_ctx!r}")
 TRAIN_A_CONTEXT_NEG_MARGIN_SEC = float(os.getenv("TRAIN_A_CONTEXT_NEG_MARGIN_SEC", "0.5") or 0.5)
 TRAIN_A_CONTEXT_NEG_STRIDE = 30
+# 2026-11-22 결과: 충돌 밖 A·표시 늦음은 크게 줄었지만 놓침 검증 0→2~3·평가 0→4~6 이라 미채택(ep39 유지).
+
+# ---------- 헷갈리는 정상 묶음(하드 네거티브) 더 학습 (실험용, 기본 끔, 2026-11-22) ----------
+# 남은 오탐은 모두 다른 차가 대상 차 앞·뒤·옆을 지나가는 장면이다(평가 TS_0002·0007·0009·0011 — 멀고 작은 박스라
+# 화면 전체로는 멈춘 장면처럼 보임). model/hardneg_mine.py 가 학습 영상(실제 정상 + 사고 영상의 충돌에서 3초 이상 먼 곳,
+# --rc 면 RC 도)에서 '정상인데 P(A) 높은 묶음'을 캐 CSV 로 낸다. 켜면 그 묶음을 정상 클립으로 학습 데이터셋 맨 뒤에 붙인다.
+#   · 검증은 그대로(학습 데이터셋에만). 창 흔들기는 캔 위치 ±TRAIN_HARDNEG_JITTER 프레임 안 — 지나가는 장면이 창에 남게.
+#     fps 증강은 걸지 않고, balance 에선 솎지 않고 매 에포크 전부 쓴다. TRAIN_HARDNEG_REPEAT 번 넣어 더 자주 본다.
+#   · 안 B(충돌 0.5초 옆 정상)는 미세 충돌을 놓치게 했다 → 캘 때 충돌과 먼 곳만(기본 3초).
+#   켜기: 환경변수 TRAIN_HARDNEG_CSV=outputs/hardneg/<시각>/hardneg.csv (프로젝트 루트 기준 또는 절대 경로). 이름 _hn(반복 k≠1 이면 _hn<k>).
+_hn = os.getenv("TRAIN_HARDNEG_CSV", "").strip()
+TRAIN_HARDNEG_CSV = (Path(_hn) if Path(_hn).is_absolute() else _ROOT / _hn) if _hn else None
+TRAIN_HARDNEG_REPEAT = max(1, int(os.getenv("TRAIN_HARDNEG_REPEAT", "1") or 1))
+TRAIN_HARDNEG_JITTER = 5
 
 # ---------- 학습 묶음 구성: 빈 장면 정상 솎기 + 묶음마다 충돌 고르게 (실험용, 기본 끔) ----------
 # 2026-10-22 서버 측정(model/s_motion_check.py, outputs/s_motion/261022_0323): A:S 1:20.5,

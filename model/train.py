@@ -475,9 +475,11 @@ def train_model(
         rc_car1_val_dropped = n0 - len(val_rc_idx)
     # 사고 영상의 충돌 전·후 정상 클립(config.TRAIN_A_CONTEXT_NEG)은 학습 데이터셋에만 있고 맨 뒤에 붙는다.
     # 검증 폴더가 없어 학습 폴더 안에서 나눌 때 검증 쪽에 들어간 것은 뺀다(검증 데이터셋엔 그 번호가 없음).
+    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV)도 같다.
     if not use_val_dir:
-        val_rc_idx[:] = [i for i in val_rc_idx if not train_dataset.samples[i].get('ctx_neg')]
-        val_real_idx[:] = [i for i in val_real_idx if not train_dataset.samples[i].get('ctx_neg')]
+        _extra = lambda i: train_dataset.samples[i].get('ctx_neg') or train_dataset.samples[i].get('hardneg')  # noqa: E731
+        val_rc_idx[:] = [i for i in val_rc_idx if not _extra(i)]
+        val_real_idx[:] = [i for i in val_real_idx if not _extra(i)]
 
     print(f"[분할] 영상 {n_train_vid + n_val_vid}개 → train {n_train_vid} / "
           f"val {n_val_vid} (영상 단위, 누수 없음)")
@@ -563,6 +565,20 @@ def train_model(
                     f"(충돌 전 {n_pre} · 후 {n_post}, 실제 {n_dom['real']} · RC {n_dom['rc']}) · 사고 영상 {n_vid}개 · 매 에포크 전부")
         run_tag = f"{run_tag}_ctx{'' if ctx_mode == 'real' else 'all'}{'' if abs(margin - 0.5) < 1e-9 else f'{margin:g}'}"
         print(f"[충돌 전·후 정상] {ctx_info}")
+    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV, 기본 끔) — 켜면 이름에 _hn(반복 k≠1 이면 _hn<k>)
+    hn_csv = getattr(config, 'TRAIN_HARDNEG_CSV', None)
+    hn_info = '끔'
+    if hn_csv:
+        tr_hn = [train_dataset.samples[i] for i in train_idx if train_dataset.samples[i].get('hardneg')]
+        rep = int(getattr(config, 'TRAIN_HARDNEG_REPEAT', 1))
+        n_dom = {d: sum(_domain(s['mp4_path']) == d for s in tr_hn) for d in ('real', 'rc')}
+        hn_info = (f"{os.path.relpath(hn_csv, config._ROOT)} — 클립 {len(tr_hn)}개(묶음 {len(tr_hn) // rep}개 × {rep}번, "
+                   f"실제 {n_dom['real']} · RC {n_dom['rc']}) · 영상 {len({s['video_key'] for s in tr_hn})}개 · "
+                   f"창 흔들기 ±{getattr(config, 'TRAIN_HARDNEG_JITTER', 5)}프레임 · 매 에포크 전부")
+        if not tr_hn:
+            raise ValueError(f'TRAIN_HARDNEG_CSV 의 묶음이 학습 영상과 하나도 맞지 않습니다: {hn_csv}')
+        run_tag = f"{run_tag}_hn{'' if rep == 1 else rep}"
+        print(f"[헷갈리는 정상] {hn_info}")
 
     # ── 학습 묶음 구성 (config.TRAIN_S_MOTION_CSV · TRAIN_SPREAD_A, 기본 끔) ──
     # 학습 쪽만 바꾸고 검증 로더는 그대로다. 켜면 이름에 _bal 을 붙여 기존 학습과 구분한다.
@@ -737,6 +753,7 @@ def train_model(
         ('학습률', f"헤드 {learning_rate:g} / 백본 {learning_rate * backbone_lr_mult:g}"),
         ('S 클립 차량', s_car_info),
         ('충돌 전·후 정상', ctx_info),
+        ('헷갈리는 정상', hn_info),
         ('묶음 구성', ' / '.join(l.strip() for l in balance_lines) if balance_on
                      else '기본(무작위 섞기, 정상 전부)'),
         ('A 클립 방식', (f'span (접근~충돌 종료를 창 여러 개로 전부 학습, 첫 창 무게 {first_w:g})'

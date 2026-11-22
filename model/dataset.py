@@ -1,4 +1,5 @@
 import os
+import csv
 import glob
 import hashlib
 import inspect
@@ -175,6 +176,9 @@ class HitAndRunDataset(Dataset):
         # 검증 데이터셋(증강 없음 — 이 클립을 안 만듦)과 같게 둔다(검증 폴더가 없을 때 두 데이터셋을 같은 번호로 나눔).
         ctx_mode = getattr(config, 'TRAIN_A_CONTEXT_NEG', None) if self.augment else None
         ctx_samples = []
+        # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV, 학습 데이터셋만) — 같은 이유로 맨 뒤에 붙인다
+        hn_map = self._load_hardneg() if self.augment else {}
+        hn_samples = []
         for mp4_path in self.mp4_paths:
             # txt는 같은 경로의 확장자만 바꾼 것 (rcdata/realdata 어디든 동일 규칙)
             txt_path = os.path.splitext(mp4_path)[0] + ".txt"
@@ -201,6 +205,7 @@ class HitAndRunDataset(Dataset):
 
             # 영상 메타는 한 번만 읽는다(S 슬라이싱의 총프레임 + 지터 환산용 fps).
             total, fps = self._video_meta(mp4_path)
+            hn_samples += self._hardneg_samples(hn_map.get(file_name, ()), mp4_path, file_name, bboxes, fps, total)
 
             def _add(sf, wins=None, car=None):
                 car = target_id if car is None else car
@@ -271,7 +276,35 @@ class HitAndRunDataset(Dataset):
                 for car in s_cars:
                     for sf in starts:
                         _add(sf, car=car)
-        return samples + ctx_samples
+        return samples + ctx_samples + hn_samples
+
+    @staticmethod
+    def _load_hardneg():
+        """config.TRAIN_HARDNEG_CSV → {영상 이름: [(차 번호, 창 시작)]}. 끄면 {}."""
+        path = getattr(config, 'TRAIN_HARDNEG_CSV', None)
+        if not path:
+            return {}
+        out = {}
+        with open(path, encoding='utf-8') as f:
+            for r in csv.DictReader(f):
+                out.setdefault(r['video'], []).append((int(r['car_id']), int(r['start_f'])))
+        return out
+
+    def _hardneg_samples(self, items, mp4_path, file_name, bboxes, fps, total):
+        """헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV 주석) — 정상 클립으로, TRAIN_HARDNEG_REPEAT 번."""
+        L = self.clip_length
+        j = int(getattr(config, 'TRAIN_HARDNEG_JITTER', 5))
+        rep = int(getattr(config, 'TRAIN_HARDNEG_REPEAT', 1))
+        out = []
+        for car, w in items:
+            if car not in bboxes or (total > 0 and w > total - L):
+                continue
+            hi = w + j if total <= 0 else min(w + j, total - L)
+            for _ in range(rep):
+                out.append({'file_name': file_name, 'video_key': mp4_path, 'mp4_path': mp4_path, 'label': 0,
+                            'start_f': w, 'bbox': bboxes[car], 'car_id': car, 'fps': fps, 'total': total,
+                            'hardneg': True, 'start_range': (max(0, w - j), hi)})
+        return out
 
     def _context_neg(self, mp4_path, file_name, car_id, bbox, fps, total, start_f, end_f):
         """사고 영상의 충돌 전·후 정상 클립(config.TRAIN_A_CONTEXT_NEG 주석). 창 끝 ≤ 충돌 시작 − 여유(전),
@@ -564,7 +597,7 @@ class HitAndRunDataset(Dataset):
         확률 0 이면 난수를 쓰지 않아 기존 학습과 같다."""
         p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0.0) or 0.0)
         # 충돌 전·후 정상 클립은 k배로 읽으면 창이 충돌 구간까지 늘어나 걸지 않는다(난수도 안 씀)
-        if p <= 0 or len(starts) != 1 or sample.get('ctx_neg') or random.random() >= p:
+        if p <= 0 or len(starts) != 1 or sample.get('ctx_neg') or sample.get('hardneg') or random.random() >= p:
             return 1
         fps = float(sample.get('fps', 30.0))
         ks = [k for k in getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3))
