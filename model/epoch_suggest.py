@@ -46,6 +46,20 @@ def _top(rows, key, k, gap):
     return picked
 
 
+def _epoch_file(ep_dir, e):
+    hit = sorted(ep_dir.glob(f'*_ep{e:03d}.pth')) if ep_dir.exists() else []
+    return hit[0] if hit else None
+
+
+def candidate_paths(run_dir):
+    """추천 에포크 가중치의 절대 경로(파일이 있는 것만) — main --mode suggest --paths 가 한 줄에 하나씩 낸다.
+    이어 돌리는 서버 명령이 출력에서 경로를 정규식으로 뽑다가 상대 경로 앞부분(outputs)을 잘라 먹은 일이 있어(11-22) 따로 둔다."""
+    pick, _ = suggest(run_dir)
+    run_dir = Path(run_dir)
+    ep_dir = (run_dir.parent if run_dir.suffix == '.csv' else run_dir) / 'epochs'
+    return [p.resolve() for p in (_epoch_file(ep_dir, e) for e in pick) if p]
+
+
 def suggest(run_dir, k=None, gap=None):
     """(추천 에포크 목록, 출력 줄들). run_dir 은 회차 폴더(또는 그 안의 trainlog CSV)."""
     k = int(k or getattr(config, 'TRAIN_SUGGEST_TOPK', 2))
@@ -74,8 +88,7 @@ def suggest(run_dir, k=None, gap=None):
     ep_dir = run_dir / 'epochs'
 
     def _file(e):
-        hit = sorted(ep_dir.glob(f'*_ep{e:03d}.pth')) if ep_dir.exists() else []
-        return hit[0] if hit else None
+        return _epoch_file(ep_dir, e)
 
     def _n(v):
         return '-' if v is None else f'{v:.2f}'

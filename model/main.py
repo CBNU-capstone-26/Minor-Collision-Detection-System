@@ -191,11 +191,16 @@ if __name__ == "__main__":
         "--run",
         help="suggest 전용. 학습 회차 폴더(outputs/trainlogs/<회차>) — 평가해 볼 에포크를 추천",
     )
+    parser.add_argument(
+        "--paths",
+        action="store_true",
+        help="suggest 전용. 추천 가중치의 절대 경로만 한 줄에 하나씩(이어 돌리는 명령용: W=$(... --paths))",
+    )
     args = parser.parse_args()
     if args.mode == "suggest" and not args.run:
         parser.error("--mode suggest 에는 --run 학습 회차 폴더가 필요합니다.")
-    if args.run and args.mode != "suggest":
-        parser.error("--run 은 --mode suggest 에만 씁니다.")
+    if (args.run or args.paths) and args.mode != "suggest":
+        parser.error("--run·--paths 는 --mode suggest 에만 씁니다.")
     if args.a_mode and args.mode != "train":
         # 추론(평가·서비스)은 A 방식과 무관하다 — span 으로 학습한 가중치를 --weights 로 고른다
         parser.error("--a-mode 는 학습(--mode train)에만 씁니다. 평가할 가중치는 --weights 로 고르세요.")
@@ -240,6 +245,15 @@ if __name__ == "__main__":
         run_check_backend()
     elif args.mode == "detect":
         run_detect(args.video, args.bbox, args.r)
+    elif args.mode == "suggest" and args.paths:
+        from epoch_suggest import candidate_paths
+        paths = candidate_paths(args.run)
+        if not paths:
+            # 경로 대신 안내문이 W=$(...) 에 들어가지 않게 화면 오류로만 알리고 실패로 끝낸다
+            import sys
+            print(f"추천할 에포크 가중치가 없습니다: {args.run}", file=sys.stderr)
+            sys.exit(1)
+        print("\n".join(str(p) for p in paths))
     elif args.mode == "suggest":
         from epoch_suggest import suggest
         for line in suggest(args.run)[1]:
