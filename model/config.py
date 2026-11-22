@@ -251,6 +251,27 @@ TRAIN_S_REAL_USE_CAR1 = True
 #   RC 정상 클립이 약 2배(학습 약 3,658 → 7,300개)라 에포크가 길어지고 사고:정상 불균형이 커진다.
 #   켜기: 환경변수 TRAIN_S_RC_USE_CAR1=1 (이름에 _rc1). 끄면 예전과 같다.
 TRAIN_S_RC_USE_CAR1 = os.getenv("TRAIN_S_RC_USE_CAR1", "0").strip().lower() in ("1", "true", "yes")
+# 사고 영상의 충돌 전(접근)·후(여파) 장면을 정상으로 학습한다 — 학습 쪽만, 검증은 예전 그대로(다른 학습과 지표 비교).
+#   2026-11-22 안 B(사용자 결정 — 최종 조합 ep39 설정에 이것만 더해 학습해 봄). 지금까지 사고 영상에서는 충돌 창 하나(A)만
+#   만들어, 충돌 전에 다가오는 장면·충돌 뒤 장면을 정상으로 배운 적이 없다. 그래서 서비스에서 접근·여파가 담긴 창도 A 로 보고
+#   (ReA_0003 충돌 뒤 P(A) 0.99 · TA_0008 충돌 5.6초 전부터 A 등) 클립의 A 표시 끝이 충돌 끝보다 중앙값 1.5~2.3초 늦었다
+#   (outputs/analysis/retune_261122/). '다른 차가 앞·뒤로 지나가는' 정상 영상 오탐도 같은 종류라 함께 줄기를 기대한다.
+#   · 충돌 전: 창 끝이 충돌 시작보다 TRAIN_A_CONTEXT_NEG_MARGIN_SEC 이상 앞인 창 · 충돌 후: 창 시작이 충돌 끝보다 그만큼 뒤인 창.
+#     한쪽에 2개: 충돌에 가장 가까운 창(가장 헷갈림, 늘 들어감) + 그보다 TRAIN_A_CONTEXT_NEG_STRIDE 이상 먼 곳에서 에포크마다
+#     무작위로 고른 창 1개(여러 에포크에 걸쳐 영상 전체를 봄). 영상 끝까지 30프레임 간격으로 다 자르면 275개인데 긴 영상
+#     몇 개에 몰리고(ReA_0010 33개) 실제 영상 정상의 44% 가 되어 사고 놓침 쪽으로 기울 수 있어 줄였다(실제 132개, 약 27%).
+#     창 위치 흔들기는 이 범위 밖(충돌 쪽)으로 나가지 않게 막고, fps 증강은 이 클립에 걸지 않는다(창이 충돌로 늘어나지 않게).
+#   · 여유 0.5초 = 레이블 경계가 몇 프레임 어긋나도 충돌 장면을 정상으로 배우지 않게. 그 사이 창은 어느 쪽으로도 학습하지 않는다.
+#   · 실제 영상 학습 사고 43개 중 충돌 전 창이 있는 영상 33 · 충돌 후 40(0.5초 기준). RC 사고 영상은 충돌 직후에 끝나 '후'가 없고
+#     '전'(다가오는 RC 차)은 RC 정상 영상(주차·직진·배회)과 비슷해 기본은 실제 영상만('real', 이름 _ctx). 'all' 이면 RC 도(_ctxall).
+#   · balance 의 빈 장면 솎기 측정표(clips.csv)에 없는 클립이라 매 에포크 전부 쓴다.
+#   켜기: 환경변수 TRAIN_A_CONTEXT_NEG=real (또는 1) · all. 비우면 끔(예전과 같음 — 난수·샘플 순서 그대로).
+_ctx = os.getenv("TRAIN_A_CONTEXT_NEG", "").strip().lower()
+TRAIN_A_CONTEXT_NEG = {"": None, "0": None, "false": None, "no": None, "1": "real", "true": "real", "yes": "real"}.get(_ctx, _ctx)
+if TRAIN_A_CONTEXT_NEG not in (None, "real", "all"):
+    raise ValueError(f"TRAIN_A_CONTEXT_NEG 는 real · all · 빈 값 중 하나여야 합니다: {_ctx!r}")
+TRAIN_A_CONTEXT_NEG_MARGIN_SEC = float(os.getenv("TRAIN_A_CONTEXT_NEG_MARGIN_SEC", "0.5") or 0.5)
+TRAIN_A_CONTEXT_NEG_STRIDE = 30
 
 # ---------- 학습 묶음 구성: 빈 장면 정상 솎기 + 묶음마다 충돌 고르게 (실험용, 기본 끔) ----------
 # 2026-10-22 서버 측정(model/s_motion_check.py, outputs/s_motion/261022_0323): A:S 1:20.5,
