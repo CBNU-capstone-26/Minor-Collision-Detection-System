@@ -473,6 +473,11 @@ def train_model(
         val_rc_idx[:] = [i for i in val_rc_idx
                          if not (vs[i]['label'] == 0 and vs[i].get('car_id') == 1 and _domain(vs[i]['mp4_path']) == 'rc')]
         rc_car1_val_dropped = n0 - len(val_rc_idx)
+    # 사고 영상의 충돌 전·후 정상 클립(config.TRAIN_A_CONTEXT_NEG)은 학습 데이터셋에만 있고 맨 뒤에 붙는다.
+    # 검증 폴더가 없어 학습 폴더 안에서 나눌 때 검증 쪽에 들어간 것은 뺀다(검증 데이터셋엔 그 번호가 없음).
+    if not use_val_dir:
+        val_rc_idx[:] = [i for i in val_rc_idx if not train_dataset.samples[i].get('ctx_neg')]
+        val_real_idx[:] = [i for i in val_real_idx if not train_dataset.samples[i].get('ctx_neg')]
 
     print(f"[분할] 영상 {n_train_vid + n_val_vid}개 → train {n_train_vid} / "
           f"val {n_val_vid} (영상 단위, 누수 없음)")
@@ -542,6 +547,22 @@ def train_model(
         s_car_info = (f"0번 + 실제 영상 S 는 1번도 (1번 클립 {len(car1)}개, "
                       f"영상 {len({s['video_key'] for s in car1})}개)" if car1 else "0번만")
     print(f"[S 클립 차량] {s_car_info}")
+    # 사고 영상의 충돌 전·후를 정상으로 (config.TRAIN_A_CONTEXT_NEG, 기본 끔) — 켜면 이름에 _ctx · _ctxall
+    ctx_mode = getattr(config, 'TRAIN_A_CONTEXT_NEG', None)
+    ctx_info = '끔'
+    if ctx_mode:
+        tr_ctx = [train_dataset.samples[i] for i in train_idx if train_dataset.samples[i].get('ctx_neg')]
+        n_pre = sum(s['ctx_neg'] == 'pre' for s in tr_ctx)
+        n_post = len(tr_ctx) - n_pre
+        n_vid = len({s['video_key'] for s in tr_ctx})
+        n_dom = {d: sum(_domain(s['mp4_path']) == d for s in tr_ctx) for d in ('real', 'rc')}
+        margin = float(getattr(config, 'TRAIN_A_CONTEXT_NEG_MARGIN_SEC', 0.5))
+        ctx_info = (f"{'실제 영상만' if ctx_mode == 'real' else '실제 영상 + RC'} — 여유 {margin:g}초 · "
+                    f"한쪽에 가장 가까운 창 + {getattr(config, 'TRAIN_A_CONTEXT_NEG_STRIDE', clip_length)}프레임 이상 먼 곳 무작위 1개 · "
+                    f"클립 {len(tr_ctx)}개"
+                    f"(충돌 전 {n_pre} · 후 {n_post}, 실제 {n_dom['real']} · RC {n_dom['rc']}) · 사고 영상 {n_vid}개 · 매 에포크 전부")
+        run_tag = f"{run_tag}_ctx{'' if ctx_mode == 'real' else 'all'}{'' if abs(margin - 0.5) < 1e-9 else f'{margin:g}'}"
+        print(f"[충돌 전·후 정상] {ctx_info}")
 
     # ── 학습 묶음 구성 (config.TRAIN_S_MOTION_CSV · TRAIN_SPREAD_A, 기본 끔) ──
     # 학습 쪽만 바꾸고 검증 로더는 그대로다. 켜면 이름에 _bal 을 붙여 기존 학습과 구분한다.
@@ -715,6 +736,7 @@ def train_model(
                      f"{'Kinetics-400 사전학습' if config.PRETRAINED else 'scratch, 무작위 초기화'})"),
         ('학습률', f"헤드 {learning_rate:g} / 백본 {learning_rate * backbone_lr_mult:g}"),
         ('S 클립 차량', s_car_info),
+        ('충돌 전·후 정상', ctx_info),
         ('묶음 구성', ' / '.join(l.strip() for l in balance_lines) if balance_on
                      else '기본(무작위 섞기, 정상 전부)'),
         ('A 클립 방식', (f'span (접근~충돌 종료를 창 여러 개로 전부 학습, 첫 창 무게 {first_w:g})'
