@@ -245,6 +245,12 @@ TRAIN_S_MAX_CLIPS_PER_VIDEO = 0       # 0=제한 없음. 영상이 매우 길 �
 #   · 학습/검증 분할은 영상 단위라 같은 영상의 0번·1번 크롭이 학습과 검증으로 갈리지 않는다.
 #     평가(data/eval)는 지금처럼 0번 박스만 쓴다.
 TRAIN_S_REAL_USE_CAR1 = True
+# RC 정상 영상도 1번 차량(0번 옆에 주차된 다른 차) 박스로 정상 클립을 만든다 — 학습 쪽만, 검증은 예전처럼 0번만
+#   (다른 학습과 검증 지표를 비교하려고). 2026-11-22 사용자 결정(최종 조합 + 추가 학습 한 번): 움직이는 RC 차가
+#   1번 차량 바로 옆을 지나가는 장면이 정상으로 들어가 '대상 차 앞으로 다른 차가 지나가는' 오탐을 겨냥한다.
+#   RC 정상 클립이 약 2배(학습 약 3,658 → 7,300개)라 에포크가 길어지고 사고:정상 불균형이 커진다.
+#   켜기: 환경변수 TRAIN_S_RC_USE_CAR1=1 (이름에 _rc1). 끄면 예전과 같다.
+TRAIN_S_RC_USE_CAR1 = os.getenv("TRAIN_S_RC_USE_CAR1", "0").strip().lower() in ("1", "true", "yes")
 
 # ---------- 학습 묶음 구성: 빈 장면 정상 솎기 + 묶음마다 충돌 고르게 (실험용, 기본 끔) ----------
 # 2026-10-22 서버 측정(model/s_motion_check.py, outputs/s_motion/261022_0323): A:S 1:20.5,
@@ -267,6 +273,13 @@ TRAIN_S_MOTION_CSV = os.getenv("TRAIN_S_MOTION_CSV", "").strip() or None
 TRAIN_S_EMPTY_MOTION_PCT = 0.25
 TRAIN_S_EMPTY_KEEP = 1 / 3
 TRAIN_SPREAD_A = os.getenv("TRAIN_SPREAD_A", "0").strip().lower() in ("1", "true", "yes")
+# RC 정상도 빈 장면 솎기를 할지(기본 1 = 솎음, 예전과 같다). 0 이면 RC 정상(0번·1번 차량)은 움직임과 상관없이
+#   매 에포크 전부 쓰고 실제 영상 정상만 솎는다(이름에 _rcfull). 빈 장면 솎기(TRAIN_S_MOTION_CSV)를 켰을 때만 의미가 있다.
+#   2026-11-22: RC 1번 차량 추가 학습에서 처음엔 끄려 했으나, 끄면 쉬운 RC 정지 클립만 약 2,400개 늘어 사고:정상
+#   1:25 → 1:37·에포크 약 1.5배·RC 정상이 실제 영상 정상의 약 22배가 되고, 지나가기 클립은 솎기와 상관없이 매번
+#   들어가므로 솎기를 그대로 두기로 함(사용자 결정). 그 학습은 TRAIN_S_RC_USE_CAR1=1 로 s_motion_check 를 다시 돌려
+#   RC 1번 차량까지 담은 측정표를 쓴다.
+TRAIN_S_THIN_RC = os.getenv("TRAIN_S_THIN_RC", "1").strip().lower() not in ("0", "false", "no")
 
 # 클래스 가중치(CrossEntropyLoss weight). S 슬라이싱으로 A:S 불균형이 커지면
 # 모델이 S로 치우쳐 '미검출'이 늘 수 있다. (없음=None, 예: (1.0, 3.0) → A 3배)
@@ -280,7 +293,21 @@ TRAIN_SPREAD_A = os.getenv("TRAIN_SPREAD_A", "0").strip().lower() in ("1", "true
 # → S 간격 90(A:S 약 1:7.1) 동안은 손실 가중을 껐다. 2026-10-12 간격을 30으로 바꿔
 #   약 1:18.6이 됐지만 일단 가중 없이 학습해 본다. val_real recall 이 0에 머물면
 #   sqrt(18.6) ≈ 4.3 → (1.0, 4.3) 부터 켠다.
-TRAIN_CLASS_WEIGHTS = None
+#   환경변수 TRAIN_CLASS_WEIGHTS(2026-11-22 사용자 결정 — 최종 조합 추가 학습에서 RC 1번 차량과 함께 켬):
+#     'auto' = (1, √(에포크당 정상 수 / 충돌 수), 소수 첫째 자리) — balance 를 켜면 솎은 뒤 에포크당 수 기준.
+#     숫자 하나 '3.6' = (1, 3.6) · 두 개 '1,3.6'. 켜면 이름에 _cw<사고 배수>. 비우면 None(지금까지와 같음).
+#   검증의 균형 손실·판단 지표는 가중치 없는 손실이라 다른 학습과 그대로 비교된다.
+def _class_weights(v):
+    v = (v or '').strip().lower()
+    if not v:
+        return None
+    if v == 'auto':
+        return 'auto'
+    xs = [float(x) for x in v.split(',') if x.strip()]
+    return (1.0, xs[0]) if len(xs) == 1 else (xs[0], xs[1])
+
+
+TRAIN_CLASS_WEIGHTS = _class_weights(os.getenv("TRAIN_CLASS_WEIGHTS", ""))
 TARGET_ID = 0
 USE_AMP = True
 # GPU 메모리 배치 channels_last_3d (학습·평가·영상 분석·서비스 워커 공통, GPU 일 때만 — CPU 는 원래 안 씀).

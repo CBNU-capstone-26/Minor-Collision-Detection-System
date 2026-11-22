@@ -11,6 +11,7 @@ config.TRAIN_S_MOTION_CSV / TRAIN_SPREAD_A 가 켜졌을 때만 train.py 가 쓴
 """
 import csv
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -118,15 +119,20 @@ class BalancedBatchSampler(Sampler):
 
 
 def build(train_samples, train_idx, batch_size, csv_path=None, empty_pct=0.25,
-          empty_keep=1 / 3, spread_a=False, seed=42):
-    """train.py 용: 학습 쪽 위치를 충돌 / 움직임 있는 정상 / 빈 장면 정상으로 나눠 샘플러와 요약을 돌려준다."""
+          empty_keep=1 / 3, spread_a=False, seed=42, thin_rc=True):
+    """train.py 용: 학습 쪽 위치를 충돌 / 움직임 있는 정상 / 빈 장면 정상으로 나눠 샘플러와 요약을 돌려준다.
+    thin_rc=False(config.TRAIN_S_THIN_RC) 면 RC 정상은 솎지 않고(움직임과 상관없이) 매 에포크 전부 쓴다."""
     motion = load_motion(csv_path) if csv_path else {}
     a_pos, s_move, s_empty = [], [], []
-    matched = 0
+    matched = rc_full = 0
     for pos, i in enumerate(train_idx):
         s = train_samples[i]
         if s['label'] == 1:
             a_pos.append(pos)
+            continue
+        if not thin_rc and 'realdata' not in os.path.normpath(s['mp4_path']).split(os.sep):
+            s_move.append(pos)
+            rc_full += 1
             continue
         m = motion.get((s['file_name'], int(s.get('car_id', 0)), int(s['start_f'])))
         if m is not None:
@@ -138,8 +144,10 @@ def build(train_samples, train_idx, batch_size, csv_path=None, empty_pct=0.25,
                                    empty_keep=empty_keep if csv_path else 1.0,
                                    spread_a=spread_a, seed=seed)
     c = sampler.counts()
-    n_s_all = len(s_move) + len(s_empty)
+    n_s_all = len(s_move) + len(s_empty) - rc_full     # 솎기 대상 정상(RC 를 빼면 실제 영상만)
     lines = []
+    if rc_full:
+        lines.append(f"RC 정상 {rc_full}개는 솎지 않음(TRAIN_S_THIN_RC=0) — 움직임과 상관없이 매 에포크 전부 씀")
     if csv_path:
         lines.append(f"빈 장면 정상 솎기: 움직임 {empty_pct:g}% 미만을 에포크마다 {empty_keep:.0%}만 돌려 씀 — "
                      f"학습 정상 {n_s_all}개 중 빈 장면 {len(s_empty)}개({len(s_empty) / max(n_s_all, 1):.0%}), "

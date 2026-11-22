@@ -136,6 +136,10 @@ class VideoTypeUpdate(BaseModel):
     video_type: VideoType
 
 
+class VideoTitleUpdate(BaseModel):
+    title: str = Field(max_length=100)
+
+
 class CollisionLabelUpdate(BaseModel):
     collision_label: Optional[CollisionLabel]
 
