@@ -127,7 +127,7 @@ def validate(model, loader, device, *, span, criterion, batch_size, class_w=None
     """검증 로더 하나 → 지표 dict (로더가 없으면 None). 학습 중 검증과 val_recheck 가 같이 쓴다.
 
     span              : 학습이 span 방식인가 — 손실·기존 판정을 학습 방식대로 낸다.
-    loss/acc/rec/prec : 기존 지표. 판정은 P(A) > 기준(config.A_THRESHOLD, 기본 0.5 = argmax).
+    loss/acc/rec/prec : 기존 지표. 판정은 P(A) > 기준(config.A_THRESHOLD, 기본 0.45 — 0.5 = argmax).
                         'pre' 는 첫 창, span 은 창 하나라도 A 면 A(점수가 가장 높은 창).
     lossA / lossS     : 충돌·비충돌 클립 각각의 평균 손실(가중치 없는 CE).
     bal               : (lossA + lossS) / 2 — 클래스 균형 손실.

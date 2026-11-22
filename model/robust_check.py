@@ -18,7 +18,7 @@
     실제 영상은 화면 전체를 압축한 뒤 자르지만 여기선 자른 크롭을 압축한다(dataset 저화질 증강과 같은 근사). PyAV 가 없으면 건너뛴다.
 학습한 증강에는 판단이 덜 흔들리고 학습하지 않은 변형에 크게 흔들리면 증강이 모델에 반영된 것이다. 저해상도에서
 정상 창의 P(A)가 오르면 '흐리면 사고' 지름길을 의심한다(학습 데이터의 저화질 영상이 사고 쪽에 몰려 있음).
-판정은 창 단위 P(A)>기준(config.A_THRESHOLD, 기본 0.5) 과, 영상의 고른 창 중 하나라도 기준을 넘으면 '사고'로 보는 축약 판정이다(서비스 판정과
+판정은 창 단위 P(A)>기준(config.A_THRESHOLD, 기본 0.45) 과, 영상의 고른 창 중 하나라도 기준을 넘으면 '사고'로 보는 축약 판정이다(서비스 판정과
 다르다 — 변형끼리 비교용). 결과는 화면과 outputs/robust_check/<시각>/report.txt · windows.csv 에 남는다.
 """
 import argparse
@@ -302,7 +302,7 @@ def _report(rows):
     n_av = sum(g == 'A' for g in gt_of.values())
     n_sv = len(gt_of) - n_av
     stats = {}
-    th = config.A_THRESHOLD     # 창 판정 기준(기본 0.5)
+    th = config.A_THRESHOLD     # 창 판정 기준(기본 0.45)
     for key, name, group, _ in CONDITIONS:
         sub = [(v, gt, s, p) for v, gt, s, k, p in rows if k == key]
         pa = [p for v, gt, s, p in sub if gt == 'A']

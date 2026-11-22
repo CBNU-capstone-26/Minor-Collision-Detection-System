@@ -43,12 +43,14 @@ RESIZE = (INPUT_SIZE, INPUT_SIZE)
 # 시간 축을 하나로 모은다. avg = 30시점 평균(지금까지 전부, 기본) / top3 = 채널·칸마다 가장 큰 3시점 평균 /
 # avgtop3 = 둘의 평균. 0번 진단(outputs/analysis/head_diag_261105/): 약하게 반응한 충돌 다수가 2~6프레임짜리 짧은
 # 증거를 갖는데 평균에 묻힌다 — 상위 3개는 이걸 살리려는 실험. 짧은 오탐(야간 전조등 ReS_0026)도 같은 모양이라 오탐이 늘 수 있다.
-# 계산량은 셋 다 같다. 학습 가중치 이름에 _top3·_avgtop3 이 붙고, 평가·서비스에서 이름과 이 값이 다르면 멈춘다
-# (hitandrun_model.check_weights). 켜기: 환경변수 HEAD_TEMPORAL_POOL=top3 (서버 .env 에도 같은 칸).
+# 계산량은 셋 다 같다. 학습 가중치 이름에 _top3·_avgtop3 이 붙는다. 학습에서 켜기: 환경변수 HEAD_TEMPORAL_POOL=top3.
+# 평가·서비스는 환경변수를 안 주면 가중치 이름의 표시를 따라가고(2026-11-22~, 최종 가중치가 top3), 환경변수를 줬는데
+# 이름과 다르면 멈춘다(hitandrun_model.check_weights).
 HEAD_TEMPORAL_POOL = (os.getenv("HEAD_TEMPORAL_POOL", "avg") or "avg").strip().lower()
+HEAD_TEMPORAL_POOL_SET = bool((os.getenv("HEAD_TEMPORAL_POOL") or "").strip())
 HEAD_TEMPORAL_TOPK = 3
 R_VALUE = 1.0
-# 창 하나를 충돌(A)로 보는 P(A) 기준. 0.5 = 두 클래스 중 큰 쪽(argmax)과 똑같다(지금까지의 모든 결과).
+# 창 하나를 충돌(A)로 보는 P(A) 기준. 0.5 = 두 클래스 중 큰 쪽(argmax)과 똑같다(2026-11-22 전까지의 모든 결과).
 # 학습 검증 지표(재현율·정밀도·구간 재현율)·suggest F1·평가 ①②·서비스 이벤트·클립 A/S 띠·robust_check 가
 # 모두 이 값을 쓴다(infer_runtime.is_accident). 판단 지표(균형 손실)·구분력은 기준과 무관하다.
 # ⚠️ 바꿀 때: ① 최종 가중치 하나에 대해 검증 데이터로 정한다(python -m model.val_recheck --threshold).
@@ -58,7 +60,11 @@ R_VALUE = 1.0
 #            ④ 평가 결과 이름에 _th<값> 이 붙어 0.5 결과와 구분된다. 이미 분석된 영상(DB)은 옛 기준 그대로다.
 # 코드를 고치지 않고 바꿔 보려면 환경변수: A_THRESHOLD=0.4 python -m model.main --mode eval --weights …
 #   (기준을 바꿔 가며 같은 가중치의 놓침·오탐을 비교할 때. 거친 탐색 기준은 아래에서 함께 맞춰진다)
-A_THRESHOLD = float(os.getenv("A_THRESHOLD", "0.5") or 0.5)
+# 2026-11-22 최종 가중치(ep39)로 다시 맞춤 0.5 → 0.45: 검증 실제 영상 19개에서 0.30~0.45 가 똑같이 가장 좋고
+# (놓침 0 · 오탐 영상 2 · 오탐 이벤트 2, 0.475~0.525 는 오탐 이벤트 3, 0.55 부터 ReA_0003 놓침) 그중 지금 값에 가까운 쪽.
+# 평가 영상 확인은 0.5 와 같음(21/25). 평가 정상 TS_0010 최대 P(A) 0.437 이 바로 아래라 0.4 이하면 오탐이 된다.
+# 근거 outputs/analysis/retune_261122/ (그 전 값 0.5 = argmax 는 9/22 가중치 기준)
+A_THRESHOLD = float(os.getenv("A_THRESHOLD", "0.45") or 0.45)
 # r 증강(학습 전용, 실험용 · 기본 끔): 클립마다 TRAIN_R_AUGMENT_PROB 확률로 r 을 TRAIN_R_AUGMENT_VALUES 중 하나로 뽑아
 #   넓게 자른다(그 클립의 모든 프레임·창에 같은 r). 검증·서비스는 항상 r=1(R_VALUE).
 # 경과: 2026-09-08~11-04 는 40% · r 1.5·2·2.33·3 → 11-05 삭제('접근 = 사고' 우려) → 11-16 범위를 줄여 비교용 옵션으로 되살림(사용자 결정).
@@ -479,7 +485,11 @@ EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
-SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
+# 2026-11-22 최종 가중치로 교체: balance + 약한 저화질 증강 + 상위 3개 풀링(top3) 학습의 39에포크
+# (회차 outputs/trainlogs/261121_1915_x3d_ptY_bal_lqw_top3 의 epochs/…_ep039.pth 를 복사). 평가 25개 21개 맞힘
+# (사고 18/18 · 정상 오탐 4/7), 9/22 가중치(20/25, 평가 영상을 학습에 섞어 씀)보다 낫다 — outputs/analysis/exp_compare_261122/.
+# top3 풀링이라 헤드 풀링은 이름을 따라간다(HEAD_TEMPORAL_POOL 비워 둠). 예전: hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_261121_1915_ep039_ptY_bal_lqw_top3.pth"
 # 서버에서 코드를 고치지 않고 바꿀 때: .env 에 SERVICE_WEIGHTS=weights/<파일>.pth (상대경로는 프로젝트 루트 기준)
 if os.getenv("SERVICE_WEIGHTS", "").strip():
     SERVICE_WEIGHTS_PATH = Path(os.environ["SERVICE_WEIGHTS"].strip())
@@ -487,7 +497,7 @@ if os.getenv("SERVICE_WEIGHTS", "").strip():
         SERVICE_WEIGHTS_PATH = _ROOT / SERVICE_WEIGHTS_PATH
 
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
-PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
+PREDICT_WEIGHTS_PATH = SERVICE_WEIGHTS_PATH
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
@@ -618,7 +628,7 @@ INFER_CACHE_DIR = _ROOT / "weights" / ".infer_cache"   # 변환 파일(ONNX)·�
 # 평가할 가중치. 여러 학습 결과를 비교할 땐 환경변수로 골라 쓴다:
 #     EVAL_WEIGHTS=weights/hitandrun_s3d_..._ptN_0.31.pth python main.py --mode eval
 EVAL_WEIGHTS_PATH = (Path(os.environ["EVAL_WEIGHTS"]) if os.getenv("EVAL_WEIGHTS")
-                     else _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth")
+                     else SERVICE_WEIGHTS_PATH)
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 # 서비스 경로 평가에서 '검출'로 인정하는 시작 시점 허용 오차(초).
 # 이벤트가 라벨 start_f ± 이 값 안에서 시작해야 검출로 센다. 이벤트가 나오긴 했어도
