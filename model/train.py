@@ -611,13 +611,26 @@ def train_model(
     # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
     lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
     lq_default = (abs(float(config.TRAIN_LQ_SIZE_PROB) - 0.5) < 1e-9 and tuple(config.TRAIN_LQ_CRF_RANGE) == (28, 42))
+    lq_small = bool(getattr(config, 'TRAIN_LQ_SMALL', False))
     if lq_p > 0:
-        # 10-29 의 설정 그대로면 _lq, 줄이기 비율·CRF 상한을 바꾼 약한 설정이면 _lqw(섞이지 않게)
-        run_tag = f"{run_tag}_{'lq' if lq_default else 'lqw'}"
+        # 10-29 의 설정 그대로면 _lq, 줄이기 비율·CRF 상한을 바꾼 약한 설정이면 _lqw(섞이지 않게). 작은 크롭도면 끝에 s
+        run_tag = f"{run_tag}_{'lq' if lq_default else 'lqw'}{'s' if lq_small else ''}"
         lo, hi = config.TRAIN_LQ_SIZE_RANGE
         c_lo, c_hi = config.TRAIN_LQ_CRF_RANGE
         print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
               f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
+        if lq_small:
+            s_min, s_crf = config.TRAIN_LQ_SMALL_MIN, max(c_lo, min(c_hi, config.TRAIN_LQ_SMALL_CRF_MAX))
+            n_sm = {0: 0, 1: 0}
+            for i in train_idx:
+                smp = train_dataset.samples[i]
+                b = smp['bbox']
+                if s_min <= max(b[2] - b[0], b[3] - b[1]) < config.TRAIN_LQ_MIN_CROP:
+                    n_sm[int(smp['label'])] += 1
+            print(f"[저화질 증강] 작은 크롭({s_min}~{config.TRAIN_LQ_MIN_CROP - 1}px)도 — 원래 크기로 줄여 CRF {c_lo}~{s_crf} 압축 후"
+                  f" 다시 키움(TRAIN_LQ_SMALL) · 해당 학습 클립 충돌 {n_sm[1]} · 정상 {n_sm[0]}")
+    elif lq_small:
+        print("⚠️ TRAIN_LQ_SMALL 은 저화질 증강(TRAIN_LQ_AUG_PROB)이 켜져 있어야 씁니다 — 이번 학습엔 적용 안 됨")
 
     # ── r 증강 (config.TRAIN_R_AUGMENT_PROB, 기본 끔 — 2026-11-16 비교용으로 되살림) ── 켜면 이름에 _raug
     r_aug_p = float(getattr(config, 'TRAIN_R_AUGMENT_PROB', 0) or 0)
@@ -782,7 +795,9 @@ def train_model(
                    + (f"{r_aug_p:.0%} 를 r {'·'.join(f'{v:g}' for v in r_aug_vals)}" if r_aug_p > 0 and r_aug_vals else '끔')
                    + ' (11-05~11-15 학습은 r 증강 없음, 그 전은 40% 를 r 1.5·2·2.33·3)'),
         ('저화질 증강', (f'확률 {lq_p:g} · 줄이기 {config.TRAIN_LQ_SIZE_PROB:g} · CRF {config.TRAIN_LQ_CRF_RANGE[0]}~'
-                    f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
+                    f'{config.TRAIN_LQ_CRF_RANGE[1]}'
+                    + (f' · 작은 크롭 {config.TRAIN_LQ_SMALL_MIN}px~ 원래 크기 압축 CRF 상한 {config.TRAIN_LQ_SMALL_CRF_MAX}'
+                       if lq_small else ' · 작은 크롭 제외')) if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
         ('불빛 증강', f'확률 {light_p:g} (사고·정상 같은 확률)' if light_p > 0 else '끔'),
         ('클래스 가중치', f'정상 {class_weights[0]:g} · 사고 {class_weights[1]:g}' if class_weights else '없음'),

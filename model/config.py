@@ -112,6 +112,16 @@ TRAIN_LQ_SIZE_RANGE = (48, 128)      # 줄일 때 크기(px). 원래 크롭의 3
 # '압축 화질 튐은 사고가 아니다'(ReS_0018 오탐)를 가르친다. 기본값(0.5·42)이 아니면 이름에 _lq 대신 _lqw.
 TRAIN_LQ_SIZE_PROB = float(os.getenv("TRAIN_LQ_SIZE_PROB", "0.5") or 0)   # 압축할 때 먼저 줄이는 비율
 TRAIN_LQ_CRF_RANGE = (28, int(os.getenv("TRAIN_LQ_CRF_MAX", "42") or 42))  # H.264 CRF(클수록 압축 심함). 224px 30프레임 PSNR 약 30 ~ 22dB
+# 작은 크롭도 저화질 증강(2026-11-23, 기본 끔 — 저화질 증강이 켜져 있어야 씀): ep39 는 H.264 CRF 35 로 압축하면
+# 크롭이 작은 평가 사고만 놓쳤다(robust_check 261122_022726 — TA_0009 126px 0.99→0.05 · TA_0011 42px 1.00→0.27 ·
+# TA_0016 104px 0.98→0.16, 191px 이상은 그대로). 위 TRAIN_LQ_MIN_CROP 때문에 학습 사고 43개 중 10개(128px 미만)는
+# 압축된 모습을 본 적이 없다. 압축 뒤에도 충돌 흔들림은 남아(원본과 움직임 지도 상관 0.87~0.98) 증거가 지워진 게 아니라
+# 처음 보는 모습이라 정상 쪽으로 기운 것으로 본다. 켜면 TRAIN_LQ_SMALL_MIN 이상 128px 미만 크롭도 같은 확률로, 실제 CCTV 처럼
+# 원래 크기(짝수)로 줄여 압축한 뒤 다시 키운다(줄이기 비율은 안 씀). 사고·정상 구분 없음. CRF 상한은 TRAIN_LQ_SMALL_CRF_MAX 까지.
+# 켜기: 환경변수 TRAIN_LQ_SMALL=1 (이름 _lq/_lqw 가 _lqs/_lqws 로). 끄면 난수를 더 쓰지 않아 지금과 같다.
+TRAIN_LQ_SMALL = os.getenv("TRAIN_LQ_SMALL", "").strip() not in ("", "0")
+TRAIN_LQ_SMALL_MIN = 32              # 이보다 작은 크롭은 그대로(학습 실차 사고 최소 49px)
+TRAIN_LQ_SMALL_CRF_MAX = int(os.getenv("TRAIN_LQ_SMALL_CRF_MAX", "36") or 36)
 
 # ---------- fps 증강 (실험용, 기본 끔, 2026-10-30) ----------
 # RC 833개는 전부 30fps 이고 실제 사고 중 10fps 는 3개뿐인데, 평가 영상은 30개 중 6개가 10fps 다. 모델은 늘 30프레임을

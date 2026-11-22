@@ -729,7 +729,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
                 + ('_ctx' if '_ctx_' in weights or '_ctxall' in weights else '')
                 + ('_hn' if '_hn_' in weights or any(f'_hn{k}_' in weights for k in range(2, 10)) else '')
                 + ('_bal' if '_bal_' in weights else '')
-                + ('_lq' if '_lq_' in weights else '_lqw' if '_lqw_' in weights else '')
+                + next((t for t in ('_lqws', '_lqs', '_lqw', '_lq') if f'{t}_' in weights), '')
                 + ('_fps' if '_fps_' in weights else '')
                 + ('_light' if '_light_' in weights else '')
                 + (f'_s{config.RESIZE[0]}' if config.RESIZE[0] != 224 else '')

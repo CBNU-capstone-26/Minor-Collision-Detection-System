@@ -482,19 +482,29 @@ class HitAndRunDataset(Dataset):
 
     def _apply_low_quality(self, frames, crop_side):
         """저화질 증강(config.TRAIN_LQ_AUG_PROB, 학습 전용 — 주석은 config). 깨끗한 클립만 H.264 로 압축했다 풀고,
-        TRAIN_LQ_SIZE_PROB 비율은 먼저 작게 줄였다 다시 키운다. 값은 클립마다 하나(모든 프레임이 같은 영상)."""
+        TRAIN_LQ_SIZE_PROB 비율은 먼저 작게 줄였다 다시 키운다. 값은 클립마다 하나(모든 프레임이 같은 영상).
+        TRAIN_LQ_SMALL 이면 작은 크롭(TRAIN_LQ_SMALL_MIN 이상 TRAIN_LQ_MIN_CROP 미만)도 원래 크기로 줄여 압축한다."""
         p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0.0) or 0.0)
-        if (p <= 0 or self._lq_off or crop_side < getattr(config, 'TRAIN_LQ_MIN_CROP', 128)
+        small = crop_side < getattr(config, 'TRAIN_LQ_MIN_CROP', 128)
+        if (p <= 0 or self._lq_off
+                or (small and (not getattr(config, 'TRAIN_LQ_SMALL', False)
+                               or crop_side < getattr(config, 'TRAIN_LQ_SMALL_MIN', 32)))
                 or random.random() >= p):
             return frames
         h, w = frames[0].shape[:2]
         size = None
-        if random.random() < getattr(config, 'TRAIN_LQ_SIZE_PROB', 0.5):
-            lo, hi = getattr(config, 'TRAIN_LQ_SIZE_RANGE', (48, 128))
-            hi = min(hi, int(crop_side * 0.75))      # 원래보다 확실히 작게만
-            if hi >= lo:
-                size = random.randint(lo // 2, hi // 2) * 2
-        crf = random.randint(*getattr(config, 'TRAIN_LQ_CRF_RANGE', (28, 42)))
+        c_lo, c_hi = getattr(config, 'TRAIN_LQ_CRF_RANGE', (28, 42))
+        if small:
+            # 작은 차는 이미 키운 크롭이라 224 에서 압축하면 실제보다 약하다 — 원래 크기(짝수, 16 이상)로 되돌려 압축
+            size = max(16, int(round(crop_side / 2)) * 2)
+            crf = random.randint(c_lo, max(c_lo, min(c_hi, getattr(config, 'TRAIN_LQ_SMALL_CRF_MAX', 36))))
+        else:
+            if random.random() < getattr(config, 'TRAIN_LQ_SIZE_PROB', 0.5):
+                lo, hi = getattr(config, 'TRAIN_LQ_SIZE_RANGE', (48, 128))
+                hi = min(hi, int(crop_side * 0.75))      # 원래보다 확실히 작게만
+                if hi >= lo:
+                    size = random.randint(lo // 2, hi // 2) * 2
+            crf = random.randint(c_lo, c_hi)
         gop = random.choice((10, 15, 30, 60))         # CCTV 키프레임 간격(0.3~2초)
         src = [cv2.resize(f, (size, size), interpolation=cv2.INTER_AREA) for f in frames] if size else frames
         try:
