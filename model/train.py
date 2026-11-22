@@ -319,6 +319,16 @@ def train_model(
             print(f"[제외] 10fps 미만(config.LOW_FPS_VIDEOS) 중 데이터 폴더에 남아 있던 {len(excluded)}개를 뺌: "
                   f"{', '.join(sorted(excluded))} — python -m model.lowfps_move --apply 로 옮기세요")
 
+    # RC 정상 1번 차량 클립(config.TRAIN_S_RC_USE_CAR1)은 학습에만 쓴다 — 검증은 예전처럼 0번만(다른 학습과 지표 비교).
+    # 데이터셋은 학습·검증이 같은 규칙으로 샘플을 만들어야 번호가 맞아서(검증 폴더가 없을 때) 여기서 검증 쪽만 뺀다.
+    rc_car1_val_dropped = 0
+    if getattr(config, 'TRAIN_S_RC_USE_CAR1', False):
+        vs = val_dataset.samples if use_val_dir else train_dataset.samples
+        n0 = len(val_rc_idx)
+        val_rc_idx[:] = [i for i in val_rc_idx
+                         if not (vs[i]['label'] == 0 and vs[i].get('car_id') == 1 and _domain(vs[i]['mp4_path']) == 'rc')]
+        rc_car1_val_dropped = n0 - len(val_rc_idx)
+
     print(f"[분할] 영상 {n_train_vid + n_val_vid}개 → train {n_train_vid} / "
           f"val {n_val_vid} (영상 단위, 누수 없음)")
     print(f"[분할] 클립 train {len(train_idx)} / val_rc {len(val_rc_idx)} / "
@@ -368,8 +378,17 @@ def train_model(
               f"{getattr(config, 'TRAIN_A_PRE_FRAMES', 0)}프레임 전부터)")
     # 실제 영상 S 의 1번 차량 클립 (config.TRAIN_S_REAL_USE_CAR1)
     car1 = [s for s in train_dataset.samples if s.get('car_id') == 1 and s['label'] == 0]
-    s_car_info = (f"0번 + 실제 영상 S 는 1번도 (1번 클립 {len(car1)}개, "
-                  f"영상 {len({s['video_key'] for s in car1})}개)" if car1 else "0번만")
+    if getattr(config, 'TRAIN_S_RC_USE_CAR1', False):
+        tr1 = [train_dataset.samples[i] for i in train_idx
+               if train_dataset.samples[i].get('car_id') == 1 and train_dataset.samples[i]['label'] == 0]
+        real1 = [s for s in tr1 if _domain(s['mp4_path']) == 'real']
+        rc1 = [s for s in tr1 if _domain(s['mp4_path']) == 'rc']
+        s_car_info = (f"0번 + 1번(학습 쪽: 실제 영상 {len(real1)}개 · RC {len(rc1)}개, "
+                      f"RC 영상 {len({s['video_key'] for s in rc1})}개 — RC 1번은 검증에서 {rc_car1_val_dropped}개 뺌)")
+        run_tag = f"{run_tag}_rc1"
+    else:
+        s_car_info = (f"0번 + 실제 영상 S 는 1번도 (1번 클립 {len(car1)}개, "
+                      f"영상 {len({s['video_key'] for s in car1})}개)" if car1 else "0번만")
     print(f"[S 클립 차량] {s_car_info}")
 
     # ── 학습 묶음 구성 (config.TRAIN_S_MOTION_CSV · TRAIN_SPREAD_A, 기본 끔) ──
@@ -387,8 +406,10 @@ def train_model(
             train_dataset.samples, train_idx, batch_size, csv_path=motion_csv,
             empty_pct=float(getattr(config, 'TRAIN_S_EMPTY_MOTION_PCT', 0.25)),
             empty_keep=float(getattr(config, 'TRAIN_S_EMPTY_KEEP', 1 / 3)),
-            spread_a=spread_a)
+            spread_a=spread_a, thin_rc=bool(getattr(config, 'TRAIN_S_THIN_RC', True)))
         run_tag = f"{run_tag}_bal"
+        if motion_csv and not getattr(config, 'TRAIN_S_THIN_RC', True):
+            run_tag = f"{run_tag}_rcfull"       # RC 정상은 솎지 않음(config.TRAIN_S_THIN_RC)
         for line in balance_lines:
             print(f"[묶음] {line}")
     else:
@@ -445,6 +466,23 @@ def train_model(
               f"{'·'.join(f'{30 / k:g}' for k in fps_ks)}fps 처럼) · 결과 {config.TRAIN_FPS_AUG_MIN_FPS:g}fps 미만·"
               f"짧은 영상·창 묶음 샘플은 그대로")
 
+    # ── 클래스 가중치 (config.TRAIN_CLASS_WEIGHTS, 기본 None) ── 켜면 이름에 _cw<사고 배수>
+    # 'auto' 는 에포크당 실제로 쓰는 수(balance 면 솎은 뒤)로 √(정상/충돌)
+    class_weights = getattr(config, 'TRAIN_CLASS_WEIGHTS', None)
+    if class_weights:
+        if batch_sampler is not None:
+            _c = batch_sampler.counts()
+            ep_a, ep_s = _c['a'], _c['s_move'] + _c['s_empty']
+        else:
+            ep_a = sum(train_dataset.samples[i]['label'] == 1 for i in train_idx)
+            ep_s = len(train_idx) - ep_a
+        if class_weights == 'auto':
+            class_weights = (1.0, round(math.sqrt(ep_s / max(ep_a, 1)), 1))
+        class_weights = tuple(float(x) for x in class_weights)
+        run_tag = f"{run_tag}_cw{class_weights[1] / class_weights[0]:g}"
+        print(f"[손실] 클래스 가중치 정상 {class_weights[0]:g} · 사고 {class_weights[1]:g} "
+              f"(에포크당 충돌 {ep_a} · 정상 {ep_s} = 1:{ep_s / max(ep_a, 1):.1f}, √ = {math.sqrt(ep_s / max(ep_a, 1)):.2f})")
+
     if dry_run:
         if batch_sampler is not None:
             for ep in range(3):
@@ -453,6 +491,7 @@ def train_model(
                 print(f"[점검] {ep + 1}에포크: 묶음 {len(bl)}개 · 클립 {sum(len(b) for b in bl)}개 · "
                       f"묶음당 충돌 {dict(sorted((k, n_a_per.count(k)) for k in set(n_a_per)))} · "
                       f"중복 {sum(len(b) for b in bl) - len({p for b in bl for p in b})}개")
+        print(f"[점검] 회차 폴더·가중치 이름 표시: {run_tag}")
         print("[점검] --dry-run 이라 학습하지 않고 끝냅니다.")
         return None
 
@@ -541,6 +580,7 @@ def train_model(
                     f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
         ('불빛 증강', f'확률 {light_p:g} (사고·정상 같은 확률)' if light_p > 0 else '끔'),
+        ('클래스 가중치', f'정상 {class_weights[0]:g} · 사고 {class_weights[1]:g}' if class_weights else '없음'),
     ]
     write_run_info(run_dir, run_info)
 
@@ -579,7 +619,7 @@ def train_model(
 
     # S 슬라이싱으로 A:S 불균형이 커지면 모델이 S로 치우칠 수 있어, 필요 시
     # config.TRAIN_CLASS_WEIGHTS로 가중치를 준다(기본 None = 기존과 동일).
-    _cw = getattr(config, 'TRAIN_CLASS_WEIGHTS', None)
+    _cw = class_weights          # 위 '클래스 가중치'에서 정함('auto' 면 계산한 값)
     if _cw:
         criterion = nn.CrossEntropyLoss(
             weight=torch.tensor(_cw, dtype=torch.float32, device=device))
