@@ -74,7 +74,7 @@ git 에 없는 파일이라 직접 복사한다.
 
 ```bash
 # 로컬 PC 의 capstone-26 폴더에서
-scp weights/hitandrun_x3d_261121_1915_ep039_ptY_bal_lqw_top3.pth <계정>@<서버>:~/capstone-26/weights/
+scp weights/hitandrun_x3d_261121_1915_ep026_ptY_bal_lqw_top3.pth <계정>@<서버>:~/capstone-26/weights/
 scp yolo11x.pt <계정>@<서버>:~/capstone-26/        # 없으면 첫 차량 탐지 때 자동으로 받는다
 ```
 

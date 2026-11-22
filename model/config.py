@@ -64,6 +64,9 @@ R_VALUE = 1.0
 # (놓침 0 · 오탐 영상 2 · 오탐 이벤트 2, 0.475~0.525 는 오탐 이벤트 3, 0.55 부터 ReA_0003 놓침) 그중 지금 값에 가까운 쪽.
 # 평가 영상 확인은 0.5 와 같음(21/25). 평가 정상 TS_0010 최대 P(A) 0.437 이 바로 아래라 0.4 이하면 오탐이 된다.
 # 근거 outputs/analysis/retune_261122/ (그 전 값 0.5 = argmax 는 9/22 가중치 기준)
+# 2026-11-23 서비스 가중치 ep26 으로 다시 봐도 0.45 유지: 검증 0.4~0.7 동률(놓침 0 · 오탐 영상 2 · 이벤트 2), 평가는 0.3~0.5 가
+# 놓침 0 · 오탐 영상 4/7 이고 오탐 이벤트가 0.45 에서 가장 적음(5, 0.4 는 6 · 0.5 는 7), 0.55 부터 TA_0021 놓침.
+# ep26 은 TS_0010 이 0.3 에서도 오탐이 아니다(outputs/postproc_check/261122_184039).
 A_THRESHOLD = float(os.getenv("A_THRESHOLD", "0.45") or 0.45)
 # r 증강(학습 전용, 실험용 · 기본 끔): 클립마다 TRAIN_R_AUGMENT_PROB 확률로 r 을 TRAIN_R_AUGMENT_VALUES 중 하나로 뽑아
 #   넓게 자른다(그 클립의 모든 프레임·창에 같은 r). 검증·서비스는 항상 r=1(R_VALUE).
@@ -530,11 +533,17 @@ EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
-# 2026-11-22 최종 가중치로 교체: balance + 약한 저화질 증강 + 상위 3개 풀링(top3) 학습의 39에포크
-# (회차 outputs/trainlogs/261121_1915_x3d_ptY_bal_lqw_top3 의 epochs/…_ep039.pth 를 복사). 평가 25개 21개 맞힘
-# (사고 18/18 · 정상 오탐 4/7), 9/22 가중치(20/25, 평가 영상을 학습에 섞어 씀)보다 낫다 — outputs/analysis/exp_compare_261122/.
-# top3 풀링이라 헤드 풀링은 이름을 따라간다(HEAD_TEMPORAL_POOL 비워 둠). 예전: hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth
-SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_261121_1915_ep039_ptY_bal_lqw_top3.pth"
+# 2026-11-23 같은 회차의 26에포크로 교체: balance + 약한 저화질 증강 + 상위 3개 풀링(top3) 학습
+# (회차 outputs/trainlogs/261121_1915_x3d_ptY_bal_lqw_top3 의 epochs/…_ep026.pth 를 복사). 판정 기준 0.45 에서
+# 평가 25개 21개 맞힘(사고 18/18 · 정상 오탐 영상 4/7 · 오탐 이벤트 5, ep39 는 6), 검증 19개 놓침 0 · 오탐 2/8 —
+# 검증 서비스 판정 순위 2위(1위 ep25 는 평가에서 2개 놓침, outputs/epoch_rank/261122_162419_…). ep39 보다 기준이 흔들려도
+# 안정적(0.3 까지 낮춰도 평가 TS_0010 오탐 없음·검증 사고는 0.7 까지 잡음)이고 압축·저해상도 영상에서 사고를 덜 놓친다
+# (robust_check H.264 CRF 35 놓침 묶음 25→8). 대신 많이 압축된 정상 장면 오탐은 늘었다(64px+압축 14→24) —
+# outputs/postproc_check/261122_184039, outputs/robust_check/261122_183547(ep39)·183813(ep26). 기준 0.45·표시 위치 +29/+0 은
+# ep26 의 P(A)로 다시 봐도 그대로(outputs/analysis/retune_261123_ep26/). 이전 서비스(되돌릴 때):
+# hitandrun_x3d_261121_1915_ep039_ptY_bal_lqw_top3.pth, 그 전 hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth.
+# top3 풀링이라 헤드 풀링은 이름을 따라간다(HEAD_TEMPORAL_POOL 비워 둠).
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_261121_1915_ep026_ptY_bal_lqw_top3.pth"
 # 서버에서 코드를 고치지 않고 바꿀 때: .env 에 SERVICE_WEIGHTS=weights/<파일>.pth (상대경로는 프로젝트 루트 기준)
 if os.getenv("SERVICE_WEIGHTS", "").strip():
     SERVICE_WEIGHTS_PATH = Path(os.environ["SERVICE_WEIGHTS"].strip())
@@ -583,6 +592,9 @@ PREDICT_DISPLAY_OFFSET = 25
 # 충돌과 겹치는 클립 수는 같다. 반응이 짧아 A 띠가 PREDICT_DISPLAY_MIN_SEC 보다 짧아지면(띠 길이 = 연속 A 창 수 − 29,
 # 시작 > 끝 포함) 예전처럼 +25/+25 로 그린다 — 0.1초쯤 번쩍이고 끝나지 않게. 위 사고 29개는 띠가 모두 0.5초 이상이라 수치 그대로.
 # 충돌 앞 접근·뒤 여파를 길게 A 로 본 영상(ReA_0003·TA_0006 등)은 여전히 몇 초 어긋난다 — 재학습으로만 고칠 수 있다.
+# 2026-11-23 서비스 가중치 ep26 으로 다시 봐도 +29/+0 이 검증에서 가장 맞음(outputs/analysis/retune_261123_ep26/):
+#   +25/+25 끝 중앙값 검증 +1.47초 · 평가 +3.02초 → +29/+0 검증 +0.43초 · 평가 +1.82초, ±1초 안 7/11 · 7/18
+#   (시작 중앙값 −0.20 · −0.48초). +29/−5·−10 은 검증 ±0.5초 안이 5 → 3 으로 줄어 안 씀. 평가 끝은 ep39(+1.23초)보다 늦다.
 PREDICT_DISPLAY_START_OFFSET = 29
 PREDICT_DISPLAY_END_OFFSET = 0
 PREDICT_DISPLAY_MIN_SEC = 0.5
