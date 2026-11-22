@@ -173,6 +173,7 @@ export const api = {
     return request("/videos", { method: "POST", body: form, isForm: true });
   },
   updateVideoType: async (id, videoType) => normalizeVideo(await request(`/videos/${id}/type`, { method: "PATCH", body: { video_type: videoType } })),
+  updateVideoTitle: async (id, title) => normalizeVideo(await request(`/videos/${id}/title`, { method: "PATCH", body: { title } })),
   updateCollisionLabel: async (id, collisionLabel) => normalizeVideo(await request(`/videos/${id}/collision-label`, { method: "PATCH", body: { collision_label: collisionLabel } })),
   streamUrl: (id) => `/api/videos/${id}/stream`,
   thumbnailUrl: (id) => `/api/videos/${id}/thumbnail`,

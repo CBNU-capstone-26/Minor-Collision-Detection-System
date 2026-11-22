@@ -267,6 +267,16 @@ def update_video_type(
     return to_video_out(video)
 
 
+@router.patch("/{video_id}/title", response_model=api_schemas.VideoOut)
+def update_video_title(video_id: int, data: api_schemas.VideoTitleUpdate,
+                       db: Session = Depends(get_db), user: db_models.User = Depends(get_current_user)):
+    video = _get_owned_video(video_id, db, user)
+    video.title = data.title.strip() or None
+    db.commit()
+    db.refresh(video)
+    return to_video_out(video)
+
+
 @router.patch("/{video_id}/collision-label", response_model=api_schemas.VideoOut)
 def update_collision_label(video_id: int, data: api_schemas.CollisionLabelUpdate,
                            db: Session = Depends(get_db), user: db_models.User = Depends(get_current_user)):

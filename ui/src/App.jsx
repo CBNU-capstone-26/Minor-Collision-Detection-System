@@ -12,6 +12,7 @@ import speedIcon from "./assets/icons/speed.svg";
 import theatersIcon from "./assets/icons/theaters.svg";
 import fullscreenIcon from "./assets/icons/fullscreen.svg";
 import fullscreenExitIcon from "./assets/icons/fullscreen_exit.svg";
+import editIcon from "./assets/icons/edit.svg";
 import {
   BrowserRouter,
   Routes,
@@ -49,6 +50,39 @@ const VIDEO_TYPES = [
   { value: "game", label: "게임 렌더링 영상" },
 ];
 const COLLISION_LABELS = [{ value: "collision", label: "충돌 영상" }, { value: "no_collision", label: "비충돌 영상" }];
+
+function readSessionFilter(key, allowed, fallback) {
+  try {
+    const value = sessionStorage.getItem(key);
+    return allowed.includes(value) ? value : fallback;
+  } catch { return fallback; }
+}
+
+function EditableVideoTitle({ video, displayTitle, onSave, heading = "h3", titleId, disabled = false }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const Heading = heading;
+  const submit = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true); setError("");
+    try { await onSave(video.id, value); setEditing(false); }
+    catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+  return <div className="video-title-editor" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && editing) { event.stopPropagation(); if (!busy) setEditing(false); } }}>
+    {editing ? <form className="video-title-form" onSubmit={submit}>
+      <input id={titleId} aria-label="영상 제목" value={value} onChange={(event) => setValue(event.target.value)} onFocus={(event) => event.target.select()} maxLength={100} disabled={busy} autoFocus />
+      <button type="submit" disabled={busy}>저장</button><button type="button" disabled={busy} onClick={() => setEditing(false)}>취소</button>
+      {error && <span className="video-title-error" role="alert">{error}</span>}
+    </form> : <div className="video-title-display">
+      <Heading id={titleId} title={displayTitle}>{displayTitle}</Heading>
+      {!disabled && <button type="button" className="video-title-edit" aria-label={`${displayTitle} 제목 수정`} title="영상 제목 수정" onClick={() => { setValue(displayTitle); setError(""); setEditing(true); }}><img src={editIcon} alt="" /></button>}
+    </div>}
+  </div>;
+}
 
 function FilterPills({ children, className = "", label, selected }) {
   const groupRef = useRef(null);
@@ -933,6 +967,12 @@ function groupVideosByDate(videos) {
 // 대시보드 컴포넌트
 function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setIsDarkMode }) {
   const navigate = useNavigate();
+  const saveVideoTitle = async (id, title) => {
+    const updated = await api.updateVideoTitle(id, title);
+    setVideos((previous) => previous.map((video) => video.id === id ? { ...video, title: updated.title } : video));
+    setInfoVideo((previous) => previous?.id === id ? { ...previous, title: updated.title } : previous);
+    setSelectedVideo((previous) => previous?.id === id ? { ...previous, title: updated.title } : previous);
+  };
   const { videoId } = useParams();
 
   // 상태 관리
@@ -940,8 +980,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [videoLoadError, setVideoLoadError] = useState(null);
   const [filterDays, setFilterDays] = useState(9999); // 기본 전체
-  const [videoTypeFilter, setVideoTypeFilter] = useState("real");
-  const [collisionFilter, setCollisionFilter] = useState("all");
+  const [videoTypeFilter, setVideoTypeFilter] = useState(() => readSessionFilter("siot_video_type_filter", ["all", "unclassified", ...VIDEO_TYPES.map((item) => item.value)], "real"));
+  const [collisionFilter, setCollisionFilter] = useState(() => readSessionFilter("siot_collision_filter", ["all", "unclassified", ...COLLISION_LABELS.map((item) => item.value)], "all"));
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("siot_video_type_filter", videoTypeFilter);
+      sessionStorage.setItem("siot_collision_filter", collisionFilter);
+    } catch { /* 저장소를 사용할 수 없으면 현재 화면에서만 유지한다. */ }
+  }, [videoTypeFilter, collisionFilter]);
   const [savingVideoType, setSavingVideoType] = useState(false);
   const [searchQuery, setSearchQuery] = useState(""); // 상단 검색어
 
@@ -1030,6 +1076,17 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const [pendingDeleteEvent, setPendingDeleteEvent] = useState(null); // 삭제 확인 창 대상 이벤트
   const [pendingClearAll, setPendingClearAll] = useState(false); // 전체 삭제 확인 창
   const [infoVideo, setInfoVideo] = useState(null); // 영상 목록 카드의 ⋮ → 영상 정보 팝업 대상
+  useEffect(() => {
+    if (!infoVideo) return;
+    const closeOnEscape = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setInfoVideo(null);
+    };
+    document.addEventListener("keydown", closeOnEscape, true);
+    return () => document.removeEventListener("keydown", closeOnEscape, true);
+  }, [infoVideo]);
 
   // 업로드 모달
   const [showUpload, setShowUpload] = useState(false);
@@ -2997,7 +3054,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                     </div>
                     <div className="video-info">
                       <div className="video-info-text">
-                        <h3>{getVideoDisplayTitle(video, videos)}</h3>
+                        <EditableVideoTitle video={video} displayTitle={getVideoDisplayTitle(video, videos)} onSave={saveVideoTitle} disabled={deleteMode} />
                         <p>영상 길이: {formatTime(video.duration)}</p>
                         {/* 보관 기간 — 지나면 영상과 분석 클립이 함께 지워진다. 7일 이하는 강조 */}
                         {video.expiresInDays != null && (
@@ -4089,9 +4146,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
               }}
             >
               <div className="video-info-modal-header">
-                <h2 id="video-info-title" title={getVideoDisplayTitle(v, videos)}>
-                  {getVideoDisplayTitle(v, videos)}
-                </h2>
+                <EditableVideoTitle video={v} displayTitle={getVideoDisplayTitle(v, videos)} onSave={saveVideoTitle} heading="h2" titleId="video-info-title" />
                 <button className="clip-modal-close" onClick={() => setInfoVideo(null)} autoFocus aria-label="닫기">
                   ✕
                 </button>

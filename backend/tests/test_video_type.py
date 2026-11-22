@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app import api_schemas, db_models
 from app.db_connection import Base
-from app.routers.videos import update_video_type, update_collision_label
+from app.routers.videos import update_video_type, update_collision_label, update_video_title
 
 
 class VideoTypeTests(unittest.TestCase):
@@ -44,6 +44,19 @@ class VideoTypeTests(unittest.TestCase):
     def test_invalid_type_is_rejected(self):
         with self.assertRaises(ValidationError):
             api_schemas.VideoTypeUpdate(video_type="unknown")
+
+    def test_title_update_and_clear(self):
+        result = update_video_title(self.video.id, api_schemas.VideoTitleUpdate(title="  새 제목  "), self.db, self.owner)
+        self.assertEqual(result.title, "새 제목")
+        result = update_video_title(self.video.id, api_schemas.VideoTitleUpdate(title=" "), self.db, self.owner)
+        self.assertIsNone(result.title)
+
+    def test_title_requires_owner_and_max_length(self):
+        with self.assertRaises(HTTPException) as raised:
+            update_video_title(self.video.id, api_schemas.VideoTitleUpdate(title="제목"), self.db, self.other)
+        self.assertEqual(raised.exception.status_code, 404)
+        with self.assertRaises(ValidationError):
+            api_schemas.VideoTitleUpdate(title="가" * 101)
 
     def test_collision_label_is_independent_and_can_be_cleared(self):
         result = update_collision_label(self.video.id, api_schemas.CollisionLabelUpdate(collision_label="collision"), self.db, self.owner)
