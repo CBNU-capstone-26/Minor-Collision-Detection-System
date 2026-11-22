@@ -190,6 +190,7 @@ def _run(args, run_dir, th, out_base):
         with open(log, encoding='utf-8') as fh:
             rows_csv = {r['epoch']: r for r in csv.DictReader(fh) if r.get('epoch')}
 
+    check_weights(weights[0][1])             # 헤드 풀링을 환경변수로 안 정했으면 이름(_top3)을 따라 — 모델 만들기 전에
     model = HitAndRun3DCNN(num_classes=config.MODEL_NUM_CLASSES).to(device)
     if channels_last:
         model = model.to(memory_format=torch.channels_last_3d)
@@ -197,6 +198,8 @@ def _run(args, run_dir, th, out_base):
     t0 = time.perf_counter()
     for k, (ep, path) in enumerate(weights):
         check_weights(path)                  # 학습한 입력 크기(_s256)·헤드 풀링(_top3)이 지금 설정과 같아야 한다
+        if model.temporal_pool != config.HEAD_TEMPORAL_POOL:     # 한 회차 안이라 바뀔 일은 없다
+            raise RuntimeError(f'{path.name}: 헤드 풀링이 앞 가중치와 다릅니다')
         model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True))
         row = {'epoch': ep, 'weights': path.name}
         old = rows_csv.get(str(ep), {})

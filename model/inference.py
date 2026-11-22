@@ -12,7 +12,7 @@ from pathlib import Path
 
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported, predict_batch_size
-from infer_runtime import get_runner
+from infer_runtime import get_runner, is_accident
 
 # 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
 _FFMPEG = shutil.which("ffmpeg")
@@ -352,7 +352,7 @@ def predict_full_video(
 
                 outputs = model(clips)
                 probs = F.softmax(outputs, dim=1)
-                pred_classes = outputs.argmax(dim=1)
+                pred_classes = is_accident(outputs).long()
                 feat_maps = activation['cam_layer']
 
                 for offset, window_idx in enumerate(batch_window_starts):
@@ -502,6 +502,8 @@ def predict_events_and_clips(
     infer_batch_size=None,
     window_stride=config.PREDICT_WINDOW_STRIDE,
     display_offset=config.PREDICT_DISPLAY_OFFSET,
+    display_start_offset=config.PREDICT_DISPLAY_START_OFFSET,
+    display_end_offset=config.PREDICT_DISPLAY_END_OFFSET,
     cam_overlay=config.PREDICT_CLIP_CAM_OVERLAY,
     clip_pad_frames=config.PREDICT_CLIP_PAD_FRAMES,
     progress_callback=None,
@@ -524,6 +526,8 @@ def predict_events_and_clips(
         bbox (tuple|list): 대상 차량 좌표 (xmin, ymin, xmax, ymax) — 원본 해상도 기준
         output_dir (str|Path): 클립 저장 폴더
         clip_pad_frames (int): 구간 앞뒤로 덧붙일 여유 프레임 수
+        display_start_offset, display_end_offset (int): 클립 A 띠 = 첫 A 창 시작 + start ~ 마지막 A 창 시작 + end.
+            띠가 config.PREDICT_DISPLAY_MIN_SEC 보다 짧으면(짧은 반응) 양 끝 모두 display_offset(config 주석 참고)
         use_coarse_scan (bool): True면 거친 탐색(coarse_step 간격) 후 P(A) >
             coarse_prob 인 창 주변 ±coarse_pad 만 촘촘히 본다. False면 전체 스캔.
         clip_name (str|None): 클립 파일 이름 앞부분('<clip_name>_event1.mp4'). 없으면 영상 파일 이름.
@@ -549,6 +553,8 @@ def predict_events_and_clips(
     os.makedirs(output_dir, exist_ok=True)
     window_stride = max(1, int(window_stride))
     display_offset = max(0, min(int(display_offset), clip_length - 1))
+    display_start_offset = max(0, min(int(display_start_offset), clip_length - 1))
+    display_end_offset = max(0, min(int(display_end_offset), clip_length - 1))
 
     device = next(model.parameters()).device
     # 묶음 크기 — 주지 않으면 장치에 맞는 값(CPU 1 · GPU 8, config)
@@ -664,7 +670,7 @@ def predict_events_and_clips(
             else:
                 outputs, cams = runner(clips), None
             probs = F.softmax(outputs, dim=1)
-            pred_classes = outputs.argmax(dim=1)
+            pred_classes = is_accident(outputs).long()
             for offset, window_idx in enumerate(batch_window_starts):
                 # 판정·CAM 은 창 끝이 아니라 '창 시작 + display_offset' 프레임에
                 # 그린다 — 창 끝에 붙이면 A 표시가 실제 충돌보다 늦다(config 주석).
@@ -976,12 +982,19 @@ def predict_events_and_clips(
 
 
                 # 사고 구간 시작 프레임으로 탐색 후 순차 디코딩
-                # A 로 그리는 구간 = 이 이벤트에서 판정이 그려진 첫 프레임 ~ 마지막 프레임.
-                # (이벤트 시작 start_f 는 첫 A 창의 '시작'이라, 여기서부터 A 로 그리면
-                #  판정이 아직 없는 앞부분이 S 로 그려지거나 너무 이르게 된다)
-                a_keys = sorted(k for k in accident_overlays if start_f <= k <= end_f)
-                a_first = a_keys[0] if a_keys else None
-                a_last = a_keys[-1] + window_stride - 1 if a_keys else None
+                # A 로 그리는 구간 = (이벤트 안 첫 A 창 시작 + display_start_offset)
+                #                  ~ (마지막 A 창 시작 + display_end_offset) — config 주석 참고.
+                # 반응이 짧아 띠가 PREDICT_DISPLAY_MIN_SEC 보다 짧으면(시작 > 끝 포함) 예전처럼
+                # 양 끝 모두 display_offset 으로 그린다. CAM 은 그대로 '창 시작 + display_offset'
+                # 프레임에 붙여 두고 띠 안에서 가장 최근 것을 쓴다.
+                a_wins = sorted(w for w, c in window_pred.items() if c == 1 and start_f <= w <= end_f)
+                a_first = a_last = None
+                if a_wins:
+                    a_first = a_wins[0] + display_start_offset
+                    a_last = a_wins[-1] + display_end_offset + window_stride - 1
+                    if a_last - a_first + 1 < max(1, int(round(config.PREDICT_DISPLAY_MIN_SEC * fps))):
+                        a_first = a_wins[0] + display_offset
+                        a_last = a_wins[-1] + display_offset + window_stride - 1
                 render_cap.set(cv2.CAP_PROP_POS_FRAMES, clip_start)
                 last_cam = None
                 # 박스 선 굵기는 해상도에 맞춘다(1080p 이하 2px · 1440p 3px · 4K 4px).

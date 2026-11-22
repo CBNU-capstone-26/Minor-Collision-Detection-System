@@ -36,14 +36,14 @@ def _get_model():
     # 추론 디바이스(config.INFER_DEVICE_TYPE="cuda") — GPU 가 없으면 get_device 가
     # 경고를 찍고 CPU 로 자동 전환한다. 실제 디바이스는 아래 '모델 로드 완료' 로그로 확인.
     device = get_device(model_config.INFER_DEVICE_TYPE)
+    # 배포 가중치 경로는 model/config.py 에서 관리 (SERVICE_WEIGHTS_PATH)
+    # 224 아닌 입력 크기(_s256)로 학습한 가중치면 서버 .env 에 INPUT_SIZE 를 같이 맞춰야 한다 — 다르면 여기서 멈춘다.
+    # 헤드 풀링(_top3 등)은 .env 의 HEAD_TEMPORAL_POOL 을 비워 두면 가중치 이름을 따라가므로 모델을 만들기 전에 확인한다.
+    from hitandrun_model import check_weights
+    check_weights(model_config.SERVICE_WEIGHTS_PATH)
     model = HitAndRun3DCNN(num_classes=model_config.MODEL_NUM_CLASSES).to(device)
     if is_channels_last_3d_supported(device) and model_config.USE_CHANNELS_LAST:
         model = model.to(memory_format=torch.channels_last_3d)
-    # 배포 가중치 경로는 model/config.py 에서 관리 (SERVICE_WEIGHTS_PATH)
-    # 224 아닌 입력 크기(_s256)·avg 아닌 헤드 풀링(_top3 등)으로 학습한 가중치면 서버 .env 에 INPUT_SIZE·
-    # HEAD_TEMPORAL_POOL 을 같이 맞춰야 한다 — 다르면 여기서 멈춘다
-    from hitandrun_model import check_weights
-    check_weights(model_config.SERVICE_WEIGHTS_PATH)
     state_dict = torch.load(
         str(model_config.SERVICE_WEIGHTS_PATH), map_location="cpu", weights_only=True)
     model.load_state_dict(state_dict)

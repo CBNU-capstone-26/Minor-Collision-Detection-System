@@ -44,6 +44,20 @@ def _top(rows, key, k, gap):
     return picked
 
 
+def _epoch_file(ep_dir, e):
+    hit = sorted(ep_dir.glob(f'*_ep{e:03d}.pth')) if ep_dir.exists() else []
+    return hit[0] if hit else None
+
+
+def candidate_paths(run_dir):
+    """추천 에포크 가중치의 절대 경로(파일이 있는 것만) — main --mode suggest --paths 가 한 줄에 하나씩 낸다.
+    이어 돌리는 서버 명령이 출력에서 경로를 정규식으로 뽑다가 상대 경로 앞부분(outputs)을 잘라 먹은 일이 있어(11-22) 따로 둔다."""
+    pick, _ = suggest(run_dir)
+    run_dir = Path(run_dir)
+    ep_dir = (run_dir.parent if run_dir.suffix == '.csv' else run_dir) / 'epochs'
+    return [p.resolve() for p in (_epoch_file(ep_dir, e) for e in pick) if p]
+
+
 def suggest(run_dir, k=None, gap=None):
     """(추천 에포크 목록, 출력 줄들). run_dir 은 회차 폴더(또는 그 안의 trainlog CSV)."""
     k = int(k or getattr(config, 'TRAIN_SUGGEST_TOPK', 2))
@@ -54,7 +68,7 @@ def suggest(run_dir, k=None, gap=None):
         return [], [f"학습 곡선 CSV 가 없습니다: {run_dir}"]
     run_dir = csv_path.parent
     with open(csv_path, encoding='utf-8') as fh:
-        rows = [r for r in csv.DictReader(fh) if r.get('epoch')]
+        rows = [r for r in csv.DictReader(fh) if r.get('epoch') and r.get('grace') != '1']
     if not rows:
         return [], ["학습 곡선이 아직 비어 있습니다"]
     # 실제 영상 검증이 있으면 그쪽, 없으면 RC 검증
@@ -71,8 +85,7 @@ def suggest(run_dir, k=None, gap=None):
     ep_dir = run_dir / 'epochs'
 
     def _file(e):
-        hit = sorted(ep_dir.glob(f'*_ep{e:03d}.pth')) if ep_dir.exists() else []
-        return hit[0] if hit else None
+        return _epoch_file(ep_dir, e)
 
     def _n(v):
         return '-' if v is None else f'{v:.2f}'
@@ -80,7 +93,7 @@ def suggest(run_dir, k=None, gap=None):
     lines = [f"[평가 추천] 기준마다 상위 {k}개(서로 {gap}에포크 이상 떨어진 것) — ① 판단 지표 ② 그 에포크 {dom} "
              f"균형손실 ③ 그 에포크 {dom} F1. 후보일 뿐이고 최종 선택은 평가 영상으로",
              f"  {'에포크':>6}{'판단지표':>10}{dom + ' 균형':>10}{dom + ' 재현율':>11}{dom + ' 정밀도':>11}"
-             f"{dom + ' F1':>8}{'rc 균형':>9}  {'뽑힌 기준':<16}가중치"]
+             f"{dom + ' F1':>8}{'구간 재현율':>9}{'구분력':>7}{'rc 균형':>9}  {'뽑힌 기준':<16}가중치"]
     files = []
     for e in pick:
         r = by_ep[e]
@@ -89,7 +102,8 @@ def suggest(run_dir, k=None, gap=None):
         why = '·'.join(name for name, eps in picks.items() if e in eps)
         lines.append(f"  {e:>6}{_n(_f(r, 'monitor')):>10}{_n(_f(r, bal)):>10}"
                      f"{_n(_f(r, f'val_{dom}_recallA')):>11}{_n(_f(r, f'val_{dom}_precA')):>11}"
-                     f"{_n(_f1(r, dom)):>8}{_n(_f(r, 'val_rc_bal')):>9}  {why:<16}"
+                     f"{_n(_f1(r, dom)):>8}{_n(_f(r, f'val_{dom}_spanRecA')):>9}{_n(_f(r, f'val_{dom}_auc')):>7}"
+                     f"{_n(_f(r, 'val_rc_bal')):>9}  {why:<16}"
                      f"{fp.name if fp else '(없음 — 에포크별 저장 전 학습)'}")
     have = [p for p in files if p]
     if have:

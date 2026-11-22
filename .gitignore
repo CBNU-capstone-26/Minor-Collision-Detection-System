@@ -39,11 +39,9 @@ labeling/
 # 서비스 모델은 model/(x3d). 이전 s3d 백본은 로컬 비교용으로만 보관
 s3d model/
 
-# Model weights (대용량 바이너리 — git에서 제외)
-weights/
-
 # YOLO / torch 체크포인트 (대용량 — 첫 실행 시 자동 다운로드)
 *.pt
+weights/
 
 # Local notebooks and docs
 *.ipynb

@@ -33,8 +33,11 @@ CLIP_LENGTH = 30
 INPUT_SIZE = int(os.getenv("INPUT_SIZE", "224") or 224)
 RESIZE = (INPUT_SIZE, INPUT_SIZE)
 HEAD_TEMPORAL_POOL = (os.getenv("HEAD_TEMPORAL_POOL", "avg") or "avg").strip().lower()
+HEAD_TEMPORAL_POOL_SET = bool((os.getenv("HEAD_TEMPORAL_POOL") or "").strip())
 HEAD_TEMPORAL_TOPK = 3
 R_VALUE = 1.0
+# 최종 가중치의 사고 판정 기준. 환경변수로 변경할 수 있다.
+A_THRESHOLD = float(os.getenv("A_THRESHOLD", "0.45") or 0.45)
 # 학습 전용 r 증강은 기본적으로 꺼져 있으며, 검증과 서비스에서는 R_VALUE를 사용한다.
 TRAIN_R_AUGMENT_PROB = float(os.getenv("TRAIN_R_AUGMENT_PROB", "0") or 0)
 TRAIN_R_AUGMENT_VALUES = tuple(float(v) for v in (os.getenv("TRAIN_R_AUGMENT_VALUES", "1.5,2") or "").split(",") if v.strip())
@@ -393,6 +396,9 @@ TRAIN_BATCH_SIZE = 15  # 논문과 동일(Hwang&Lee 2024: batch 15). VRAM 부족
 TRAIN_NUM_EPOCHS = 100
 TRAIN_SPLIT_RATIO = 0.8
 TRAIN_EARLY_STOPPING_PATIENCE = 10
+TRAIN_SCRATCH_GRACE_EPOCHS = 20
+_grace_env = os.getenv("TRAIN_GRACE_EPOCHS", "").strip()
+TRAIN_GRACE_EPOCHS = int(_grace_env) if _grace_env else None
 
 # ---------- best 판단 지표 / 후보 저장 ----------
 # best 저장·LR 감소(ReduceLROnPlateau)·조기종료가 모두 아래 '판단 지표' 하나로 움직인다.
@@ -450,7 +456,7 @@ EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
-SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_261121_1915_ep039_ptY_bal_lqw_top3.pth"
 # 서버에서 코드를 고치지 않고 바꿀 때: .env 에 SERVICE_WEIGHTS=weights/<파일>.pth (상대경로는 프로젝트 루트 기준)
 if os.getenv("SERVICE_WEIGHTS", "").strip():
     SERVICE_WEIGHTS_PATH = Path(os.environ["SERVICE_WEIGHTS"].strip())
@@ -458,7 +464,7 @@ if os.getenv("SERVICE_WEIGHTS", "").strip():
         SERVICE_WEIGHTS_PATH = _ROOT / SERVICE_WEIGHTS_PATH
 
 # ---------- 단일 영상 예측/CAM 출력 전용 ----------
-PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
+PREDICT_WEIGHTS_PATH = SERVICE_WEIGHTS_PATH
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
@@ -488,6 +494,9 @@ PREDICT_WINDOW_STRIDE = 1
 # 모델이 충돌 뒤 흔들림이 담긴 창도 A로 보기 때문이라 이 값으로는 고칠 수 없다.
 # 이벤트 구간·DB 기록·충격 시점(광학흐름 피크) 계산에는 영향이 없다.
 PREDICT_DISPLAY_OFFSET = 25
+PREDICT_DISPLAY_START_OFFSET = 29
+PREDICT_DISPLAY_END_OFFSET = 0
+PREDICT_DISPLAY_MIN_SEC = 0.5
 # 서비스 사고 클립에 CAM 히트맵을 합성할지. 2026-10-10 에 껐다가 2026-10-26 사용자 요청으로 다시 켠다 —
 # 다만 bbox 전체를 덮지 않고 사고 판정 근거가 강한 곳(충돌 부위)에만 칠한다(inference._draw_collision_cam).
 # 차량 박스(사고 빨강·정상 초록)와 아래 상태 띠(S/A)는 그대로 그린다.
@@ -525,7 +534,7 @@ PREDICT_CLIP_PAD_FRAMES = 30
 # ⚠️ 긴 영상에서 실제로 몇 %를 보는지는 서버 로그의 '[2단계] 거친 탐색 … N%' 줄로 확인.
 PREDICT_USE_COARSE_SCAN = True
 PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임, 30fps 기준). stride 의 배수로 맞춰 쓴다
-PREDICT_COARSE_PROB = 0.3      # 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다
+PREDICT_COARSE_PROB = float(os.getenv("PREDICT_COARSE_PROB", "") or min(0.3, 0.6 * A_THRESHOLD))
 PREDICT_COARSE_PAD = CLIP_LENGTH  # 의심 창 주변 ±pad 프레임의 창을 모두 평가
 PREDICT_FLOW_SAMPLE_STEP = 2   # 충격 시점 판정용 광학흐름 계산 프레임 간격(속도)
 
@@ -579,7 +588,7 @@ INFER_CACHE_DIR = _ROOT / "weights" / ".infer_cache"   # 변환 파일(ONNX)·�
 # 평가할 가중치. 여러 학습 결과를 비교할 땐 환경변수로 골라 쓴다:
 #     EVAL_WEIGHTS=weights/hitandrun_s3d_..._ptN_0.31.pth python main.py --mode eval
 EVAL_WEIGHTS_PATH = (Path(os.environ["EVAL_WEIGHTS"]) if os.getenv("EVAL_WEIGHTS")
-                     else _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth")
+                     else SERVICE_WEIGHTS_PATH)
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 # 서비스 경로 평가에서 '검출'로 인정하는 시작 시점 허용 오차(초).
 # 이벤트가 라벨 start_f ± 이 값 안에서 시작해야 검출로 센다. 이벤트가 나오긴 했어도

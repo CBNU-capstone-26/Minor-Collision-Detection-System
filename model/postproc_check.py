@@ -539,12 +539,16 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     tee = _Tee(out_dir / f'report{suffix}.txt')
     sys.stdout = tee
+    done = False
     try:
-        return _run(args, out_dir, suffix)
+        ret = _run(args, out_dir, suffix)
+        done = True
+        return ret
     finally:
         sys.stdout = tee.stdout
         tee.close()
-        print(f'\n[저장] {out_dir}')
+        # 오류로 멈췄을 때 [저장] 을 찍으면 끝난 줄 알고 다음 단계를 시작하는 대기 명령이 속는다(11-22)
+        print(f'\n[저장] {out_dir}' if done else f'\n[중단] 오류로 멈춤 — 일부만 남음: {out_dir}')
 
 
 def _run(args, out_dir, suffix):

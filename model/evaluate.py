@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported, predict_batch_size
-from infer_runtime import get_runner
+from infer_runtime import get_runner, is_accident
 from runlog import make_run_dir, write_run_info
 
 
@@ -141,7 +141,7 @@ def _evaluate_folder_impl(
             # ⑦ 영상 텐서를 처음부터 GPU에 상주 — 배치마다 .to(device) 전송 제거
             full_video_tensor = frames_to_tensor(frames).to(device)
             predicted_label = 0
-            first_a = None          # P(A) > 0.5 가 처음 나온 창의 시작 프레임
+            first_a = None          # P(A) > config.A_THRESHOLD 가 처음 나온 창의 시작 프레임
             num_windows = len(frames) - (clip_length - 1)
             window_starts = list(range(0, num_windows, window_stride))
 
@@ -156,10 +156,10 @@ def _evaluate_folder_impl(
                         memory_format=torch.channels_last_3d)
 
                 outputs = runner(clips)
-                pred_classes = outputs.argmax(dim=1)
-                if (pred_classes == 1).any().item():
+                is_a = is_accident(outputs)
+                if is_a.any().item():
                     predicted_label = 1
-                    first_a = batch_window_starts[int((pred_classes == 1).nonzero()[0])]
+                    first_a = batch_window_starts[int(is_a.nonzero()[0])]
                     break
 
             total_videos += 1
@@ -186,7 +186,7 @@ def _evaluate_folder_impl(
     # ── 논문(Hwang & Lee 2024, Table 6)과 동일한 지표 ──────────────
     base = _metrics(tp, fn, fp, tn)
     print("\n" + "=" * 60)
-    print("[① 기존 판정]  창 하나라도 P(A) > 0.5 면 그 영상은 충돌  (논문 Table 6 방식)")
+    print(f"[① 기존 판정]  창 하나라도 P(A) > {config.A_THRESHOLD:g} 면 그 영상은 충돌  (논문 Table 6 방식)")
     print(f"   창 간격 {window_stride}로 모든 창을 본다. 거친 탐색·이벤트 규칙이 없고, "
           "충돌 위치는 따지지 않는다.")
     print("=" * 60)
@@ -279,7 +279,7 @@ def _print_comparison(base, svc, rows, window_stride):
     print("[판정 방식 비교]  같은 영상, 영상 단위 (Positive = A/충돌)")
     print("=" * 64)
     line('', '① 기존 판정', '② 서비스 판정')
-    line('판정 규칙', '창 P(A)>0.5 1개↑', '이벤트 1개↑')
+    line('판정 규칙', f'창 P(A)>{config.A_THRESHOLD:g} 1개↑', '이벤트 1개↑')
     line('창 보는 방식', f'간격 {window_stride}, 전부', f'거친 탐색 → 의심 구간만')
     print("-" * 64)
     line('TP / FN / FP / TN', f"{base['tp']}/{base['fn']}/{base['fp']}/{base['tn']}",
@@ -735,6 +735,8 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     r_value = float(kwargs.get('r_value', config.R_VALUE))
     if abs(r_value - 1.0) > 1e-9:
         name_tag += f'_r{r_value:g}'
+    if abs(config.A_THRESHOLD - 0.5) > 1e-9:
+        name_tag += f'_th{config.A_THRESHOLD:g}'
     run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, name_tag)
     log_path = run_dir / f"eval_{config.MODEL_NAME}_{name_tag}_{stamp}.txt"
     write_run_info(run_dir, [
@@ -746,6 +748,8 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('평가 폴더', str(folder_path)),
         ('10fps 미만 영상 제외(config.LOW_FPS_VIDEOS)', '켬' if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('크롭 r', f'{r_value:g}'),
+        ('판정 기준 P(A)', f'{config.A_THRESHOLD:g}'),
+        ('거친 탐색 기준 P(A)', f'{config.PREDICT_COARSE_PROB:g}'),
         ('후처리 fps 맞춤(거친 탐색 간격·최소 길이)',
          '켬' if config.PREDICT_FPS_SCALED_POSTPROC else '끔'),
         # 속도 지표는 이 설정이 같은 평가끼리만 비교한다(2026-10-22 부터 기본 끔 — GPU 추론 약 2.6배 빠름).
@@ -776,7 +780,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     write_run_info(run_dir, [tuple(l.split(': ', 1)) for l in info] + [
         ('종료', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ('평가 영상 수', m.get('n_videos')),
-        ('① 기존 판정(창 P(A)>0.5 1개↑)', _info_metrics(m, 'base_', 'recall', 'false_alarm')),
+        (f'① 기존 판정(창 P(A)>{config.A_THRESHOLD:g} 1개↑)', _info_metrics(m, 'base_', 'recall', 'false_alarm')),
         ('② 서비스 판정(이벤트 1개↑)', _info_metrics(m, 'svc_', 'video_recall', 'video_false_alarm')),
         (f"② 서비스 위치 기준 재현율(시작 ±{m.get('svc_hit_tol_sec')}초)", _fmt_pct(m.get('svc_hit_recall'))),
         ('② 서비스 오탐 이벤트', m.get('svc_false_events')),
