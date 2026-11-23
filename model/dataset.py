@@ -1,4 +1,5 @@
 import os
+import csv
 import glob
 import hashlib
 import inspect
@@ -81,7 +82,7 @@ def add_light(frames, kind, dark=1.0, peak=150.0, radius=0.35, t0=8, dur=14, dir
     col = np.array(LIGHT_COLORS.get(color, LIGHT_COLORS['white']), np.float32) / 255.0
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     sx, sy = max(2.0, radius * w), max(2.0, radius * w * 0.6)
-    # 크롭이 화면 밖으로 나가 검게 채운 곳(모든 프레임에서 0)은 장면이 아니라 빛을 받지 않는다
+    # 크롭이 화면 밖으로 나가 검게 채운 곳(모든 프레임에서 0)은 장면이 아니므로 빛을 받지 않습니다.
     keep = (~np.all(np.stack(frames) == 0, axis=(0, 3)))[..., None].astype(np.float32)
     out = []
     for t, f in enumerate(frames):
@@ -121,14 +122,15 @@ class HitAndRunDataset(Dataset):
         resize=config.RESIZE,
         augment=True,
         cache_dir=None,
+        span_windows=False,
     ):
         self.data_dir = data_dir
         self.clip_length = clip_length
         self.r_value = r_value
         self.resize = resize
-        # augment=True → 학습용(랜덤 증강 적용), False → 검증용(증강 없음, 결정적)
+        # augment=True면 학습용(무작위 증강), False면 검증용(증강 없음, 결정적)입니다.
         self.augment = augment
-        # 클립 저장본 폴더(검증 전용, config.TRAIN_VAL_CACHE). 증강하면 매번 클립이 달라 쓸 수 없다.
+        # 클립 저장본 폴더(검증 전용, config.TRAIN_VAL_CACHE)입니다. 증강하면 클립이 매번 달라 쓸 수 없습니다.
         if augment and cache_dir:
             raise ValueError('클립 저장본은 증강 없는(검증) 데이터셋에만 쓸 수 있습니다')
         self.cache_dir = Path(cache_dir) if cache_dir else None
@@ -142,12 +144,15 @@ class HitAndRunDataset(Dataset):
         if a_mode not in ('pre', 'span'):
             raise ValueError(f"TRAIN_A_MODE 는 'pre' 또는 'span' 이어야 합니다: {a_mode!r}")
         self.span = a_mode == 'span'
-        # 정규화 통계는 사전학습(Kinetics-400)과 동일하게 config에서 일괄 관리
+        if span_windows and not self.span and getattr(config, 'TRAIN_A_SLICE_ENABLED', False):
+            raise ValueError('span_windows 는 TRAIN_A_SLICE_ENABLED 와 함께 쓸 수 없습니다(학습·검증 샘플 순서가 달라짐)')
+        self.span_windows = self.span or bool(span_windows)
+        # 정규화 통계는 사전학습(Kinetics-400)과 같도록 config에서 함께 관리합니다.
         self.mean = torch.tensor(
             config.NORM_MEAN, dtype=torch.float32).view(3, 1, 1, 1)
         self.std = torch.tensor(
             config.NORM_STD, dtype=torch.float32).view(3, 1, 1, 1)
-        # 같은 값의 numpy float32 — _frames_to_tensor 가 배열 하나에 제자리로 정규화할 때 쓴다
+        # 같은 값의 numpy float32입니다. _frames_to_tensor가 배열 하나에서 제자리로 정규화할 때 씁니다.
         self._mean_np = np.asarray(config.NORM_MEAN, dtype=np.float32).reshape(3, 1, 1, 1)
         self._std_np = np.asarray(config.NORM_STD, dtype=np.float32).reshape(3, 1, 1, 1)
 
@@ -164,8 +169,15 @@ class HitAndRunDataset(Dataset):
 
     def _build_index(self):
         samples = []
+        # 사고 영상의 충돌 전·후 정상 클립(config.TRAIN_A_CONTEXT_NEG, 학습 데이터셋만). 맨 뒤에 붙여 앞쪽 샘플 번호가
+        # 검증 데이터셋(증강 없음 — 이 클립을 안 만듦)과 같게 둔다(검증 폴더가 없을 때 두 데이터셋을 같은 번호로 나눔).
+        ctx_mode = getattr(config, 'TRAIN_A_CONTEXT_NEG', None) if self.augment else None
+        ctx_samples = []
+        # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV, 학습 데이터셋만)도 같은 이유로 맨 뒤에 붙입니다.
+        hn_map = self._load_hardneg() if self.augment else {}
+        hn_samples = []
         for mp4_path in self.mp4_paths:
-            # txt는 같은 경로의 확장자만 바꾼 것 (rcdata/realdata 어디든 동일 규칙)
+            # txt는 같은 경로에서 확장자만 바꾼 파일입니다.
             txt_path = os.path.splitext(mp4_path)[0] + ".txt"
             file_name = os.path.splitext(os.path.basename(mp4_path))[0]
             bboxes, action = self._parse_annotation(txt_path)
@@ -174,7 +186,7 @@ class HitAndRunDataset(Dataset):
                 class_str = action[0]
                 target_id = int(float(action[1]))
                 start_f = int(float(action[2]))
-                # 충돌 종료 프레임 — A 슬라이싱이 구간을 벗어나지 않도록 쓴다
+                # 충돌 끝 프레임입니다. A 슬라이싱이 구간을 벗어나지 않게 할 때 씁니다.
                 end_f = int(float(action[3])) if len(action) > 3 else start_f
             else:
                 class_str = 'S'
@@ -188,8 +200,9 @@ class HitAndRunDataset(Dataset):
                 target_id, [0, 0, self.resize[0], self.resize[1]])
             label = 1 if class_str == 'A' else 0
 
-            # 영상 메타는 한 번만 읽는다(S 슬라이싱의 총프레임 + 지터 환산용 fps).
+            # 영상 정보는 한 번만 읽습니다(S 슬라이싱의 총 프레임 수와 흔들기 폭 환산용 fps).
             total, fps = self._video_meta(mp4_path)
+            hn_samples += self._hardneg_samples(hn_map.get(file_name, ()), mp4_path, file_name, bboxes, fps, total)
 
             def _add(sf, wins=None, car=None):
                 car = target_id if car is None else car
@@ -224,8 +237,8 @@ class HitAndRunDataset(Dataset):
                 a_start = max(0, start_f - pre)
                 a_stride = max(1, int(getattr(config, 'TRAIN_A_SLICE_STRIDE', 15)))
                 last = end_f - self.clip_length + 1      # 창 끝 == end_f 인 시작점
-                if self.span:
-                    # span: 접근부터 충돌 종료까지를 덮는 창들을 샘플 하나로 둔다.
+                if self.span_windows:
+                    # span: 접근부터 충돌 끝까지를 덮는 묶음들을 샘플 하나로 둡니다.
                     wins = self._span_starts(a_start, last, total)
                     _add(wins[0], wins)
                 elif (getattr(config, 'TRAIN_A_SLICE_ENABLED', False)
@@ -239,6 +252,9 @@ class HitAndRunDataset(Dataset):
                         _add(sf)
                 else:
                     _add(a_start)
+                if ctx_mode and (is_real or ctx_mode == 'all'):
+                    ctx_samples += self._context_neg(mp4_path, file_name, target_id, target_bbox,
+                                                     fps, total, start_f, end_f)
             elif not getattr(config, 'TRAIN_S_SLICE_ENABLED', False):
                 for car in s_cars:
                     _add(start_f, car=car)
@@ -257,7 +273,64 @@ class HitAndRunDataset(Dataset):
                 for car in s_cars:
                     for sf in starts:
                         _add(sf, car=car)
-        return samples
+        return samples + ctx_samples + hn_samples
+
+    @staticmethod
+    def _load_hardneg():
+        """config.TRAIN_HARDNEG_CSV → {영상 이름: [(차 번호, 창 시작)]}. 끄면 {}."""
+        path = getattr(config, 'TRAIN_HARDNEG_CSV', None)
+        if not path:
+            return {}
+        out = {}
+        with open(path, encoding='utf-8') as f:
+            for r in csv.DictReader(f):
+                out.setdefault(r['video'], []).append((int(r['car_id']), int(r['start_f'])))
+        return out
+
+    def _hardneg_samples(self, items, mp4_path, file_name, bboxes, fps, total):
+        """헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV 주석) — 정상 클립으로, TRAIN_HARDNEG_REPEAT 번."""
+        L = self.clip_length
+        j = int(getattr(config, 'TRAIN_HARDNEG_JITTER', 5))
+        rep = int(getattr(config, 'TRAIN_HARDNEG_REPEAT', 1))
+        out = []
+        for car, w in items:
+            if car not in bboxes or (total > 0 and w > total - L):
+                continue
+            hi = w + j if total <= 0 else min(w + j, total - L)
+            for _ in range(rep):
+                out.append({'file_name': file_name, 'video_key': mp4_path, 'mp4_path': mp4_path, 'label': 0,
+                            'start_f': w, 'bbox': bboxes[car], 'car_id': car, 'fps': fps, 'total': total,
+                            'hardneg': True, 'start_range': (max(0, w - j), hi)})
+        return out
+
+    def _context_neg(self, mp4_path, file_name, car_id, bbox, fps, total, start_f, end_f):
+        """사고 영상의 충돌 전·후 정상 클립(config.TRAIN_A_CONTEXT_NEG 주석). 창 끝 ≤ 충돌 시작 − 여유(전),
+        창 시작 ≥ 충돌 끝 + 여유(후). 한쪽에 최대 2개 — 충돌에 가장 가까운 창 1개와, 그보다 간격 이상 먼 곳에서
+        가져올 때마다 무작위로 고르는 창 1개('rand_range'). 창 위치 흔들기는 'start_range' 밖으로 나가지 않는다."""
+        L = self.clip_length
+        m = max(1, int(round(float(getattr(config, 'TRAIN_A_CONTEXT_NEG_MARGIN_SEC', 0.5)) * fps)))
+        step = max(1, int(getattr(config, 'TRAIN_A_CONTEXT_NEG_STRIDE', L)))
+        out = []
+
+        def _add(side, w, lo, hi, rand=None):
+            s = {'file_name': file_name, 'video_key': mp4_path, 'mp4_path': mp4_path, 'label': 0,
+                 'start_f': w, 'bbox': bbox, 'car_id': car_id, 'fps': fps, 'total': total,
+                 'ctx_neg': side, 'start_range': (lo, hi)}
+            if rand is not None:
+                s['rand_range'] = rand
+            out.append(s)
+
+        pre_hi = start_f - m - L + 1          # 끝이 충돌 시작 − 여유인 창(가장 가까움)
+        if pre_hi >= 0:
+            if pre_hi - step >= 0:
+                _add('pre', pre_hi - step, 0, pre_hi, rand=(0, pre_hi - step))
+            _add('pre', pre_hi, 0, pre_hi)
+        post_lo, post_hi = end_f + m, (total - L if total > 0 else -1)
+        if post_lo <= post_hi:
+            _add('post', post_lo, post_lo, post_hi)
+            if post_lo + step <= post_hi:
+                _add('post', post_lo + step, post_lo, post_hi, rand=(post_lo + step, post_hi))
+        return out
 
     def _span_starts(self, a_start, last, total):
         """span 창 시작점들 — 첫 창은 a_start(접근), 마지막 창은 끝이 충돌 종료.
@@ -341,22 +414,22 @@ class HitAndRunDataset(Dataset):
 
         do_hflip = random.random() > 0.5
 
-        # 밝기·대비·채도·색조: 조명 변화, 날씨, 카메라 색감 차이 시뮬레이션
+        # 밝기, 대비, 채도, 색조: 조명 변화, 날씨, 카메라 색감 차이를 흉내 냅니다.
         do_jitter = random.random() > 0.5
         brightness = random.uniform(*getattr(config, 'TRAIN_AUG_BRIGHTNESS', (0.4, 1.4)))   # 야간·지하주차장 ~ 밝은 외부
         contrast = random.uniform(0.7, 1.3)   # 저대비(흐린 날) ~ 고대비(직사광)
         saturation = random.uniform(0.7, 1.3)   # 카메라별 채도 특성 차이
         hue = random.uniform(-0.1, 0.1)  # 카메라 화이트밸런스·조명 색온도 차이
 
-        # 야간 적외선(IR) CCTV: 사실상 무채색 영상 → 색 없이도 동작 판별하도록 학습
+        # 야간 적외선(IR) CCTV는 사실상 무채색이라, 색 없이도 판별하도록 학습합니다.
         do_gray = random.random() < getattr(config, 'TRAIN_AUG_GRAY_PROB', 0.2)
-        # 저화질 CCTV: 초점 흐림/압축 열화(블러), 야간 게인으로 생긴 잔무늬(압축돼 멈춰 있는 잡음) 시뮬레이션
+        # 저화질 CCTV의 초점 흐림, 압축 열화(블러), 야간 게인으로 생긴 잔무늬(압축돼 멈춰 있는 잡음)를 흉내 냅니다.
         do_blur = random.random() < 0.2
         do_noise = random.random() < getattr(config, 'TRAIN_AUG_NOISE_PROB', 0.2)
         noise_sigma = random.uniform(*getattr(config, 'TRAIN_AUG_NOISE_SIGMA', (2.0, 8.0)))
         grain = None
         if do_noise:
-            # 클립 내내 같은 잔무늬 — 흑백 클립은 밝기 잡음만(색 잡음이 끼면 적외선 영상답지 않다)
+            # 클립 내내 같은 잔무늬입니다. 흑백 클립은 밝기 잡음만 넣습니다(색 잡음이 끼면 적외선 영상답지 않습니다).
             h, w = frames[0].shape[:2]
             grain = np.random.normal(0.0, noise_sigma, (h, w, 1 if do_gray else 3)).astype(np.float32)
 
@@ -406,19 +479,29 @@ class HitAndRunDataset(Dataset):
 
     def _apply_low_quality(self, frames, crop_side):
         """저화질 증강(config.TRAIN_LQ_AUG_PROB, 학습 전용 — 주석은 config). 깨끗한 클립만 H.264 로 압축했다 풀고,
-        TRAIN_LQ_SIZE_PROB 비율은 먼저 작게 줄였다 다시 키운다. 값은 클립마다 하나(모든 프레임이 같은 영상)."""
+        TRAIN_LQ_SIZE_PROB 비율은 먼저 작게 줄였다 다시 키운다. 값은 클립마다 하나(모든 프레임이 같은 영상).
+        TRAIN_LQ_SMALL 이면 작은 크롭(TRAIN_LQ_SMALL_MIN 이상 TRAIN_LQ_MIN_CROP 미만)도 원래 크기로 줄여 압축한다."""
         p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0.0) or 0.0)
-        if (p <= 0 or self._lq_off or crop_side < getattr(config, 'TRAIN_LQ_MIN_CROP', 128)
+        small = crop_side < getattr(config, 'TRAIN_LQ_MIN_CROP', 128)
+        if (p <= 0 or self._lq_off
+                or (small and (not getattr(config, 'TRAIN_LQ_SMALL', False)
+                               or crop_side < getattr(config, 'TRAIN_LQ_SMALL_MIN', 32)))
                 or random.random() >= p):
             return frames
         h, w = frames[0].shape[:2]
         size = None
-        if random.random() < getattr(config, 'TRAIN_LQ_SIZE_PROB', 0.5):
-            lo, hi = getattr(config, 'TRAIN_LQ_SIZE_RANGE', (48, 128))
-            hi = min(hi, int(crop_side * 0.75))      # 원래보다 확실히 작게만
-            if hi >= lo:
-                size = random.randint(lo // 2, hi // 2) * 2
-        crf = random.randint(*getattr(config, 'TRAIN_LQ_CRF_RANGE', (28, 42)))
+        c_lo, c_hi = getattr(config, 'TRAIN_LQ_CRF_RANGE', (28, 42))
+        if small:
+            # 작은 차는 이미 키운 크롭이라 224에서 압축하면 실제보다 약하므로, 원래 크기(짝수, 16 이상)로 되돌려 압축합니다.
+            size = max(16, int(round(crop_side / 2)) * 2)
+            crf = random.randint(c_lo, max(c_lo, min(c_hi, getattr(config, 'TRAIN_LQ_SMALL_CRF_MAX', 36))))
+        else:
+            if random.random() < getattr(config, 'TRAIN_LQ_SIZE_PROB', 0.5):
+                lo, hi = getattr(config, 'TRAIN_LQ_SIZE_RANGE', (48, 128))
+                hi = min(hi, int(crop_side * 0.75))      # 원래보다 확실히 작게만
+                if hi >= lo:
+                    size = random.randint(lo // 2, hi // 2) * 2
+            crf = random.randint(c_lo, c_hi)
         gop = random.choice((10, 15, 30, 60))         # CCTV 키프레임 간격(0.3~2초)
         src = [cv2.resize(f, (size, size), interpolation=cv2.INTER_AREA) for f in frames] if size else frames
         try:
@@ -496,7 +579,7 @@ class HitAndRunDataset(Dataset):
                 np.save(f, np.stack(frames, axis=0))
             os.replace(tmp, path)   # 다 쓴 뒤 이름을 바꿔, 다른 작업자가 쓰다 만 파일을 읽지 않게
         except OSError as e:
-            # 디스크가 차는 등 — 이 작업자는 저장 없이 계속한다(검증 결과는 같다)
+            # 디스크가 차는 등의 경우 이 작업자는 저장 없이 계속합니다(검증 결과는 같습니다).
             self._cache_off = True
             print(f'⚠️ 검증 클립 저장본을 쓰지 못해 저장 없이 계속합니다: {e}')
             try:
@@ -520,7 +603,8 @@ class HitAndRunDataset(Dataset):
         """fps 증강(config.TRAIN_FPS_AUG_PROB, 학습 전용 — 주석은 config)으로 몇 장마다 한 장 고를지. 안 하면 1.
         확률 0 이면 난수를 쓰지 않아 기존 학습과 같다."""
         p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0.0) or 0.0)
-        if p <= 0 or len(starts) != 1 or random.random() >= p:
+        # 충돌 전후 정상 클립과 헷갈리는 정상 묶음은 k배로 읽으면 묶음이 충돌 구간까지 늘어나므로 걸지 않습니다(난수도 쓰지 않음).
+        if p <= 0 or len(starts) != 1 or sample.get('ctx_neg') or sample.get('hardneg') or random.random() >= p:
             return 1
         fps = float(sample.get('fps', 30.0))
         ks = [k for k in getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3))
@@ -567,11 +651,14 @@ class HitAndRunDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-        # 창 시작점들. 'pre' 모드와 비충돌 샘플은 창 1개다.
+        # 묶음 시작점들입니다. 'pre' 방식과 정상 샘플은 묶음이 하나입니다.
         starts = list(sample.get('win_starts') or [sample['start_f']])
         bbox = sample['bbox']
 
         if self.augment:
+            if 'rand_range' in sample:
+                # 충돌 전후 정상의 먼 쪽 클립은 가져올 때마다 범위 안에서 새로 고릅니다(config.TRAIN_A_CONTEXT_NEG).
+                starts = [random.randint(*sample['rand_range'])]
             # ① 시간 오프셋 지터: 학습 클립이 항상 '충돌 시작 = 윈도 첫 프레임'이면
             #    추론(슬라이딩 윈도)에서 충돌이 윈도 중간에 걸릴 때 분포가 어긋난다.
             #    시작점을 조금 앞으로 당겨 충돌 위치를 윈도 내에서 다양화.
@@ -587,6 +674,10 @@ class HitAndRunDataset(Dataset):
                 # 창 1개면 max(0, start_f + d) 와 같다.
                 d = max(random.randint(-jitter, jitter), -min(starts))
                 starts = [s + d for s in starts]
+                if 'start_range' in sample:
+                    # 충돌 전후 정상 클립은 정한 범위 밖(충돌 쪽)으로 밀리지 않게 합니다(config.TRAIN_A_CONTEXT_NEG).
+                    lo, hi = sample['start_range']
+                    starts = [min(max(s, lo), hi) for s in starts]
             # ② bbox 지터: 서비스에서는 사용자가 마우스로 대충 박스를 그린다.
             #    GT 좌표 그대로만 학습하면 손그림 박스와 분포가 어긋나므로
             #    중심 이동(±5%)·크기 배율(0.9~1.15)로 부정확한 박스를 시뮬레이션.
@@ -616,19 +707,19 @@ class HitAndRunDataset(Dataset):
                 frames = self._read_frames(sample['mp4_path'], s0, n_read, bbox, r)
                 self._cache_save(cache, frames)
 
-        # 증강은 학습 세트에만 적용 (검증 세트는 결정적이어야 val loss가 안정됨)
+        # 증강은 학습 세트에만 겁니다(검증 세트는 결정적이어야 검증 손실이 안정됩니다).
         if self.augment:
-            # 불빛 증강은 장면에 비치는 빛이라 색·노이즈·저화질보다 먼저(기본 끔 — config.TRAIN_LIGHT_AUG_PROB)
+            # 불빛 증강은 장면에 비치는 빛이라 색, 노이즈, 저화질보다 먼저 겁니다(기본 끔, config.TRAIN_LIGHT_AUG_PROB).
             frames = self._apply_light(frames)
             frames = self._apply_augmentation(frames)
-            # 저화질 증강은 색·노이즈 뒤에(찍은 뒤 저장할 때 압축되는 순서). 원본 프레임 크롭 한 변으로 대상을 고른다
+            # 저화질 증강은 찍은 뒤 저장할 때 압축되는 순서에 맞춰 색, 노이즈 뒤에 겁니다. 원본 프레임 크롭 한 변으로 대상을 고릅니다.
             frames = self._apply_low_quality(frames, max(bbox[2] - bbox[0], bbox[3] - bbox[1]) * r)
 
         video = self._frames_to_tensor(frames)
         label = torch.tensor(sample['label'], dtype=torch.long)
-        if not self.span:
+        if not self.span_windows:
             return video, label
-        # (K, 3, T, H, W) — 구간을 덮는 창들
+        # (K, 3, T, H, W): 구간을 덮는 묶음들
         return torch.stack([video[:, s - s0:s - s0 + self.clip_length]
                             for s in starts]), label
 

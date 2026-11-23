@@ -18,7 +18,7 @@ from app.object_storage import LocalObjectStorage, get_storage
 router = APIRouter(prefix="/api", tags=["analysis"])
 
 
-# 대기·진행 중으로 보는 상태
+# 대기 중이거나 진행 중으로 보는 상태
 ACTIVE_STATUSES = ("PENDING", "PROCESSING")
 
 
@@ -109,7 +109,7 @@ def analyze_video(
     return _enqueue(video.id, req.model_dump(), db)
 
 
-# ⚠️ /tasks/{task_id} 보다 먼저 등록해야 한다('active' 가 task_id 로 잡히지 않게)
+# /tasks/{task_id}보다 먼저 등록해야 'active'가 task_id로 잡히지 않습니다.
 @router.get("/tasks/active", response_model=list[api_schemas.ActiveTaskOut])
 def list_active_tasks(
     db: Session = Depends(get_db),

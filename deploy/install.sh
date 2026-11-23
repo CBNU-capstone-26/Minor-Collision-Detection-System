@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SIOT 서버 설치·갱신 — Ubuntu 서버에서 코드를 받은(또는 git pull 한) 뒤 실행한다. 여러 번 실행해도 된다.
+# SIOT 서버 설치, 갱신 스크립트입니다. Ubuntu 서버에서 코드를 받은(또는 git pull한) 뒤 실행하며, 여러 번 실행해도 됩니다.
 #
 #   sudo ./deploy/install.sh                설치·갱신: 화면 빌드 → Redis → 백엔드·워커 → nginx
 #   ./deploy/install.sh --dry-run <폴더>     설치하지 않고 만들어질 설정 파일만 <폴더>에 쓴다(확인용)
@@ -18,7 +18,7 @@ log()  { printf '\033[1;36m[install]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[install]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[install]\033[0m %s\n' "$*" >&2; exit 1; }
 
-# .env 에서 값 하나 읽기 (KEY=VALUE 줄, 마지막 것)
+# .env에서 값 하나를 읽습니다(KEY=VALUE 줄 중 마지막 것).
 env_get() {
   [[ -f "$REPO/.env" ]] || return 0
   sed -n "s/^$1=//p" "$REPO/.env" | tail -n 1 | tr -d '\r'
@@ -49,7 +49,7 @@ render() {
   sed -e "s|__REPO__|$REPO|g" -e "s|__USER__|$RUN_USER|g" -e "s|__DOMAIN__|$SERVER_NAME|g" "$1"
 }
 
-# ── 확인용: 파일만 만들어 보고 끝 ──────────────────────────────────────
+# 확인용: 파일만 만들어 보고 끝냅니다.
 if [[ -n "$DRY" ]]; then
   mkdir -p "$DRY"
   render "$REPO/deploy/systemd/siot-backend.service" > "$DRY/siot-backend.service"
@@ -60,7 +60,7 @@ if [[ -n "$DRY" ]]; then
   exit 0
 fi
 
-# ── 준비물 확인 ───────────────────────────────────────────────────────
+# 준비물 확인
 [[ $EUID -eq 0 ]] || die "sudo 로 실행하세요: sudo ./deploy/install.sh"
 [[ "$RUN_USER" != "root" ]] || die "root 계정이 아니라 평소 계정에서 sudo 로 실행하세요(서비스가 그 계정으로 돕니다)"
 [[ -x "$REPO/venv311/bin/python" ]] || die "venv311 이 없습니다 — deploy/DEPLOY.md 2단계"
@@ -139,7 +139,7 @@ if [[ "$NODE_SUPPORTED" == "1" ]]; then
   log "화면 빌드 (node v$NODE_VERSION)"
   sudo -u "$RUN_USER" bash -lc "
     set -e; cd '$REPO/ui'
-    # package-lock.json 이 바뀌었거나 처음이면 패키지를 새로 설치한다
+    # package-lock.json이 바뀌었거나 처음이면 패키지를 새로 설치합니다.
     if [[ ! -f node_modules/.package-lock.json || package-lock.json -nt node_modules/.package-lock.json ]]; then
       npm ci --no-audit --no-fund
     fi
@@ -158,7 +158,7 @@ else
 fi
 chmod -R a+rX /var/www/siot
 
-# ── 2) 영상 저장 폴더 (다른 디스크로 옮겼으면 권한을 맞춘다) ─────────────
+# 2) 영상 저장 폴더(다른 디스크로 옮겼으면 권한을 맞춥니다)
 STORAGE="$(env_get STORAGE_DIR)"
 if [[ -n "$STORAGE" ]]; then
   [[ "$STORAGE" = /* ]] || STORAGE="$REPO/$STORAGE"
@@ -180,7 +180,7 @@ else
   log "외부 PostgreSQL·Redis 설정을 사용합니다"
 fi
 
-# ── 4) 백엔드·워커 서비스 ──────────────────────────────────────────────
+# 4) 백엔드와 워커 서비스
 log "백엔드·워커 서비스 등록·재시작 (실행 계정 $RUN_USER)"
 for unit in siot-backend siot-worker; do
   render "$REPO/deploy/systemd/$unit.service" > "/etc/systemd/system/$unit.service"
@@ -189,7 +189,7 @@ systemctl daemon-reload
 systemctl enable siot-backend siot-worker >/dev/null
 systemctl restart siot-backend siot-worker
 
-# ── 5) nginx ──────────────────────────────────────────────────────────
+# 5) nginx
 log "nginx 설정 (${HTTPS:+HTTPS, }도메인 $SERVER_NAME)"
 install -m 644 "$REPO/deploy/nginx/siot-common.conf" /etc/nginx/snippets/siot-common.conf
 render "$NGINX_TEMPLATE" > /etc/nginx/sites-available/siot.conf
@@ -202,7 +202,7 @@ nginx -t
 systemctl enable nginx >/dev/null
 systemctl reload nginx 2>/dev/null || systemctl restart nginx
 
-# ── 6) 확인 ───────────────────────────────────────────────────────────
+# 6) 확인
 log "백엔드가 뜨기를 기다립니다(최대 90초)"
 for _ in $(seq 1 45); do
   if curl -fsS http://127.0.0.1:8000/ >/dev/null 2>&1; then

@@ -158,7 +158,7 @@ class VehicleBBoxDetector:
                 interpolation=cv2.INTER_NEAREST,
             )
 
-        # 작은 구멍이나 끊긴 mask를 약하게 정리한다.
+        # 작은 구멍이나 끊긴 마스크를 약하게 정리합니다.
         kernel = np.ones((3, 3), dtype=np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
 
@@ -185,13 +185,13 @@ class VehicleBBoxDetector:
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         if float(gray.mean()) >= brightness_thresh:
             return frame_bgr
-        # CLAHE는 LAB의 L(밝기) 채널에만 적용 → 색 왜곡 없이 대비만 향상
+        # CLAHE는 LAB의 L(밝기) 채널에만 적용해 색은 그대로 두고 대비만 높입니다.
         lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
         l_ch, a_ch, b_ch = cv2.split(lab)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         l_ch = clahe.apply(l_ch)
         enhanced = cv2.cvtColor(cv2.merge((l_ch, a_ch, b_ch)), cv2.COLOR_LAB2BGR)
-        # 감마 보정(<1) → 어두운 영역을 밝게
+        # 1보다 작은 감마로 어두운 영역을 밝게 합니다.
         gamma = 0.7
         table = np.array([((i / 255.0) ** gamma) * 255
                           for i in range(256)], dtype=np.uint8)
@@ -235,7 +235,7 @@ class VehicleBBoxDetector:
             if tight_bbox is None:
                 tight_bbox = self._clip_box(x1, y1, x2, y2, width, height)
 
-            # (엣지 정밀도는 마스크로 결정 — blind 좌우 shrink 휴리스틱은 사용하지 않음)
+            # 가장자리 정밀도는 마스크로 정합니다.
             bx1, by1, bx2, by2 = tight_bbox
             if bx2 <= bx1 or by2 <= by1:
                 continue
@@ -275,7 +275,7 @@ def read_source_frame(source: Path, frame_index: int = 0) -> np.ndarray:
     return frame
 
 
-# 프로세스당 탐지기(YOLO 모델)를 1회만 로드해 재사용 — 매 요청 재로드 오버헤드 제거.
+# 탐지기(YOLO 모델)를 프로세스마다 한 번만 불러와 재사용합니다.
 _detector_cache: dict = {}
 
 

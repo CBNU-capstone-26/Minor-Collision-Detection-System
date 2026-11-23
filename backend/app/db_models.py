@@ -64,7 +64,7 @@ class AnalysisTask(Base):
     video_id = Column(Integer, ForeignKey("videos.id"), nullable=False)
     celery_task_id = Column(String(255), unique=True, index=True, nullable=True)
 
-    # 사용자가 지정한 대상 차량 bbox (원본 해상도 픽셀 좌표)
+    # 사용자가 지정한 대상 차량 박스(원본 해상도 픽셀 좌표)
     bbox_xmin = Column(Integer, nullable=False)
     bbox_ymin = Column(Integer, nullable=False)
     bbox_xmax = Column(Integer, nullable=False)
@@ -125,7 +125,7 @@ class CrashEvent(Base):
     # 구간 시작
     timestamp_sec = Column(Float, nullable=False)
     frame_number = Column(Integer, nullable=False)
-    # 구간 종료 (클립 길이/구간 표시용)
+    # 구간 끝
     end_timestamp_sec = Column(Float, nullable=True)
     end_frame_number = Column(Integer, nullable=True)
 

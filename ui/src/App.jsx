@@ -213,7 +213,7 @@ function TrashIcon({ size = 14 }) {
   );
 }
 
-// 재생 컨트롤 아이콘 — 이모지(▶ ⏸ ⛶)는 OS·글꼴마다 모양과 크기가 달라 SVG 로 그린다
+// 재생 컨트롤 아이콘입니다. 재생, 일시정지, 전체화면 이모지는 OS와 글꼴마다 모양과 크기가 달라 SVG로 그립니다.
 const PLAYER_ICON_PATHS = {
   play: <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />,
   pause: (
@@ -265,7 +265,7 @@ function PlayerIcon({ name, size = 18 }) {
   );
 }
 
-// 그리드의 지금 열 수 — CSS(auto-fill)가 화면 폭·배율에 맞춰 정한 값을 읽는다. el 이 바뀌거나 크기가 바뀌면 다시 읽는다
+// 그리드의 지금 열 수입니다. CSS(auto-fill)가 화면 폭과 배율에 맞춰 정한 값을 읽고, el이나 크기가 바뀌면 다시 읽습니다.
 function useGridColumns(el, fallback = 3) {
   const [cols, setCols] = useState(fallback);
   useEffect(() => {
@@ -312,7 +312,7 @@ function clipEventsAhead(events, t, selectedId, lead) {
 let toastSeq = 0; // 하단 알림 번호 (showToast)
 let bboxSeq = 0; // 고른 차량 박스 번호
 
-// 화면 너비 조건(CSS 미디어쿼리)이 지금 맞는지 — 창 크기가 바뀌면 다시 그린다
+// 화면 너비 조건(CSS 미디어쿼리)이 지금 맞는지 돌려줍니다. 창 크기가 바뀌면 다시 그립니다.
 function useMediaQuery(query) {
   const subscribe = useCallback(
     (onChange) => {
@@ -325,7 +325,7 @@ function useMediaQuery(query) {
   return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches);
 }
 
-// 검색 아이콘 — 색 없이 선만 있는 돋보기 (이모지 🔍 는 OS 마다 색·모양이 달라서)
+// 검색 아이콘입니다. 돋보기 이모지는 OS마다 색과 모양이 달라 색 없이 선만 있는 돋보기를 그립니다.
 function SearchIcon({ size = 16 }) {
   return (
     <svg
@@ -345,11 +345,11 @@ function SearchIcon({ size = 16 }) {
   );
 }
 
-// 로그인이 만료돼 돌아왔으면(/login?expired=1) 로그인 창을 열고 안내한다
+// 로그인이 만료돼 돌아왔으면(/login?expired=1) 로그인 창을 열고 안내합니다.
 const AUTH_EXPIRED_MSG = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
 const cameFromExpiredLogin = () => new URLSearchParams(window.location.search).has("expired");
 
-// 로그인·회원가입 팝업이 사라지는 효과 시간 — App.css 의 public-overlay-out·public-modal-out 과 같게
+// 로그인, 회원가입 팝업이 사라지는 효과 시간입니다. App.css의 public-overlay-out, public-modal-out과 같게 둡니다.
 const MODAL_EXIT_MS = 200;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
@@ -635,7 +635,7 @@ function SignupModal({ onClose, onBackToLogin }) {
     }
   };
 
-  // 어두운 배경(login-modal-overlay)은 LoginPage 가 로그인 창과 함께 쓴다
+  // 어두운 배경(login-modal-overlay)은 LoginPage가 로그인 창과 함께 씁니다.
   return (
     <div className="login-modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title" onClick={(e) => e.stopPropagation()}>
       <button className="login-modal-close" onClick={onClose} aria-label="회원가입 창 닫기">×</button>
@@ -802,7 +802,7 @@ function formatTime(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-// 분석이 끝나 사고 의심 클립이 만들어진 일시 — ['YYYY-MM-DD', '04시 09분'] (보는 사람 컴퓨터의 시간대)
+// 분석이 끝나 사고 의심 클립이 만들어진 일시를 ['YYYY-MM-DD', '04시 09분']으로 돌려줍니다(보는 사람 컴퓨터의 시간대).
 function formatAnalyzedAt(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -811,7 +811,7 @@ function formatAnalyzedAt(iso) {
   return [`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, `${p(d.getHours())}시 ${p(d.getMinutes())}분`];
 }
 
-// 걸린 시간 — '45초', '3분 12초', '1시간 5분'
+// 걸린 시간을 '45초', '3분 12초', '1시간 5분'처럼 돌려줍니다.
 function formatDuration(sec) {
   if (sec == null || !Number.isFinite(sec) || sec < 0) return "";
   const s = Math.round(sec);
@@ -842,7 +842,7 @@ function AnalysisHistoryPanel({ history, events, progressText, onSelect, activeN
     const left = remain[h.no] || 0;
     if (h.status === "SUCCESS") {
       if (h.eventCount == null) {
-        // 이력 기능 전 분석 — 찾은 수를 몰라 남은 수만 보여 준다
+        // 이력 기능 이전 분석은 찾은 수를 몰라 남은 수만 보여 줍니다.
         return left > 0 ? { text: `사고 의심 클립 ${left}개` } : { text: "남은 클립 없음", cls: "muted" };
       }
       if (h.eventCount === 0) return { text: "사고 의심 구간 없음", cls: "muted" };
@@ -882,7 +882,7 @@ function AnalysisHistoryPanel({ history, events, progressText, onSelect, activeN
                 ? formatDuration((new Date(h.finishedAt) - new Date(h.requestedAt)) / 1000)
                 : "";
             const result = resultOf(h);
-            // 남은 클립이 있는 분석만 눌러서 클립을 볼 수 있다 — 없으면 눌러도 아무 일도 없는 일반 칸
+            // 남은 클립이 있는 분석만 눌러서 클립을 볼 수 있습니다. 없으면 눌러도 아무 일도 없는 일반 칸입니다.
             const hasClips = (remain[h.no] || 0) > 0;
             const body = (
               <>
@@ -1256,7 +1256,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     return videos.filter((video) => video.date >= startDate);
   }, [filterDays, videos]);
 
-  // 기간 + 검색어 필터링 — 영상 목록 페이지용
+  // 기간과 검색어로 거른 목록입니다(영상 목록 페이지용).
   const filteredVideos = useMemo(() => {
     let list = periodVideos;
 
@@ -1265,7 +1265,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      // 제목은 카드에 보이는 그대로('2026-10-12 녹화본 #5')로 찾는다
+      // 제목은 카드에 보이는 그대로('2026-10-12 녹화본 #5')로 찾습니다.
       list = list.filter(
         (v) =>
           (v.date || "").toLowerCase().includes(q) ||
@@ -1292,7 +1292,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const totalPages = Math.max(1, Math.ceil(filteredVideos.length / VIDEOS_PER_PAGE));
   const visiblePage = Math.min(currentPage, totalPages);
 
-  // 한 페이지 개수가 바뀌면(창 크기·배율 변경) 보던 첫 영상이 들어 있는 페이지로 옮긴다
+  // 한 페이지 개수가 바뀌면(창 크기나 배율 변경) 보던 첫 영상이 들어 있는 페이지로 옮깁니다.
   const prevPerPage = useRef(VIDEOS_PER_PAGE);
   useEffect(() => {
     if (prevPerPage.current === VIDEOS_PER_PAGE) return;
@@ -1346,7 +1346,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     }
   };
 
-  // 영상을 클릭하여 시청 모드로 진입 → URL 이동
+  // 영상을 누르면 재생 화면으로 들어가고 URL을 옮깁니다.
   const handleWatchVideo = (video) => {
     navigate(`/videos/${video.id}`);
   };
@@ -1391,7 +1391,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     }
   };
 
-  // 영상의 모든 사고 이벤트 전체 삭제 — 개별 삭제와 같은 확인 창을 거친다
+  // 영상의 모든 사고 이벤트를 삭제합니다. 하나씩 지울 때와 같은 확인 창을 거칩니다.
   const requestClearAllEvents = () => {
     if (!selectedVideo || selectedVideo.events.length === 0) return;
     setPendingClearAll(true);
@@ -1438,7 +1438,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
 
   // 수동 차량 지정 모드 시작
   const handleStartManualDesignate = () => {
-    // 차량 탐지처럼 영상을 멈춰, 지금 보이는 화면에서 차량을 그리게 한다
+    // 차량 탐지처럼 영상을 멈춰, 지금 보이는 화면에서 차량을 그리게 합니다.
     if (videoElRef.current) {
       videoElRef.current.pause();
       setIsPlaying(false);
@@ -1446,7 +1446,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     setSelectionMode("manual");
     setIsBBoxMode(true);
     setHoveredDetectedBox(null);
-    // 안내 문구는 잠깐 뜨는 알림 대신 버튼 위 말풍선으로 모드가 끝날 때까지 띄운다 (.designate-hint)
+    // 안내 문구는 잠깐 뜨는 알림 대신 버튼 위 말풍선(.designate-hint)으로 모드가 끝날 때까지 띄웁니다.
   };
 
   // 탐지/지정 모드 해제
@@ -1469,7 +1469,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     showToast("차량 탐지가 취소되었습니다.", "info");
   };
 
-  // YOLO 차량 탐지 실행 (영상 pause → 백엔드 탐지 → Hover 선택 활성화)
+  // YOLO 차량 탐지를 실행합니다(영상을 멈추고, 백엔드에서 탐지한 뒤, 마우스를 올려 고를 수 있게 합니다).
   const handleAutoDetectVehicles = async () => {
     if (!selectedVideo) return;
     if (videoElRef.current) {
@@ -1504,7 +1504,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       const list = result.detected_vehicles || [];
       setDetectedBoxes(list);
       setIsBBoxMode(true);
-      // 탐지 성공은 알리지 않는다(영상 위에 차량이 바로 표시됨). 한 대도 없을 때만 다음 행동을 안내한다.
+      // 탐지에 성공하면 알리지 않습니다(영상 위에 차량이 바로 표시됩니다). 한 대도 없을 때만 다음 행동을 안내합니다.
       if (list.length === 0) {
         showToast("탐지된 차량이 없습니다. 직접 차량 지정을 이용해 주세요.", "warning");
       }
@@ -1521,7 +1521,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
 
 
 
-  // '사고 구간 찾기' 클릭 → 차량 박스가 없으면 경고, 있으면 확인 팝오버
+  // '사고 구간 찾기'를 누르면 차량 박스가 없을 때 경고하고, 있으면 확인 팝오버를 띄웁니다.
   const handleAnalyzeClick = () => {
     if (bboxList.length === 0) {
       showToast("사고를 감지할 차량을 드래그하여 주십시오.", "warning");
@@ -1538,7 +1538,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       const v = await api.getVideo(videoId);
       setSelectedVideo((current) => current?.id === videoId ? v : current);
     } catch {
-      /* 이력 갱신에 실패해도 다음 갱신 때 맞춰진다 */
+      /* 이력 갱신에 실패해도 다음 갱신 때 맞춰집니다. */
     }
   };
 
@@ -1563,7 +1563,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
   const removeJob = (taskId) =>
     setAnalyzingJobs((prev) => prev.filter((j) => j.taskId !== taskId));
 
-  // 분석이 끝났을 때: 화면 안 토스트 + 다른 탭·창을 보고 있으면 브라우저 알림
+  // 분석이 끝나면 화면 안 토스트를 띄우고, 다른 탭이나 창을 보고 있으면 브라우저 알림도 띄웁니다.
   const notifyDone = (title, body, type) => {
     showToast(`${title}: ${body}`, type, 7000); // 분석 결과는 놓치지 않게 7초
     try {
@@ -1645,7 +1645,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     poll();
   };
 
-  // 실패·중단된 마지막 분석을 같은 차량 박스로 다시 실행
+  // 실패하거나 중단된 마지막 분석을 같은 차량 박스로 다시 실행합니다.
   const handleRetryAnalysis = async () => {
     const last = selectedVideo?.lastTask;
     if (!last) return;
@@ -1698,7 +1698,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
           pollTask(t.task_id, t.video_id);
         });
       } catch {
-        /* 복원 실패는 치명적이지 않다 — 새 분석 요청은 그대로 동작 */
+        /* 복원에 실패해도 새 분석 요청은 그대로 동작합니다. */
       }
     })();
     return () => {
@@ -1707,13 +1707,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 확인 팝오버에서 '실행' → bbox 원본해상도 환산 후 분석 요청
+  // 확인 팝오버에서 '실행'을 누르면 박스를 원본 해상도로 바꿔 분석을 요청합니다.
   const runAnalysis = async () => {
     setShowAnalyzeConfirm(false);
     const box = bboxList[0];
     if (!box) return;
 
-    // bboxList 는 원본 영상 해상도 좌표 — 지금 화면 크기와 상관없이 그대로 보낸다
+    // bboxList는 원본 영상 해상도 좌표라 지금 화면 크기와 상관없이 그대로 보냅니다.
     const bbox = {
       bbox_xmin: box.xmin,
       bbox_ymin: box.ymin,
@@ -1739,14 +1739,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       startedAt: Date.now(),
     };
 
-    // 분석이 끝나면 다른 탭에 있어도 알려 주도록 처음 한 번 알림 권한을 묻는다
+    // 분석이 끝나면 다른 탭에 있어도 알려 주도록 처음 한 번 알림 권한을 묻습니다.
     try {
       if ("Notification" in window && Notification.permission === "default") {
         const r = Notification.requestPermission();
         if (r && r.catch) r.catch(() => {});
       }
     } catch {
-      /* 알림을 지원하지 않는 브라우저 — 토스트만 쓴다 */
+      /* 알림을 지원하지 않는 브라우저는 토스트만 씁니다. */
     }
 
     const controller = new AbortController();
@@ -1757,7 +1757,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       job.taskId = res.task_id;
       job.status = res.status;
       if (res.already_running) {
-        // 같은 영상에 이미 대기·진행 중인 분석이 있으면 서버가 새로 만들지 않고 그 작업을 준다
+        // 같은 영상에 이미 대기 중이거나 진행 중인 분석이 있으면 서버가 새로 만들지 않고 그 작업을 돌려줍니다.
         showToast("이 영상은 이미 분석 중입니다. 진행 상황을 이어서 보여드릴게요.", "info");
       }
       setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === res.task_id) ? prev : [...prev, job]));
@@ -1923,7 +1923,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     togglePlay();
   }, [dismissVideoTapControls, isDetectingVehicles, showPlayerFeedback, togglePlay]);
 
-  // 재생바 길이 기준 — 실제 영상 길이(소수)를 쓰고, 영상 정보를 받기 전엔 서버가 준 길이(정수 초)
+  // 재생바 길이 기준입니다. 실제 영상 길이(소수)를 쓰고, 영상 정보를 받기 전에는 서버가 준 길이(정수 초)를 씁니다.
   const playerDuration = mediaDuration || selectedVideo?.duration || 0;
   const seekBySeconds = (delta) => {
     const video = videoElRef.current;
@@ -1944,7 +1944,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     return currentTime >= start && currentTime <= end;
   });
 
-  // 재생바: 누르거나 누른 채 끌어서 탐색하고, 마우스를 올리면 그 위치의 시각을 말풍선으로 보여준다
+  // 재생바: 누르거나 누른 채 끌어서 이동하고, 마우스를 올리면 그 위치의 시각을 말풍선으로 보여 줍니다.
   const seekRatioAt = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return 0;
@@ -1988,7 +1988,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     const bubble = seekHoverRef.current;
     if (!bubble) return;
     bubble.textContent = formatTime(Math.floor(ratio * playerDuration));
-    // 양 끝에서 말풍선이 재생바 밖으로 잘리지 않게 안쪽으로 붙인다
+    // 양 끝에서 말풍선이 재생바 밖으로 잘리지 않게 안쪽으로 붙입니다.
     const width = e.currentTarget.getBoundingClientRect().width;
     const half = bubble.offsetWidth / 2;
     bubble.style.left = `${Math.min(width - half, Math.max(half, ratio * width))}px`;
@@ -2241,7 +2241,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     return () => ro.disconnect();
   }, [selectedVideo?.id, view]);
 
-  // 분석 이력에서 분석을 고르면, 그 분석의 첫 클립이 보이도록 왼쪽 목록을 스크롤한다
+  // 분석 이력에서 분석을 고르면, 그 분석의 첫 클립이 보이도록 왼쪽 목록을 스크롤합니다.
   useEffect(() => {
     if (highlightAnalysisNo == null) return;
     const el = eventListRef.current?.querySelector(".event-item.analysis-highlight");
@@ -2277,7 +2277,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     selectedVideoIdRef.current = selectedVideo?.id ?? null;
   }, [selectedVideo]);
 
-  // 현재 보고 있는 영상이 분석 중인지 (영상별로 판정 — 다른 영상엔 영향 없음)
+  // 현재 보고 있는 영상이 분석 중인지 영상별로 판정합니다(다른 영상에는 영향 없음).
   const isAnalyzing =
     !!selectedVideo && analyzingJobs.some((j) => j.videoId === selectedVideo.id);
 
@@ -2328,16 +2328,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     const pct = serverP;
 
     const ph = PHASE_TEXT[job.phase]?.(job.phaseCount, job.phaseIndex) ?? { main: "분석 중" };
-    // 상단 대표 칸: 단계 문구(가운데)와 진행률(맨 오른쪽, pctText)을 따로 보여 준다
+    // 상단 대표 칸에는 단계 문구(가운데)와 진행률(맨 오른쪽, pctText)을 따로 보여 줍니다.
     const statusText =
       stage === "queued" ? phaseText(null, "서버에 분석을 요청하는 중")
         : stage === "starting" ? phaseText(null, "분석 준비 중")
           : phaseText(null, ph.main, ph.extra);
     const pctText = stage === "running" ? `${Math.round(pct)}%` : null;
-    // 서버 병목으로 기다린다는 걸 알리는 게 목적이라, 요청 단계 문구는 줄이지 않는다
+    // 서버 병목으로 기다린다는 것을 알리는 게 목적이라 요청 단계 문구는 줄이지 않습니다.
     const shortText =
       stage === "queued" ? "서버에 분석을 요청하는 중" : stage === "starting" ? "준비 중" : `${Math.round(pct)}%`;
-    // 펼친 목록의 아랫줄 — 윗줄(짧은 칸: %)과 겹치지 않게 단계만
+    // 펼친 목록의 아랫줄은 윗줄(짧은 칸의 %)과 겹치지 않게 단계만 보여 줍니다.
     const detailText =
       stage === "queued" ? "서버의 앞선 분석이 끝나면 자동으로 시작됩니다"
         : stage === "starting" ? phaseText(null, "분석 준비 중") : phaseText(null, ph.main, ph.extra);
@@ -2357,7 +2357,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     return detectedBoxes.find(({ bbox: [x1, y1, x2, y2] }) => realX >= x1 && realX <= x2 && realY >= y1 && realY <= y2) || null;
   };
 
-  // 영상 칸 크기(w, h) → 원본 해상도와의 배율·레터박스 여백. 해상도는 서버가 분석에 쓰는 크기(DB width/height)
+  // 영상 칸 크기(w, h)로 원본 해상도와의 배율과 레터박스 여백을 계산합니다. 해상도는 서버가 분석에 쓰는 크기(DB width, height)입니다.
   const geomFor = (w, h) => {
     const vw = selectedVideo?.width || w;
     const vh = selectedVideo?.height || h;
@@ -2370,14 +2370,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
       offsetY: (h - vh * scale) / 2, // 상하 레터박스 여백
     };
   };
-  // 마우스·터치 처리용 — 지금 영상 칸 크기를 직접 잰다
+  // 마우스와 터치 처리용으로, 지금 영상 칸 크기를 직접 잽니다.
   const getVideoGeom = () => {
     const el = bboxOverlayRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return geomFor(rect.width, rect.height);
   };
-  // 그리기용 — ResizeObserver 가 기록한 영상 칸 크기로 계산(크기가 바뀌면 다시 그려진다)
+  // 그리기용으로, ResizeObserver가 기록한 영상 칸 크기로 계산합니다(크기가 바뀌면 다시 그려집니다).
   const renderGeom = overlaySize ? geomFor(overlaySize.w, overlaySize.h) : null;
 
   // 고른 차량 박스(bboxList)는 원본 영상 해상도 좌표로 저장한다.
@@ -2391,7 +2391,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
     const oy = (y) => Math.round(Math.min(g.vh, Math.max(0, (y - g.offsetY) / g.scale)));
     return { xmin: ox(x1), ymin: oy(y1), xmax: ox(x2), ymax: oy(y2) };
   };
-  // 원본 좌표 → 지금 영상 칸의 화면 위치
+  // 원본 좌표를 지금 영상 칸의 화면 위치로 바꿉니다.
   const toDispBox = (box) => {
     const g = renderGeom;
     if (!g) return null;
@@ -2792,7 +2792,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                             <div className="analysis-job-top">
                               <span className="analysis-job-name">
                                 {(() => {
-                                  // 같은 날짜 영상이 여럿이면 '녹화본 #N' 으로 구분해 보여준다
+                                  // 같은 날짜 영상이 여럿이면 '녹화본 #N'으로 구분해 보여 줍니다.
                                   const v = videos.find((x) => x.id === job.videoId);
                                   return v ? getVideoDisplayTitle(v, videos) : job.dateLabel;
                                 })()}
@@ -3379,7 +3379,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                       toggleDesktopVideoPlayback();
                     }
                   }}
-                  /* 박스 그리기·차량 고르기는 pointer 이벤트 — 마우스·터치(폰·태블릿)·펜 모두 같은 코드로 동작 */
+                  /* 박스 그리기와 차량 고르기는 pointer 이벤트로 처리해 마우스, 터치(폰, 태블릿), 펜 모두 같은 코드로 동작합니다. */
                   onPointerDown={(e) => {
                     if (!isBBoxMode) {
                       if (e.isPrimary && e.button === 0 && !e.target.closest("button")) {
@@ -3427,7 +3427,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
 
                     if (selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom()) {
                       const { scale, offsetX, offsetY } = getVideoGeom();
-                      // 화면(오버레이) 좌표 → 레터박스 여백 제거 → 원본 해상도 좌표
+                      // 화면(오버레이) 좌표에서 레터박스 여백을 빼고 원본 해상도 좌표로 바꿉니다.
                       const realX = (e.clientX - rect.left - offsetX) / scale;
                       const realY = (e.clientY - rect.top - offsetY) / scale;
 
@@ -3493,17 +3493,17 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser, isDarkMode, setI
                     onDragStart={(e) => e.preventDefault()}
 
                     onPlay={(e) => {
-                      // 키보드 미디어 키·브라우저/OS 미디어 조작으로 재생돼도 탐지 중이면 바로 멈춘다
+                      // 키보드 미디어 키나 브라우저, OS 미디어 조작으로 재생돼도 탐지 중이면 바로 멈춥니다.
                       if (isDetectingVehicles) {
                         e.currentTarget.pause();
                         return;
                       }
-                      // 탐지 박스는 탐지한 순간의 화면 기준이라 재생하면 어긋난다 → 자동 탐지 모드를 끝낸다(고른 박스는 남는다)
+                      // 탐지 박스는 탐지한 순간의 화면 기준이라 재생하면 어긋나므로 자동 탐지 모드를 끝냅니다(고른 박스는 남습니다).
                       if (selectionMode === "auto") handleEndDesignateMode();
                       setIsPlaying(true);
                     }}
                     onSeeking={() => {
-                      // 다른 장면으로 옮겨도(재생바·사고 의심 구간) 마찬가지
+                      // 다른 장면으로 옮겨도(재생바, 사고 의심 구간) 마찬가지입니다.
                       if (selectionMode === "auto" && !isDetectingVehicles) handleEndDesignateMode();
                     }}
                     onPause={() => setIsPlaying(false)}

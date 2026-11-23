@@ -12,6 +12,7 @@
     python -m model.main --mode suggest --run outputs/trainlogs/<회차 폴더>   # 학습 중·중단 후에도
 """
 import csv
+import shlex
 from pathlib import Path
 
 import config
@@ -44,6 +45,20 @@ def _top(rows, key, k, gap):
     return picked
 
 
+def _epoch_file(ep_dir, e):
+    hit = sorted(ep_dir.glob(f'*_ep{e:03d}.pth')) if ep_dir.exists() else []
+    return hit[0] if hit else None
+
+
+def candidate_paths(run_dir):
+    """추천 에포크 가중치의 절대 경로(파일이 있는 것만) — main --mode suggest --paths 가 한 줄에 하나씩 낸다.
+    이어 돌리는 서버 명령이 출력에서 경로를 정규식으로 뽑다가 상대 경로 앞부분(outputs)을 잘라 먹은 일이 있어(11-22) 따로 둔다."""
+    pick, _ = suggest(run_dir)
+    run_dir = Path(run_dir)
+    ep_dir = (run_dir.parent if run_dir.suffix == '.csv' else run_dir) / 'epochs'
+    return [p.resolve() for p in (_epoch_file(ep_dir, e) for e in pick) if p]
+
+
 def suggest(run_dir, k=None, gap=None):
     """(추천 에포크 목록, 출력 줄들). run_dir 은 회차 폴더(또는 그 안의 trainlog CSV)."""
     k = int(k or getattr(config, 'TRAIN_SUGGEST_TOPK', 2))
@@ -54,16 +69,16 @@ def suggest(run_dir, k=None, gap=None):
         return [], [f"학습 곡선 CSV 가 없습니다: {run_dir}"]
     run_dir = csv_path.parent
     with open(csv_path, encoding='utf-8') as fh:
-        rows = [r for r in csv.DictReader(fh) if r.get('epoch')]
+        rows = [r for r in csv.DictReader(fh) if r.get('epoch') and r.get('grace') != '1']
     if not rows:
         return [], ["학습 곡선이 아직 비어 있습니다"]
-    # 실제 영상 검증이 있으면 그쪽, 없으면 RC 검증
+    # 실제 영상 검증이 있으면 그것을, 없으면 RC 검증을 씁니다.
     dom = 'real' if any(_f(r, 'val_real_bal') is not None for r in rows) else 'rc'
     bal = f'val_{dom}_bal'
     picks = {
         '판단지표': _top(rows, lambda r: _f(r, 'monitor'), k, gap),
         '균형손실': _top(rows, lambda r: _f(r, bal), k, gap),
-        # F1 이 같으면 균형손실이 낮은 쪽
+        # F1이 같으면 균형 손실이 낮은 쪽
         'F1': _top(rows, lambda r: (-_f1(r, dom), _f(r, bal) if _f(r, bal) is not None else 9.0), k, gap),
     }
     pick = sorted({e for v in picks.values() for e in v})
@@ -71,8 +86,7 @@ def suggest(run_dir, k=None, gap=None):
     ep_dir = run_dir / 'epochs'
 
     def _file(e):
-        hit = sorted(ep_dir.glob(f'*_ep{e:03d}.pth')) if ep_dir.exists() else []
-        return hit[0] if hit else None
+        return _epoch_file(ep_dir, e)
 
     def _n(v):
         return '-' if v is None else f'{v:.2f}'
@@ -80,7 +94,7 @@ def suggest(run_dir, k=None, gap=None):
     lines = [f"[평가 추천] 기준마다 상위 {k}개(서로 {gap}에포크 이상 떨어진 것) — ① 판단 지표 ② 그 에포크 {dom} "
              f"균형손실 ③ 그 에포크 {dom} F1. 후보일 뿐이고 최종 선택은 평가 영상으로",
              f"  {'에포크':>6}{'판단지표':>10}{dom + ' 균형':>10}{dom + ' 재현율':>11}{dom + ' 정밀도':>11}"
-             f"{dom + ' F1':>8}{'rc 균형':>9}  {'뽑힌 기준':<16}가중치"]
+             f"{dom + ' F1':>8}{'구간 재현율':>9}{'구분력':>7}{'rc 균형':>9}  {'뽑힌 기준':<16}가중치"]
     files = []
     for e in pick:
         r = by_ep[e]
@@ -89,15 +103,27 @@ def suggest(run_dir, k=None, gap=None):
         why = '·'.join(name for name, eps in picks.items() if e in eps)
         lines.append(f"  {e:>6}{_n(_f(r, 'monitor')):>10}{_n(_f(r, bal)):>10}"
                      f"{_n(_f(r, f'val_{dom}_recallA')):>11}{_n(_f(r, f'val_{dom}_precA')):>11}"
-                     f"{_n(_f1(r, dom)):>8}{_n(_f(r, 'val_rc_bal')):>9}  {why:<16}"
+                     f"{_n(_f1(r, dom)):>8}{_n(_f(r, f'val_{dom}_spanRecA')):>9}{_n(_f(r, f'val_{dom}_auc')):>7}"
+                     f"{_n(_f(r, 'val_rc_bal')):>9}  {why:<16}"
                      f"{fp.name if fp else '(없음 — 에포크별 저장 전 학습)'}")
     have = [p for p in files if p]
     if have:
         from hitandrun_model import weights_head_pool, weights_input_size
-        lines.append("  평가 명령(가중치 학습 설정을 자동으로 맞춥니다):")
+        lines.append("  평가 명령(하나씩 차례로 · 화면 로그는 outputs/console/):")
+        lines.append("    mkdir -p outputs/console && {")
         for path in have:
             size = weights_input_size(path.name)
             pool = weights_head_pool(path.name)
             env = (f"INPUT_SIZE={size} " if size else "") + (f"HEAD_TEMPORAL_POOL={pool} " if pool != 'avg' else "")
-            lines.append(f'    {env}python -u -m model.main --mode eval --weights "{path}"')
+            lines.append(f'      {env}python -u -m model.main --mode eval --weights {shlex.quote(str(path))};')
+        eval_log = shlex.quote(f'outputs/console/eval_{run_dir.name}_')
+        lines.append(f'    }} 2>&1 | tee {eval_log}$(date +%y%m%d_%H%M).log')
+        lines.append("  권장: 검증 영상 서비스 판정으로 순위(후반 절반 에포크를 재고 상위 2개 평가 명령을 냄):")
+        size = weights_input_size(have[0].name)
+        pool = weights_head_pool(have[0].name)
+        env = (f"INPUT_SIZE={size} " if size else "") + (f"HEAD_TEMPORAL_POOL={pool} " if pool != 'avg' else "")
+        rank_log = shlex.quote(f'outputs/console/rank_{run_dir.name}_')
+        lines.append(f"    mkdir -p outputs/console && {env}python -u -m model.epoch_rank "
+                     f"--run {shlex.quote(str(run_dir))} 2>&1 "
+                     f"| tee {rank_log}$(date +%y%m%d_%H%M).log")
     return pick, lines

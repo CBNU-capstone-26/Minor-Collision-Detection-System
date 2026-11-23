@@ -66,7 +66,7 @@ def _wait_for_db(timeout_sec=60):
             time.sleep(2)
 
 
-# 서버 시작 시 테이블이 없으면 자동 생성 — DB 가 준비될 때까지 기다린 뒤
+# DB가 준비되면 없는 테이블을 만듭니다.
 _wait_for_db()
 create_tables_safely(engine, Base.metadata)
 
@@ -99,7 +99,7 @@ def _drop_column(table, column):
         conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column};"))
 
 
-# 녹화 시작 시각 — 입력받지 않아 늘 기본값(20:30)이었다. 시간대별 통계와 함께 삭제(2026-10-18)
+# 쓰지 않는 녹화 시작 시각 컬럼을 지웁니다.
 _drop_column("videos", "recording_start_time")
 
 app.include_router(auth.router)

@@ -64,7 +64,7 @@ def _auc(pos, neg):
     if not pos or not neg:
         return None
     ranked = sorted([(p, 1) for p in pos] + [(n, 0) for n in neg])
-    # 동점은 평균 순위로
+    # 동점은 평균 순위로 처리합니다.
     r, i, s_pos = 0.0, 0, 0.0
     while i < len(ranked):
         j = i

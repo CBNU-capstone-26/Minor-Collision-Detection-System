@@ -9,10 +9,10 @@ Wants=network-online.target
 Type=simple
 User=__USER__
 WorkingDirectory=__REPO__/backend
-# 비밀번호 등은 프로젝트 루트 .env (docker-compose 와 같은 파일)
+# 비밀번호 등은 프로젝트 루트 .env(docker-compose와 같은 파일)에서 읽습니다.
 EnvironmentFile=-__REPO__/.env
 Environment=PYTHONUNBUFFERED=1
-# nginx 뒤에서만 받는다(127.0.0.1). 개발용 --reload 는 쓰지 않는다
+# nginx 뒤에서만 받습니다(127.0.0.1). 개발용 --reload는 쓰지 않습니다.
 ExecStart=__REPO__/venv311/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=always
 RestartSec=3

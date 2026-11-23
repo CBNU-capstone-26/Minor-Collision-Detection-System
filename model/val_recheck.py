@@ -35,7 +35,7 @@ from evaluate import _Tee
 from hitandrun_model import HitAndRun3DCNN, check_weights
 from train import _make_loader, validate
 
-# 검증 클립 구성에 영향을 주는 설정 — 학습 당시(config_snapshot.py)와 다르면 검산이 맞지 않을 수 있다
+# 검증 클립 구성에 영향을 주는 설정입니다. 학습 당시(config_snapshot.py)와 다르면 검산이 맞지 않을 수 있습니다.
 _SAMPLE_KEYS = ('CLIP_LENGTH', 'RESIZE', 'R_VALUE', 'NORM_MEAN', 'NORM_STD', 'TRAIN_A_PRE_FRAMES',
                 'TRAIN_A_SLICE_ENABLED', 'TRAIN_A_SLICE_STRIDE', 'TRAIN_S_SLICE_ENABLED', 'TRAIN_S_SLICE_STRIDE',
                 'TRAIN_S_MAX_CLIPS_PER_VIDEO', 'TRAIN_S_REAL_USE_CAR1', 'TRAIN_SPAN_WINDOW_STRIDE',
@@ -190,6 +190,7 @@ def _run(args, run_dir, th, out_base):
         with open(log, encoding='utf-8') as fh:
             rows_csv = {r['epoch']: r for r in csv.DictReader(fh) if r.get('epoch')}
 
+    check_weights(weights[0][1])             # 헤드 풀링을 환경변수로 안 정했으면 이름(_top3)을 따라 — 모델 만들기 전에
     model = HitAndRun3DCNN(num_classes=config.MODEL_NUM_CLASSES).to(device)
     if channels_last:
         model = model.to(memory_format=torch.channels_last_3d)
@@ -197,6 +198,8 @@ def _run(args, run_dir, th, out_base):
     t0 = time.perf_counter()
     for k, (ep, path) in enumerate(weights):
         check_weights(path)                  # 학습한 입력 크기(_s256)·헤드 풀링(_top3)이 지금 설정과 같아야 한다
+        if model.temporal_pool != config.HEAD_TEMPORAL_POOL:     # 한 회차 안이라 바뀔 일은 없다
+            raise RuntimeError(f'{path.name}: 헤드 풀링이 앞 가중치와 다릅니다')
         model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True))
         row = {'epoch': ep, 'weights': path.name}
         old = rows_csv.get(str(ep), {})
@@ -207,7 +210,7 @@ def _run(args, run_dir, th, out_base):
                          channels_last=channels_last, threshold=th) if loaders[d] else None
             for key in _METRICS:
                 row[f'{d}_{key}'] = None if m is None else m[key]
-            # 검산: 학습 CSV 의 균형 손실·재현율과 같은가(기준이 0.5 가 아니면 재현율은 빼고)
+            # 검산: 학습 CSV의 균형 손실, 재현율과 같은지 봅니다(기준이 0.5가 아니면 재현율은 뺍니다).
             if m is not None and old.get(f'val_{d}_bal'):
                 ok = abs(float(old[f'val_{d}_bal']) - m['bal']) < 2e-3
                 if abs(th - 0.5) < 1e-9 and old.get(f'val_{d}_recallA') and m['rec'] is not None:

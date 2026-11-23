@@ -52,12 +52,12 @@ class BalancedBatchSampler(Sampler):
         self.seed = int(seed)
         self.epoch = 0
         empty = np.asarray(s_empty_pos, dtype=np.int64)
-        # 빈 장면은 한 번 정한 순서에서 에포크마다 다음 구간을 잘라 쓴다(끝에 닿으면 처음으로)
+        # 빈 장면은 한 번 정한 순서에서 에포크마다 다음 구간을 잘라 씁니다(끝에 닿으면 처음으로 돌아갑니다).
         self.empty_order = np.random.RandomState(seed).permutation(empty)
         self.k_empty = (len(empty) if empty_keep >= 1
                         else int(round(len(empty) * max(0.0, float(empty_keep)))))
 
-    # 에포크당 개수 — 에포크마다 같다
+    # 에포크당 개수(에포크마다 같습니다)
     def counts(self):
         n_s = len(self.s_move) + self.k_empty
         n = len(self.a) + n_s
@@ -124,11 +124,19 @@ def build(train_samples, train_idx, batch_size, csv_path=None, empty_pct=0.25,
     thin_rc=False(config.TRAIN_S_THIN_RC) 면 RC 정상은 솎지 않고(움직임과 상관없이) 매 에포크 전부 쓴다."""
     motion = load_motion(csv_path) if csv_path else {}
     a_pos, s_move, s_empty = [], [], []
-    matched = rc_full = 0
+    matched = rc_full = ctx = hn = 0
     for pos, i in enumerate(train_idx):
         s = train_samples[i]
         if s['label'] == 1:
             a_pos.append(pos)
+            continue
+        if s.get('ctx_neg'):          # 사고 영상의 충돌 전·후 정상(config.TRAIN_A_CONTEXT_NEG) — 측정표에 없음, 매번 씀
+            s_move.append(pos)
+            ctx += 1
+            continue
+        if s.get('hardneg'):          # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV) — 측정표의 30프레임 간격 클립이 아님, 매번 씀
+            s_move.append(pos)
+            hn += 1
             continue
         if not thin_rc and 'realdata' not in os.path.normpath(s['mp4_path']).split(os.sep):
             s_move.append(pos)
@@ -144,8 +152,12 @@ def build(train_samples, train_idx, batch_size, csv_path=None, empty_pct=0.25,
                                    empty_keep=empty_keep if csv_path else 1.0,
                                    spread_a=spread_a, seed=seed)
     c = sampler.counts()
-    n_s_all = len(s_move) + len(s_empty) - rc_full     # 솎기 대상 정상(RC 를 빼면 실제 영상만)
+    n_s_all = len(s_move) + len(s_empty) - rc_full - ctx - hn     # 솎기 대상 정상(RC 를 빼면 실제 영상만)
     lines = []
+    if ctx:
+        lines.append(f"사고 영상의 충돌 전·후 정상 {ctx}개는 솎지 않음(TRAIN_A_CONTEXT_NEG) — 매 에포크 전부 씀")
+    if hn:
+        lines.append(f"헷갈리는 정상 묶음 {hn}개는 솎지 않음(TRAIN_HARDNEG_CSV) — 매 에포크 전부 씀")
     if rc_full:
         lines.append(f"RC 정상 {rc_full}개는 솎지 않음(TRAIN_S_THIN_RC=0) — 움직임과 상관없이 매 에포크 전부 씀")
     if csv_path:

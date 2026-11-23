@@ -7,7 +7,7 @@ from pathlib import Path
 # 실행 환경에 맞게 이 파일의 값만 수정하세요.
 # ==========================================
 
-# 프로젝트 루트 기준 경로 (model/ 의 상위 폴더)
+# 프로젝트 루트 기준 경로(model/의 상위 폴더)
 _ROOT = Path(__file__).resolve().parent.parent
 
 # ---------- 디바이스 설정 ----------
@@ -26,15 +26,18 @@ INFER_DEVICE_TYPE = "cuda"    # 예측·평가(추론) 전용 디바이스
 # ---------- 공통 설정 ----------
 DATA_DIR = _ROOT / "data" / "train"
 VAL_DATA_DIR = _ROOT / "data" / "val"
-# 이 폴더가 학습/추론하는 백본 이름. 가중치 파일명에 붙어 모델을 구분한다.
+# 이 폴더의 백본 이름입니다. 가중치 파일 이름에 붙어 모델을 구분합니다.
 MODEL_NAME = "x3d"
 MODEL_NUM_CLASSES = 2
 CLIP_LENGTH = 30
 INPUT_SIZE = int(os.getenv("INPUT_SIZE", "224") or 224)
 RESIZE = (INPUT_SIZE, INPUT_SIZE)
 HEAD_TEMPORAL_POOL = (os.getenv("HEAD_TEMPORAL_POOL", "avg") or "avg").strip().lower()
+HEAD_TEMPORAL_POOL_SET = bool((os.getenv("HEAD_TEMPORAL_POOL") or "").strip())
 HEAD_TEMPORAL_TOPK = 3
 R_VALUE = 1.0
+# 최종 가중치의 사고 판정 기준. 환경변수로 변경할 수 있다.
+A_THRESHOLD = float(os.getenv("A_THRESHOLD", "0.45") or 0.45)
 # 학습 전용 r 증강은 기본적으로 꺼져 있으며, 검증과 서비스에서는 R_VALUE를 사용한다.
 TRAIN_R_AUGMENT_PROB = float(os.getenv("TRAIN_R_AUGMENT_PROB", "0") or 0)
 TRAIN_R_AUGMENT_VALUES = tuple(float(v) for v in (os.getenv("TRAIN_R_AUGMENT_VALUES", "1.5,2") or "").split(",") if v.strip())
@@ -66,6 +69,16 @@ TRAIN_LQ_SIZE_RANGE = (48, 128)      # 줄일 때 크기(px). 원래 크롭의 3
 # '압축 화질 튐은 사고가 아니다'(ReS_0018 오탐)를 가르친다. 기본값(0.5·42)이 아니면 이름에 _lq 대신 _lqw.
 TRAIN_LQ_SIZE_PROB = float(os.getenv("TRAIN_LQ_SIZE_PROB", "0.5") or 0)   # 압축할 때 먼저 줄이는 비율
 TRAIN_LQ_CRF_RANGE = (28, int(os.getenv("TRAIN_LQ_CRF_MAX", "42") or 42))  # H.264 CRF(클수록 압축 심함). 224px 30프레임 PSNR 약 30 ~ 22dB
+# 작은 크롭도 저화질 증강(2026-11-23, 기본 끔 — 저화질 증강이 켜져 있어야 씀): ep39 는 H.264 CRF 35 로 압축하면
+# 크롭이 작은 평가 사고만 놓쳤다(robust_check 261122_022726 — TA_0009 126px 0.99→0.05 · TA_0011 42px 1.00→0.27 ·
+# TA_0016 104px 0.98→0.16, 191px 이상은 그대로). 위 TRAIN_LQ_MIN_CROP 때문에 학습 사고 43개 중 10개(128px 미만)는
+# 압축된 모습을 본 적이 없다. 압축 뒤에도 충돌 흔들림은 남아(원본과 움직임 지도 상관 0.87~0.98) 증거가 지워진 게 아니라
+# 처음 보는 모습이라 정상 쪽으로 기운 것으로 본다. 켜면 TRAIN_LQ_SMALL_MIN 이상 128px 미만 크롭도 같은 확률로, 실제 CCTV 처럼
+# 원래 크기(짝수)로 줄여 압축한 뒤 다시 키운다(줄이기 비율은 안 씀). 사고·정상 구분 없음. CRF 상한은 TRAIN_LQ_SMALL_CRF_MAX 까지.
+# 켜기: 환경변수 TRAIN_LQ_SMALL=1 (이름 _lq/_lqw 가 _lqs/_lqws 로). 끄면 난수를 더 쓰지 않아 지금과 같다.
+TRAIN_LQ_SMALL = os.getenv("TRAIN_LQ_SMALL", "").strip() not in ("", "0")
+TRAIN_LQ_SMALL_MIN = 32              # 이보다 작은 크롭은 그대로(학습 실차 사고 최소 49px)
+TRAIN_LQ_SMALL_CRF_MAX = int(os.getenv("TRAIN_LQ_SMALL_CRF_MAX", "36") or 36)
 
 # ---------- fps 증강 (실험용, 기본 끔, 2026-10-30) ----------
 # RC 833개는 전부 30fps 이고 실제 사고 중 10fps 는 3개뿐인데, 평가 영상은 30개 중 6개가 10fps 다. 모델은 늘 30프레임을
@@ -98,12 +111,12 @@ TRAIN_LIGHT_DARK_PROB = 0.7          # 불빛을 넣을 때 먼저 밤처럼 어
 # 낮 영상(검은 테두리, ReA_0022)·흐린 낮(ReA_0051)을 야간으로, 화면 UI 가 밝은 야간(ReA_0021)을 낮으로 틀려서 목록으로 둔다.
 # 새 야간 영상을 넣으면 여기에 이름(확장자 없이)을 더한다.
 NIGHT_VIDEOS = frozenset({
-    # 학습: 사고 3 · 정상 3
+    # 학습: 사고 3, 정상 3
     '260827_ReA_0021', '260827_ReA_0032', '260827_ReA_0044', '260909_ReS_0019', '260909_ReS_0035',
     '260909_ReS_0039',
-    # 검증: 사고 1 · 정상 3
+    # 검증: 사고 1, 정상 3
     '260827_ReA_0031', '260909_ReS_0024', '260909_ReS_0026', '260909_ReS_0036',
-    # 평가: 사고 1 · 정상 2
+    # 평가: 사고 1, 정상 2
     '260828_TA_0020', '260909_TS_0007', '260909_TS_0011',
 })
 
@@ -134,13 +147,13 @@ TRAIN_SPLIT_LOCK = (Path(os.environ["TRAIN_SPLIT_LOCK"]) if os.environ.get("TRAI
 # 서버 RC 817개는 아직 안 쟀다(로컬 RC 16개는 모두 30fps). 목록으로 빼는 것만 끄기: 환경변수 EXCLUDE_LOW_FPS=0
 LOW_FPS_EXCLUDED_DIR = _ROOT / "data" / "excluded_lowfps"   # 안에 train/·eval/ — 원래 폴더 구조 그대로
 LOW_FPS_VIDEOS = (
-    # 학습(9)
+    # 학습 9개
     '260827_ReA_0029', '260827_ReA_0030',
     '260909_ReS_0002', '260909_ReS_0003', '260909_ReS_0004', '260909_ReS_0010',
     '260909_ReS_0016', '260909_ReS_0022', '260909_ReS_0025',
-    # 검증(1)
+    # 검증 1개
     '260827_ReA_0005',
-    # 평가(7)
+    # 평가 7개
     '260828_TA_0001', '260828_TA_0002', '260828_TA_0005',
     '260909_TS_0003', '260909_TS_0004', '260909_TS_0006', '260909_TS_0008',
 )
@@ -251,6 +264,41 @@ TRAIN_S_REAL_USE_CAR1 = True
 #   RC 정상 클립이 약 2배(학습 약 3,658 → 7,300개)라 에포크가 길어지고 사고:정상 불균형이 커진다.
 #   켜기: 환경변수 TRAIN_S_RC_USE_CAR1=1 (이름에 _rc1). 끄면 예전과 같다.
 TRAIN_S_RC_USE_CAR1 = os.getenv("TRAIN_S_RC_USE_CAR1", "0").strip().lower() in ("1", "true", "yes")
+# 사고 영상의 충돌 전(접근)·후(여파) 장면을 정상으로 학습한다 — 학습 쪽만, 검증은 예전 그대로(다른 학습과 지표 비교).
+#   2026-11-22 안 B(사용자 결정 — 최종 조합 ep39 설정에 이것만 더해 학습해 봄). 지금까지 사고 영상에서는 충돌 창 하나(A)만
+#   만들어, 충돌 전에 다가오는 장면·충돌 뒤 장면을 정상으로 배운 적이 없다. 그래서 서비스에서 접근·여파가 담긴 창도 A 로 보고
+#   (ReA_0003 충돌 뒤 P(A) 0.99 · TA_0008 충돌 5.6초 전부터 A 등) 클립의 A 표시 끝이 충돌 끝보다 중앙값 1.5~2.3초 늦었다
+#   (outputs/analysis/retune_261122/). '다른 차가 앞·뒤로 지나가는' 정상 영상 오탐도 같은 종류라 함께 줄기를 기대한다.
+#   · 충돌 전: 창 끝이 충돌 시작보다 TRAIN_A_CONTEXT_NEG_MARGIN_SEC 이상 앞인 창 · 충돌 후: 창 시작이 충돌 끝보다 그만큼 뒤인 창.
+#     한쪽에 2개: 충돌에 가장 가까운 창(가장 헷갈림, 늘 들어감) + 그보다 TRAIN_A_CONTEXT_NEG_STRIDE 이상 먼 곳에서 에포크마다
+#     무작위로 고른 창 1개(여러 에포크에 걸쳐 영상 전체를 봄). 영상 끝까지 30프레임 간격으로 다 자르면 275개인데 긴 영상
+#     몇 개에 몰리고(ReA_0010 33개) 실제 영상 정상의 44% 가 되어 사고 놓침 쪽으로 기울 수 있어 줄였다(실제 132개, 약 27%).
+#     창 위치 흔들기는 이 범위 밖(충돌 쪽)으로 나가지 않게 막고, fps 증강은 이 클립에 걸지 않는다(창이 충돌로 늘어나지 않게).
+#   · 여유 0.5초 = 레이블 경계가 몇 프레임 어긋나도 충돌 장면을 정상으로 배우지 않게. 그 사이 창은 어느 쪽으로도 학습하지 않는다.
+#   · 실제 영상 학습 사고 43개 중 충돌 전 창이 있는 영상 33 · 충돌 후 40(0.5초 기준). RC 사고 영상은 충돌 직후에 끝나 '후'가 없고
+#     '전'(다가오는 RC 차)은 RC 정상 영상(주차·직진·배회)과 비슷해 기본은 실제 영상만('real', 이름 _ctx). 'all' 이면 RC 도(_ctxall).
+#   · balance 의 빈 장면 솎기 측정표(clips.csv)에 없는 클립이라 매 에포크 전부 쓴다.
+#   켜기: 환경변수 TRAIN_A_CONTEXT_NEG=real (또는 1) · all. 비우면 끔(예전과 같음 — 난수·샘플 순서 그대로).
+_ctx = os.getenv("TRAIN_A_CONTEXT_NEG", "").strip().lower()
+TRAIN_A_CONTEXT_NEG = {"": None, "0": None, "false": None, "no": None, "1": "real", "true": "real", "yes": "real"}.get(_ctx, _ctx)
+if TRAIN_A_CONTEXT_NEG not in (None, "real", "all"):
+    raise ValueError(f"TRAIN_A_CONTEXT_NEG 는 real · all · 빈 값 중 하나여야 합니다: {_ctx!r}")
+TRAIN_A_CONTEXT_NEG_MARGIN_SEC = float(os.getenv("TRAIN_A_CONTEXT_NEG_MARGIN_SEC", "0.5") or 0.5)
+TRAIN_A_CONTEXT_NEG_STRIDE = 30
+# 2026-11-22 결과: 충돌 밖 A·표시 늦음은 크게 줄었지만 놓침 검증 0→2~3·평가 0→4~6 이라 미채택(ep39 유지).
+
+# ---------- 헷갈리는 정상 묶음(하드 네거티브) 더 학습 (실험용, 기본 끔, 2026-11-22) ----------
+# 남은 오탐은 모두 다른 차가 대상 차 앞·뒤·옆을 지나가는 장면이다(평가 TS_0002·0007·0009·0011 — 멀고 작은 박스라
+# 화면 전체로는 멈춘 장면처럼 보임). model/hardneg_mine.py 가 학습 영상(실제 정상 + 사고 영상의 충돌에서 3초 이상 먼 곳,
+# --rc 면 RC 도)에서 '정상인데 P(A) 높은 묶음'을 캐 CSV 로 낸다. 켜면 그 묶음을 정상 클립으로 학습 데이터셋 맨 뒤에 붙인다.
+#   · 검증은 그대로(학습 데이터셋에만). 창 흔들기는 캔 위치 ±TRAIN_HARDNEG_JITTER 프레임 안 — 지나가는 장면이 창에 남게.
+#     fps 증강은 걸지 않고, balance 에선 솎지 않고 매 에포크 전부 쓴다. TRAIN_HARDNEG_REPEAT 번 넣어 더 자주 본다.
+#   · 안 B(충돌 0.5초 옆 정상)는 미세 충돌을 놓치게 했다 → 캘 때 충돌과 먼 곳만(기본 3초).
+#   켜기: 환경변수 TRAIN_HARDNEG_CSV=outputs/hardneg/<시각>/hardneg.csv (프로젝트 루트 기준 또는 절대 경로). 이름 _hn(반복 k≠1 이면 _hn<k>).
+_hn = os.getenv("TRAIN_HARDNEG_CSV", "").strip()
+TRAIN_HARDNEG_CSV = (Path(_hn) if Path(_hn).is_absolute() else _ROOT / _hn) if _hn else None
+TRAIN_HARDNEG_REPEAT = max(1, int(os.getenv("TRAIN_HARDNEG_REPEAT", "1") or 1))
+TRAIN_HARDNEG_JITTER = 5
 
 # ---------- 학습 묶음 구성: 빈 장면 정상 솎기 + 묶음마다 충돌 고르게 (실험용, 기본 끔) ----------
 # 2026-10-22 서버 측정(model/s_motion_check.py, outputs/s_motion/261022_0323): A:S 1:20.5,
@@ -347,7 +395,7 @@ TRAIN_NUM_WORKERS = int(os.getenv("TRAIN_NUM_WORKERS", "0") or 0) or None
 # ※ 논문(Hwang & Lee 2024)은 3D-CNN을 scratch로 학습했으나 그 이유나 비교실험을
 #   제시하지 않았다. 어느 쪽이 나은지는 우리 데이터로 직접 비교해야 한다.
 PRETRAINED = os.getenv("PRETRAINED", "1").strip().lower() not in ("0", "false", "no")
-# 결과물이 서로 덮어쓰이지 않도록 사전학습 여부를 파일명에 박는다(ptY/ptN).
+# 결과물이 서로 덮어쓰이지 않도록 사전학습 여부를 파일 이름에 넣습니다(ptY, ptN).
 PRETRAIN_TAG = "ptY" if PRETRAINED else "ptN"
 # 입력 정규화 통계 — Kinetics-400 사전학습과 동일한 값 사용 (전이 효율 최대화)
 # ⚠️ pytorchvideo 계열(X3D/SlowFast)은 torchvision(S3D)과 통계가 다르다.
@@ -372,6 +420,9 @@ TRAIN_BATCH_SIZE = 15  # 논문과 동일(Hwang&Lee 2024: batch 15). VRAM 부족
 TRAIN_NUM_EPOCHS = 100
 TRAIN_SPLIT_RATIO = 0.8
 TRAIN_EARLY_STOPPING_PATIENCE = 10
+TRAIN_SCRATCH_GRACE_EPOCHS = 20
+_grace_env = os.getenv("TRAIN_GRACE_EPOCHS", "").strip()
+TRAIN_GRACE_EPOCHS = int(_grace_env) if _grace_env else None
 
 # ---------- best 판단 지표 / 후보 저장 ----------
 # best 저장·LR 감소(ReduceLROnPlateau)·조기종료가 모두 아래 '판단 지표' 하나로 움직인다.
@@ -429,15 +480,15 @@ EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
-SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
-# 서버에서 코드를 고치지 않고 바꿀 때: .env 에 SERVICE_WEIGHTS=weights/<파일>.pth (상대경로는 프로젝트 루트 기준)
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_261121_1915_ep026_ptY_bal_lqw_top3.pth"
+# 서버에서 코드를 고치지 않고 바꿀 때는 .env에 SERVICE_WEIGHTS=weights/<파일>.pth를 줍니다(상대경로는 프로젝트 루트 기준).
 if os.getenv("SERVICE_WEIGHTS", "").strip():
     SERVICE_WEIGHTS_PATH = Path(os.environ["SERVICE_WEIGHTS"].strip())
     if not SERVICE_WEIGHTS_PATH.is_absolute():
         SERVICE_WEIGHTS_PATH = _ROOT / SERVICE_WEIGHTS_PATH
 
-# ---------- 단일 영상 예측/CAM 출력 전용 ----------
-PREDICT_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth"
+# ---------- 영상 하나 예측과 CAM 출력 전용 ----------
+PREDICT_WEIGHTS_PATH = SERVICE_WEIGHTS_PATH
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
 PREDICT_OUTPUT_DIR = _ROOT / "data" / "predict_cam_result"
@@ -467,6 +518,9 @@ PREDICT_WINDOW_STRIDE = 1
 # 모델이 충돌 뒤 흔들림이 담긴 창도 A로 보기 때문이라 이 값으로는 고칠 수 없다.
 # 이벤트 구간·DB 기록·충격 시점(광학흐름 피크) 계산에는 영향이 없다.
 PREDICT_DISPLAY_OFFSET = 25
+PREDICT_DISPLAY_START_OFFSET = 29
+PREDICT_DISPLAY_END_OFFSET = 0
+PREDICT_DISPLAY_MIN_SEC = 0.5
 # 서비스 사고 클립에 CAM 히트맵을 합성할지. 2026-10-10 에 껐다가 2026-10-26 사용자 요청으로 다시 켠다 —
 # 다만 bbox 전체를 덮지 않고 사고 판정 근거가 강한 곳(충돌 부위)에만 칠한다(inference._draw_collision_cam).
 # 차량 박스(사고 빨강·정상 초록)와 아래 상태 띠(S/A)는 그대로 그린다.
@@ -477,9 +531,9 @@ PREDICT_CLIP_CAM_OVERLAY = True
 # 낮추면 넓게, 높이면 가장 강한 곳만 좁게 칠한다. 사용자가 보여 준 참고 모양(충돌 지점에 작은 무지개 고리)에 맞춰
 # 0.5 → 0.8 로 했다가, 0.8 은 칠해지는 칸이 1~5개뿐이라 근거가 길쭉해도 늘 동그랗게 나와 0.7 로(2026-10-27)
 PREDICT_CLIP_CAM_MIN = 0.7
-# 가장 강한 곳(가운데)의 히트맵 불투명도(0~1). 기준선에서 0 으로 시작해 안쪽으로 갈수록 진해진다
+# 가장 강한 곳(가운데)의 히트맵 불투명도(0~1)입니다. 기준선에서 0으로 시작해 안쪽으로 갈수록 진해집니다.
 PREDICT_CLIP_CAM_ALPHA = 0.9
-# 기준선에서 가운데까지 진해지는 빠르기 — 1 이면 고르게, 작을수록 안쪽으로 빨리 진해진다(고리가 또렷하게)
+# 기준선에서 가운데까지 진해지는 빠르기입니다. 1이면 고르게, 작을수록 안쪽으로 빨리 진해져 고리가 또렷해집니다.
 PREDICT_CLIP_CAM_GAMMA = 0.6
 # 사고 클립 앞뒤로 붙이는 여유(프레임). 사고 판정 구간 앞뒤로 이만큼 더 잘라 보여 준다.
 # (30fps 기준 1초. 프레임 단위라 fps 에 따라 실제 시간은 달라진다)
@@ -504,7 +558,7 @@ PREDICT_CLIP_PAD_FRAMES = 30
 # ⚠️ 긴 영상에서 실제로 몇 %를 보는지는 서버 로그의 '[2단계] 거친 탐색 … N%' 줄로 확인.
 PREDICT_USE_COARSE_SCAN = True
 PREDICT_COARSE_STEP = 10       # 거친 탐색 간격(프레임, 30fps 기준). stride 의 배수로 맞춰 쓴다
-PREDICT_COARSE_PROB = 0.3      # 이 P(A)를 넘는 거친 창 주변을 촘촘히 본다
+PREDICT_COARSE_PROB = float(os.getenv("PREDICT_COARSE_PROB", "") or min(0.3, 0.6 * A_THRESHOLD))
 PREDICT_COARSE_PAD = CLIP_LENGTH  # 의심 창 주변 ±pad 프레임의 창을 모두 평가
 PREDICT_FLOW_SAMPLE_STEP = 2   # 충격 시점 판정용 광학흐름 계산 프레임 간격(속도)
 
@@ -558,7 +612,7 @@ INFER_CACHE_DIR = _ROOT / "weights" / ".infer_cache"   # 변환 파일(ONNX)·�
 # 평가할 가중치. 여러 학습 결과를 비교할 땐 환경변수로 골라 쓴다:
 #     EVAL_WEIGHTS=weights/hitandrun_s3d_..._ptN_0.31.pth python main.py --mode eval
 EVAL_WEIGHTS_PATH = (Path(os.environ["EVAL_WEIGHTS"]) if os.getenv("EVAL_WEIGHTS")
-                     else _ROOT / "weights" / "hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth")
+                     else SERVICE_WEIGHTS_PATH)
 EVAL_FOLDER_PATH = _ROOT / "data" / "eval"
 # 서비스 경로 평가에서 '검출'로 인정하는 시작 시점 허용 오차(초).
 # 이벤트가 라벨 start_f ± 이 값 안에서 시작해야 검출로 센다. 이벤트가 나오긴 했어도

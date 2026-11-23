@@ -11,7 +11,7 @@ User=__USER__
 WorkingDirectory=__REPO__/backend
 EnvironmentFile=-__REPO__/.env
 Environment=PYTHONUNBUFFERED=1
-# 분석은 한 번에 하나씩(워커 1개 전제 — app/worker.py 의 재시작 정리 참고)
+# 분석은 한 번에 하나씩 합니다(워커 1개 전제, app/worker.py의 재시작 정리 참고).
 ExecStart=__REPO__/venv311/bin/celery -A app.worker worker --concurrency=1 --loglevel=info
 Restart=always
 RestartSec=5

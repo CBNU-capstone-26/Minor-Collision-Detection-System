@@ -159,7 +159,7 @@ class VideoOut(BaseModel):
     duration_sec: float
     detected_vehicles: Optional[str] = None
     created_at: datetime
-    # 보관 기간이 끝나 지워질 시각과 남은 날(서버 시계 기준, 올림). 보관 기간을 끄면 None
+    # 보관 기간이 끝나 지워질 시각과 남은 날입니다(서버 시계 기준, 올림). 보관 기간을 끄면 None입니다.
     expires_at: Optional[datetime] = None
     expires_in_days: Optional[int] = None
     events: list[EventOut] = []
@@ -181,7 +181,7 @@ class AnalyzeResponse(BaseModel):
     task_id: int
     celery_task_id: Optional[str] = None
     status: str
-    # 같은 영상에 이미 대기·진행 중인 분석이 있으면 새로 만들지 않고 그 작업을 돌려준다
+    # 같은 영상에 이미 대기 중이거나 진행 중인 분석이 있으면 새로 만들지 않고 그 작업을 돌려줍니다.
     already_running: bool = False
 
 

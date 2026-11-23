@@ -33,13 +33,13 @@ INK2 = '#52514e'      # 보조 글자·후보 표시·학습률
 GRID = '#e4e3df'
 SURFACE = '#fcfcfb'
 
-# 한글 글꼴 — 앞에서부터 찾는다(Windows → macOS → 리눅스)
+# 한글 글꼴을 앞에서부터 찾습니다(Windows, macOS, 리눅스 순).
 KO_FONTS = ('Malgun Gothic', 'Apple SD Gothic Neo', 'AppleGothic',
             'NanumGothic', 'Noto Sans CJK KR', 'Noto Sans KR', 'Noto Sans CJK JP')
-# WSL 은 Windows 글꼴이 자동 등록되지 않아 파일로 직접 넣는다
+# WSL은 Windows 글꼴이 자동으로 등록되지 않아 파일로 직접 넣습니다.
 KO_FONT_FILES = ('/mnt/c/Windows/Fonts/malgun.ttf',)
 
-# 그래프 안 글자 — 한글 글꼴이 있으면 KO, 없으면 EN
+# 그래프 글자입니다. 한글 글꼴이 있으면 KO, 없으면 EN을 씁니다.
 LABELS = {
     'ko': {
         'train': '학습 (증강, 드롭아웃 켬)', 'train_end': '학습',
@@ -141,7 +141,7 @@ def plot_trainlog(csv_path, out_path=None):
 
     font = _korean_font()
     L = LABELS['ko' if font else 'en']
-    # 한글 글꼴에 없는 글자(수식 등)는 DejaVu Sans 로 채운다. 마이너스는 글꼴마다 없을 수 있어 '-' 로.
+    # 한글 글꼴에 없는 글자(수식 등)는 DejaVu Sans로 채웁니다. 마이너스는 글꼴마다 없을 수 있어 '-'로 씁니다.
     rc = {'font.family': [font, 'DejaVu Sans'], 'axes.unicode_minus': False} if font else {}
     with plt.rc_context(rc):
         fig = _draw(plt, L, csv_path, rows, col, ep, best, best_why, cands, result)
@@ -156,7 +156,7 @@ def _draw(plt, L, csv_path, rows, col, ep, best, best_why, cands, result):
         gridspec_kw={'height_ratios': [3, 2, 1.1], 'hspace': 0.22})
     fig.patch.set_facecolor(SURFACE)
 
-    # ── 1) 손실 ──
+    # 1) 손실
     ax1.plot(ep, col('train_loss'), color=C_TRAIN, lw=2, label=L['train'])
     ax1.plot(ep, col('val_rc_loss'), color=C_RC, lw=2, label=L['val_rc'])
     ax1.plot(ep, col('val_real_loss'), color=C_REAL, lw=2, label=L['val_real'])
@@ -170,7 +170,7 @@ def _draw(plt, L, csv_path, rows, col, ep, best, best_why, cands, result):
     ax1.legend(loc='lower left', bbox_to_anchor=(0, 1.0), ncol=4, fontsize=8.5,
                frameon=False, labelcolor=INK2, handlelength=2.6, columnspacing=1.4)
 
-    # ── 2) 검증 충돌 recall / precision (0.5 임계값) ──
+    # 2) 검증 충돌 재현율과 정밀도
     for key, color in (('val_real', C_REAL), ('val_rc', C_RC)):
         ax2.plot(ep, col(f'{key}_recallA'), color=color, lw=2,
                  label=L['recall'].format(L[key]))
@@ -181,17 +181,17 @@ def _draw(plt, L, csv_path, rows, col, ep, best, best_why, cands, result):
     ax2.legend(loc='lower left', bbox_to_anchor=(0, 1.0), ncol=4, fontsize=8.5,
                frameon=False, labelcolor=INK2, handlelength=2.6, columnspacing=1.4)
 
-    # ── 3) 학습률 ──
+    # 3) 학습률
     ax3.step(ep, col('lr'), where='post', color=INK2, lw=1.8)
     ax3.set_yscale('log')
-    # 눈금 숫자는 '3e-5' 로 — 기본(3×10⁻⁵ 수식)은 한글 글꼴에 수식용 마이너스가 없어 깨진다
+    # 눈금 숫자는 '3e-5'처럼 씁니다. 기본 수식 표기는 한글 글꼴에 수식용 마이너스가 없어 깨집니다.
     from matplotlib.ticker import LogFormatter
     ax3.yaxis.set_major_formatter(LogFormatter(labelOnlyBase=False))
     ax3.yaxis.set_minor_formatter(LogFormatter(labelOnlyBase=False))
     ax3.set_ylabel(L['lr'], color=INK2)
     ax3.set_xlabel(L['epoch'], color=INK2)
 
-    # ── best / 후보 표시 ──
+    # best와 후보 표시
     for ax in (ax1, ax2, ax3):
         ax.set_facecolor(SURFACE)
         ax.grid(True, color=GRID, lw=0.8)
