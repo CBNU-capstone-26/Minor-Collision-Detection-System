@@ -1,4 +1,4 @@
-"""회원가입 / 로그인 라우터."""
+"""회원가입과 로그인 라우터입니다."""
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -23,12 +23,12 @@ from app.settings import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# 이메일 형식: 로컬@도메인.최상위 (공백 없음). 시스템 시험 STC-01-002-10 에서 'not-an-email' 로도 가입되던 결함
+# 이메일 형식은 로컬@도메인.최상위이며 공백이 없어야 합니다.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _clean_email(email):
-    """빈 값은 None(선택 항목), 형식이 틀리면 400 — 화면이 detail 문자열을 그대로 보여 주므로 422 대신 400."""
+    """빈 값은 None(선택 항목)으로 두고, 형식이 틀리면 400을 냅니다. 화면이 detail 문자열을 그대로 보여 주므로 422 대신 400을 씁니다."""
     if email is None:
         return None
     email = email.strip()
@@ -74,19 +74,20 @@ def login(req: api_schemas.LoginRequest, request: Request, response: Response,
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="아이디 또는 비밀번호가 올바르지 않습니다.",
         )
-    if needs_rehash(user.password_hash):   # 예전 저장 방식이면 이번에 새 방식으로 바꿔 둔다
+    if needs_rehash(user.password_hash):   # 이전 저장 방식이면 이번에 새 방식으로 바꿔 둡니다.
         user.password_hash = hash_password(req.password)
         db.commit()
     expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.AUTH_TOKEN_TTL_HOURS)
-    set_media_cookie(response, request, user, expires_at)   # 영상·썸네일·클립용
+    set_media_cookie(response, request, user, expires_at)   # 영상, 썸네일, 클립용 쿠키
     return api_schemas.LoginResponse(token=create_token(user, expires_at=expires_at), user=user)
 
 
 @router.post("/session", response_model=api_schemas.UserOut)
 def start_session(request: Request, response: Response,
                   authorization: str = Header(None), db: Session = Depends(get_db)):
-    """화면을 새로 열 때 — 최신 사용자 정보를 주고, 영상 쿠키를 지금 로그인과 같은 만료로 다시 준다
-    (쿠키가 지워졌거나 이 기능이 생기기 전에 로그인했어도 영상이 열리게)."""
+    """화면을 새로 열 때 최신 사용자 정보를 주고, 영상 쿠키를 지금 로그인과 같은 만료로 다시 줍니다.
+    쿠키가 지워졌더라도 영상이 열리게 하려는 것입니다.
+    """
     payload = bearer_payload(authorization)
     user = user_from_payload(payload, db)
     set_media_cookie(response, request, user, datetime.fromtimestamp(payload["exp"], timezone.utc))
@@ -95,7 +96,7 @@ def start_session(request: Request, response: Response,
 
 @router.post("/logout")
 def logout(request: Request, response: Response):
-    """영상 쿠키를 지운다(로그인 토큰은 화면이 지운다)."""
+    """영상 쿠키를 지웁니다. 로그인 토큰은 화면이 지웁니다."""
     clear_media_cookie(response, request)
     return {"ok": True}
 

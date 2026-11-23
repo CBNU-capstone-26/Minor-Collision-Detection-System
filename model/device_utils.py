@@ -2,12 +2,10 @@ import torch
 
 
 def get_device(device_type):
-    """주어진 device_type("cuda"/"cpu")에 따라 적절한 디바이스를 반환합니다.
+    """device_type("cuda" 또는 "cpu")에 맞는 장치를 돌려줍니다.
 
-    학습은 config.TRAIN_DEVICE_TYPE, 추론은 config.INFER_DEVICE_TYPE 값을
-    인자로 전달합니다. NVIDIA CUDA와 AMD ROCm 모두 "cuda"로 설정합니다.
-    ROCm PyTorch 빌드에서는 torch.cuda.is_available() 이 True를 반환하므로
-    별도 분기 없이 동일하게 동작합니다.
+    학습은 config.TRAIN_DEVICE_TYPE, 추론은 config.INFER_DEVICE_TYPE을 넘깁니다.
+    NVIDIA CUDA와 AMD ROCm 모두 "cuda"로 씁니다. ROCm용 PyTorch에서도 torch.cuda.is_available()이 True라 같은 방식으로 동작합니다.
     """
     if device_type == "cuda":
         if torch.cuda.is_available():
@@ -30,36 +28,27 @@ def get_device(device_type):
 
 
 def is_rocm() -> bool:
-    """현재 PyTorch 빌드가 ROCm(HIP) 기반인지 여부.
-
-    ROCm 빌드에서는 torch.version.hip 이 버전 문자열을 반환하고,
-    NVIDIA CUDA 빌드에서는 None을 반환합니다.
-    """
+    """지금 PyTorch가 ROCm(HIP)용인지 돌려줍니다. ROCm용이면 torch.version.hip에 버전 문자열이 있습니다."""
     return torch.version.hip is not None
 
 
 def predict_batch_size(device) -> int:
-    """서비스 추론 묶음 크기 — GPU 면 config.PREDICT_INFER_BATCH_SIZE_GPU, 그 밖(CPU)은 _CPU."""
+    """서비스 추론 배치 크기입니다. GPU면 config.PREDICT_INFER_BATCH_SIZE_GPU, CPU면 config.PREDICT_INFER_BATCH_SIZE_CPU를 씁니다."""
     import config
     size = config.PREDICT_INFER_BATCH_SIZE_GPU if is_cuda_like(device) else config.PREDICT_INFER_BATCH_SIZE_CPU
     return max(1, int(size))
 
 
 def is_cuda_like(device) -> bool:
-    """AMP·cuDNN·pin_memory 등 CUDA 계열 기능을 사용할 수 있는 디바이스인지 여부.
-
-    NVIDIA CUDA 와 ROCm(HIP) PyTorch 빌드 모두 device 이름이 "cuda" 이므로
-    True를 반환합니다. CPU는 False를 반환합니다.
+    """AMP, cuDNN, pin_memory 같은 CUDA 계열 기능을 쓸 수 있는 장치인지 돌려줍니다.
+    NVIDIA CUDA와 ROCm 모두 장치 이름이 "cuda"이므로 True이고, CPU는 False입니다.
     """
     return str(device).startswith("cuda")
 
 
 def is_channels_last_3d_supported(device) -> bool:
-    """channels_last_3d 메모리 포맷을 안전하게 사용할 수 있는지 여부.
-
-    ROCm(HIP)은 channels_last_3d를 완전히 지원하지 않아
-    일부 연산에서 오류가 발생할 수 있으므로 비활성화합니다.
-    NVIDIA CUDA에서만 활성화합니다.
+    """channels_last_3d 메모리 형식을 안전하게 쓸 수 있는지 돌려줍니다.
+    ROCm은 channels_last_3d를 완전히 지원하지 않아 오류가 날 수 있으므로 NVIDIA CUDA에서만 씁니다.
     """
     if not is_cuda_like(device):
         return False

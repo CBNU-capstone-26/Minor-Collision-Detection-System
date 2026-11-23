@@ -32,13 +32,13 @@ def _evaluate_folder_impl(
     device = next(model.parameters()).device
     model.eval()
     window_stride = max(1, int(window_stride))
-    # 서비스와 같은 실행기(infer_runtime.py)로 추론해야 평가 결과·속도가 서비스와 같다
+    # 서비스와 같은 실행기(infer_runtime.py)로 추론해야 평가 결과와 속도가 서비스와 같습니다.
     runner = get_runner(model)
 
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
 
-    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(Kinetics-400)
+    # 정규화 통계는 학습과 같아야 하므로 config에서 함께 관리합니다(Kinetics-400).
     mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD,
@@ -72,7 +72,7 @@ def _evaluate_folder_impl(
     mp4_files = [f for f in all_files if f.endswith('.mp4')]
     valid_pairs = [
         mp4 for mp4 in mp4_files if f"{mp4.rsplit('.', 1)[0]}.txt" in all_files_set]
-    # 10fps 미만 영상(config.EXCLUDE_VIDEOS)은 평가에서 뺀다 — 보통은 lowfps_move 로 이미 폴더 밖에 있다
+    # 실효 10fps 미만 영상(config.EXCLUDE_VIDEOS)은 평가에서 뺍니다. 보통은 lowfps_move로 이미 폴더 밖에 있습니다.
     excl = set(getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
     skipped = sorted(m.rsplit('.', 1)[0] for m in valid_pairs if m.rsplit('.', 1)[0] in excl)
     if skipped:
@@ -83,15 +83,15 @@ def _evaluate_folder_impl(
         print("평가할 수 있는 영상-텍스트 짝이 없습니다.")
         return
 
-    # data/eval의 유효한 영상-txt 짝을 모두 평가 (샘플 개수 제한 없음, 정렬로 순서 고정)
+    # data/eval의 영상과 txt 짝을 모두 평가합니다(개수 제한 없음, 정렬로 순서 고정).
     selected_files = sorted(valid_pairs)
     print(f"data/eval 전체 {len(selected_files)}개 영상 쌍을 모두 평가합니다.")
 
     total_videos = 0
     correct_preds = 0
-    tp = tn = fp = fn = 0   # 혼동행렬 (Positive = A/충돌)
+    tp = tn = fp = fn = 0   # 혼동행렬(Positive는 A, 충돌)
     wrong_list = []
-    base_rows = {}          # 영상별 ① 판정 — 서비스 판정과 나란히 영상별 CSV에 남긴다
+    base_rows = {}          # 영상별 기존 판정입니다. 서비스 판정과 나란히 영상별 CSV에 남깁니다.
 
     with torch.inference_mode():
         for mp4_file in tqdm(selected_files, desc="평가 진행률"):
@@ -100,10 +100,8 @@ def _evaluate_folder_impl(
             txt_path = os.path.join(folder_path, f"{base_name}.txt")
 
             parts = base_name.split('_')
-            # 클래스 문자는 parts[1]의 '마지막 글자'로 판별한다.
-            #   rc: LA/RA/SA/NA(2글자, 마지막=A) → 충돌, LS/LV/LW 등 → 비충돌
-            #   real: ReA(3글자, 마지막=A) → 충돌, ReS → 비충돌
-            # (TODO: 추후 파일명 대신 txt의 A/S action줄로 읽도록 통일 예정)
+            # 정답은 파일 이름 두 번째 부분의 마지막 글자로 정합니다.
+            # 마지막 글자가 A면 충돌(TA, ReA, LA, RA 등), 아니면 정상(TS, ReS, LS, LV 등)입니다.
             is_accident_gt = len(parts) >= 2 and len(
                 parts[1]) >= 2 and parts[1][-1] == 'A'
             gt_label = 1 if is_accident_gt else 0
@@ -138,17 +136,17 @@ def _evaluate_folder_impl(
                 frames.append(
                     frames[-1] if frames else np.zeros((resize[1], resize[0], 3), dtype=np.uint8))
 
-            # ⑦ 영상 텐서를 처음부터 GPU에 상주 — 배치마다 .to(device) 전송 제거
+            # 영상 텐서를 처음부터 장치에 올려 두어 배치마다 옮기지 않습니다.
             full_video_tensor = frames_to_tensor(frames).to(device)
             predicted_label = 0
-            first_a = None          # P(A) > config.A_THRESHOLD 가 처음 나온 창의 시작 프레임
+            first_a = None          # P(A) > config.A_THRESHOLD가 처음 나온 묶음의 시작 프레임
             num_windows = len(frames) - (clip_length - 1)
             window_starts = list(range(0, num_windows, window_stride))
 
             for batch_start in range(0, len(window_starts), infer_batch_size):
                 batch_window_starts = window_starts[batch_start:batch_start +
                                                     infer_batch_size]
-                # 이미 GPU에 있는 텐서 슬라이싱 — .to() 호출 없음
+                # 이미 장치에 있는 텐서를 잘라 씁니다.
                 clips = torch.stack(
                     [full_video_tensor[:, i:i+clip_length, :, :] for i in batch_window_starts])
                 if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
@@ -164,7 +162,7 @@ def _evaluate_folder_impl(
 
             total_videos += 1
             base_rows[mp4_file] = {'pred': 'A' if predicted_label else 'S', 'first_a': first_a}
-            # 혼동행렬 집계 (Positive = A/충돌)
+            # 혼동행렬 집계(Positive는 A, 충돌)
             if gt_label == 1 and predicted_label == 1:
                 tp += 1
             elif gt_label == 0 and predicted_label == 0:
@@ -183,7 +181,7 @@ def _evaluate_folder_impl(
                     "pred": "Accident(충돌)" if predicted_label == 1 else "Normal(정상)",
                 })
 
-    # ── 논문(Hwang & Lee 2024, Table 6)과 동일한 지표 ──────────────
+    # 논문(Hwang & Lee 2024, Table 6)과 같은 지표
     base = _metrics(tp, fn, fp, tn)
     print("\n" + "=" * 60)
     print(f"[① 기존 판정]  창 하나라도 P(A) > {config.A_THRESHOLD:g} 면 그 영상은 충돌  (논문 Table 6 방식)")
@@ -200,7 +198,7 @@ def _evaluate_folder_impl(
     else:
         print("\n모든 영상을 완벽하게 맞췄습니다!")
 
-    # 이어서 '서비스와 동일한 경로'로 한 번 더 평가한다
+    # 이어서 서비스와 같은 경로로 한 번 더 평가합니다.
     svc = evaluate_service_path(model, folder_path, selected_files,
                                 target_id=target_id, r_value=r_value,
                                 resize=resize, clip_length=clip_length,
@@ -208,7 +206,7 @@ def _evaluate_folder_impl(
     svc_rows = svc.pop('rows')
     _print_comparison(base, svc, svc_rows, window_stride)
 
-    # 추론 속도: ① 모델만 ② 서비스 경로 전체(위에서 영상별로 잰 시간)
+    # 추론 속도: 모델만 잰 값과 서비스 경로 전체(위에서 영상별로 잰 시간)
     speed = {'device': f'{_device_name(device)} · 실행 방식 {runner.name}', 'model': benchmark_model(
         model, clip_length=clip_length, resize=resize), 'service': svc.pop('speed'),
         'service_batch': predict_batch_size(device)}
@@ -234,10 +232,10 @@ def _evaluate_folder_impl(
 
 
 def _metrics(tp, fn, fp, tn):
-    """영상 단위 혼동행렬 → 논문 Table 6 지표(%). 분모가 0이면 None.
+    """영상 단위 혼동행렬로 논문 Table 6 지표(%)를 계산합니다. 분모가 0이면 None입니다.
 
-    Positive = A(충돌). Recall = TP/(TP+FN), False alarm = FP/(FP+TN),
-    Accuracy = (TP+TN)/전체, Precision = TP/(TP+FP), F1 = 2PR/(P+R).
+    Positive는 A(충돌)입니다. Recall = TP/(TP+FN), False alarm = FP/(FP+TN),
+    Accuracy = (TP+TN)/전체, Precision = TP/(TP+FP), F1 = 2PR/(P+R)입니다.
     """
     def pct(a, b):
         return round(a / b * 100, 2) if b else None
@@ -268,7 +266,7 @@ def _print_metrics(mt):
 
 
 def _print_comparison(base, svc, rows, window_stride):
-    """① 기존 판정과 ② 서비스 판정을 같은 지표로 나란히 — 판정 규칙 차이만 비교된다."""
+    """기존 판정과 서비스 판정을 같은 지표로 나란히 보여 줍니다. 판정 규칙의 차이만 비교됩니다."""
     tol = svc.get('hit_tol_sec', 1.0)
     W = 22
 
@@ -310,7 +308,7 @@ def _print_comparison(base, svc, rows, window_stride):
 
 
 def _device_name(device):
-    """속도 결과를 읽을 때 어떤 하드웨어였는지 알 수 있게 장치 이름을 남긴다."""
+    """속도 결과를 볼 때 어떤 하드웨어였는지 알 수 있게 장치 이름을 남깁니다."""
     if is_cuda_like(device):
         try:
             return f"{device} ({torch.cuda.get_device_name(device)})"
@@ -327,24 +325,23 @@ def _device_name(device):
 
 def benchmark_model(model, clip_length=config.CLIP_LENGTH, resize=config.RESIZE,
                     batch_sizes=None, min_sec=3.0, max_iters=30):
-    """3D-CNN 순수 추론 속도 — 영상 디코딩·크롭·전처리 없이 모델만 잰다(서비스와 같은 실행 방식).
+    """3D-CNN 추론 속도만 잽니다. 영상 디코딩, 크롭, 전처리 없이 모델만 서비스와 같은 실행 방식으로 잽니다.
 
-    서비스는 창 간격 1(PREDICT_WINDOW_STRIDE)이라 영상을 빠짐없이 훑으려면 프레임
-    하나당 창(30프레임 클립) 하나를 추론해야 한다. 그래서 '초당 처리한 창 수'가 곧
-    '모델이 초당 분석할 수 있는 영상 프레임 수'다(거친 탐색 없이 전부 볼 때).
+    서비스는 묶음 간격이 1(PREDICT_WINDOW_STRIDE)이라 영상을 빠짐없이 훑으려면 프레임 하나당 묶음(30프레임 클립) 하나를 추론합니다.
+    그래서 초당 처리한 묶음 수가 곧 모델이 초당 분석할 수 있는 영상 프레임 수입니다(거친 탐색 없이 전부 볼 때).
     """
     device = next(model.parameters()).device
     batch_sizes = batch_sizes or sorted({1, predict_batch_size(device),
                                          int(config.EVAL_INFER_BATCH_SIZE)})
     sync = (torch.cuda.synchronize if is_cuda_like(device) else (lambda: None))
     out = []
-    runner = get_runner(model)          # 서비스와 같은 실행 방식으로 잰다
+    runner = get_runner(model)          # 서비스와 같은 실행 방식으로 잽니다.
     with torch.inference_mode():
         for bs in batch_sizes:
             x = torch.randn(bs, 3, clip_length, resize[1], resize[0], device=device)
             if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
                 x = x.contiguous(memory_format=torch.channels_last_3d)
-            for _ in range(2):                       # 첫 호출 오버헤드(cuDNN 탐색 등) 제외
+            for _ in range(2):                       # 첫 호출의 부담(cuDNN 탐색 등)은 뺍니다.
                 runner(x)
             sync()
             n, t0 = 0, time.perf_counter()
@@ -386,7 +383,7 @@ def _print_speed(speed):
 
 
 def _speed_summary(rows):
-    """서비스 경로 영상별 처리 시간 → 전체 처리 속도."""
+    """서비스 경로의 영상별 처리 시간으로 전체 처리 속도를 계산합니다."""
     rs = [r for r in rows if r.get('proc_sec')]
     if not rs:
         return None
@@ -415,7 +412,7 @@ def _speed_summary(rows):
 
 
 def _read_label(txt_path):
-    """라벨 txt → (bboxes, gt_start_f, gt_end_f). A 라인이 없으면 (.., None, None)."""
+    """레이블 txt를 읽어 (bboxes, gt_start_f, gt_end_f)를 돌려줍니다. A 줄이 없으면 시작과 끝은 None입니다."""
     bboxes, sf, ef = {}, None, None
     with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
         for line in f:
@@ -435,13 +432,12 @@ def _read_label(txt_path):
 
 
 def _training_video_names():
-    """학습 데이터 폴더(config.DATA_DIR) 아래 영상 파일명 집합.
+    """학습 데이터 폴더(config.DATA_DIR) 아래 영상 파일 이름 집합을 돌려줍니다.
 
-    평가 영상이 여기 있으면 모델이 학습했거나(train 분할) 학습 중 검증에 썼을(val
-    분할) 수 있어 성능이 부풀려진다. 실제로 eval 24개 중 18개가 학습에 들어간 채로
-    평가한 적이 있어, 파일명으로 겹침을 잡아 경고하고 깨끗한 영상만 따로 집계한다.
+    평가 영상이 여기 있으면 모델이 학습했거나 학습 중 검증에 썼을 수 있어 성능이 부풀려집니다.
+    그래서 파일 이름으로 겹침을 잡아 경고하고 깨끗한 영상만 따로 집계합니다.
     """
-    # 검증 폴더(config.VAL_DATA_DIR, 2026-11-04~)도 학습 중 쓰는 영상이라 함께 본다
+    # 검증 폴더(config.VAL_DATA_DIR)도 학습 중 쓰는 영상이라 함께 봅니다.
     names = set()
     for r in (config.DATA_DIR, getattr(config, 'VAL_DATA_DIR', None)):
         root = pathlib.Path(str(r)) if r else None
@@ -451,10 +447,10 @@ def _training_video_names():
 
 
 def _summarize(rows):
-    """영상별 결과(rows) → 서비스 판정 지표.
+    """영상별 결과(rows)로 서비스 판정 지표를 계산합니다.
 
-    · 영상 단위(① 기존 판정과 같은 정의): 이벤트가 하나라도 나오면 그 영상은 충돌.
-    · 위치 기준: 라벨 시작 ± 허용 오차 안에서 시작한 이벤트가 있어야 검출(hit_recall).
+    영상 단위(기존 판정과 같은 정의): 이벤트가 하나라도 나오면 그 영상은 충돌로 봅니다.
+    위치 기준: 레이블 시작에서 허용 오차 안에 시작한 이벤트가 있어야 검출로 봅니다(hit_recall).
     """
     A = [r for r in rows if r['gt'] == 'A']
     S = [r for r in rows if r['gt'] == 'S']
@@ -522,19 +518,15 @@ def evaluate_service_path(
     clip_length=config.CLIP_LENGTH,
     base_rows=None,
 ):
-    """서비스가 실제로 쓰는 predict_events_and_clips 로 평가한다.
+    """서비스가 실제로 쓰는 predict_events_and_clips로 평가합니다.
 
-    위쪽 평가는 거친 탐색 선별·이벤트 상태머신·병합/길이필터를 건너뛰고 '영상에
-    A 윈도우가 하나라도 있는가'만 본다(논문과 같은 영상 단위 지표). 여기서는
-    같은 함수를 클립 렌더링만 끄고 호출해, 사용자가 실제로 받는 이벤트를 라벨과
-    대조한다.
+    위쪽 평가는 거친 탐색, 이벤트 상태 기계, 병합과 길이 필터를 건너뛰고 영상에 A 묶음이 하나라도 있는지만 봅니다(논문과 같은 영상 단위 지표).
+    여기서는 같은 함수를 클립 렌더링만 끄고 불러, 사용자가 실제로 받는 이벤트를 레이블과 대조합니다.
 
-    판정 기준 (이 프로젝트는 충돌 '시작'이 중요하고 끝은 중요하지 않다):
-      · 검출      : 라벨 start_f ± EVAL_HIT_TOLERANCE_SEC 안에서 시작한 이벤트가 있음
-      · 엉뚱한 곳 : 이벤트는 나왔지만 시작 근처가 아님 → 검출로 치지 않는다.
-                    '이벤트가 하나라도 있으면 검출'로 세면 recall 이 부풀려진다.
-      · 오탐 이벤트: 충돌 시작 근처가 아닌 모든 이벤트(비충돌 영상의 것 + 충돌
-                    영상의 여분). 사용자가 헛걸음하게 되는 클립 수다.
+    판정 기준(충돌 시작이 중요하고 끝은 중요하지 않습니다)
+        검출: 레이블 start_f에서 EVAL_HIT_TOLERANCE_SEC 안에 시작한 이벤트가 있습니다.
+        엉뚱한 곳: 이벤트는 나왔지만 시작 근처가 아닙니다. 검출로 치지 않습니다.
+        오탐 이벤트: 충돌 시작 근처가 아닌 모든 이벤트(정상 영상의 이벤트와 충돌 영상의 여분)입니다. 사용자가 헛걸음하게 되는 클립 수입니다.
     """
     import tempfile
     from inference import predict_events_and_clips
@@ -576,18 +568,18 @@ def evaluate_service_path(
         frames_read = stats.get('frames', frames)
         base_r = (base_rows or {}).get(mp4_file, {})
         row = {'file': mp4_file, 'gt': 'A' if gt_sf is not None else 'S',
-               # 두 판정을 영상별로 나란히 — ① 기존(창 P(A)>기준 1개↑) / ② 서비스(이벤트 1개↑)
+               # 두 판정을 영상별로 나란히 남깁니다. 기존 판정은 기준을 넘는 묶음이 하나라도 있는지, 서비스 판정은 이벤트가 하나라도 있는지입니다.
                'base_pred': base_r.get('pred'), 'base_first_a': base_r.get('first_a'),
                'svc_pred': 'A' if events else 'S',
                'in_train': mp4_file in in_train, 'fps': round(fps, 2),
-               # 야간 영상(config.NIGHT_VIDEOS, 눈으로 확인한 목록) — 불빛 오탐을 따로 보려고
+               # 야간 영상(config.NIGHT_VIDEOS, 눈으로 확인한 목록)은 불빛 오탐을 따로 보려고 표시합니다.
                'night': base in (getattr(config, 'NIGHT_VIDEOS', ()) or ()),
                'frames': frames, 'gt_start': gt_sf, 'gt_end': gt_ef,
                'n_events': len(events),
                'event_starts': ' '.join(str(e['start_frame']) for e in events),
                'hit': None, 'overlap': None, 'err_f': None, 'err_sec': None,
                'false_events': len(events),
-               # ── 속도 (클립 렌더링 제외: render_clips=False) ──
+               # 속도(클립 렌더링 제외, render_clips=False)
                'frames_read': frames_read,
                'proc_sec': round(proc_sec, 3),
                'proc_fps': round(frames_read / proc_sec, 2) if proc_sec else None,
@@ -611,7 +603,7 @@ def evaluate_service_path(
                 row['false_events'] = len(events) - (1 if row['hit'] else 0)
         rows.append(row)
 
-    # ── 영상별 결과 ──
+    # 영상별 결과
     print(f"\n{'영상':<22} {'학습폴더':>6} {'fps':>4} {'라벨시작':>7} {'이벤트':>5} "
           f"{'가장 가까운 시작(오차)':>24} {'처리fps':>7}  판정")
     print("-" * 100)
@@ -632,11 +624,11 @@ def evaluate_service_path(
               f"{r['gt_start'] if r['gt_start'] is not None else '-':>7} {r['n_events']:>5} "
               f"{near:>24} {r['proc_fps'] or 0:>7.1f}  {verdict}")
 
-    # ── 집계 ──
+    # 집계
     print("\n" + "-" * 60)
     all_s = _summarize(rows)
     _print_summary(all_s, tol_sec)
-    # 야간 영상만 따로(불빛 오탐 추적) — 사고는 구간 겹침, 정상은 이벤트 1개↑이면 오탐
+    # 야간 영상만 따로 봅니다. 사고는 구간이 겹치면 잡은 것이고, 정상은 이벤트가 하나라도 있으면 오탐입니다.
     night = [r for r in rows if r.get('night')]
     night_line = None
     if night:
@@ -677,7 +669,7 @@ def evaluate_service_path(
 
 
 class _Tee:
-    """콘솔에 그대로 찍으면서 파일에도 남긴다(평가 결과를 나중에 다시 보려고)."""
+    """화면에 그대로 찍으면서 파일에도 남깁니다(평가 결과를 나중에 다시 보려고)."""
 
     def __init__(self, path):
         self.file = open(path, 'w', encoding='utf-8')
@@ -697,7 +689,7 @@ class _Tee:
 
 
 def _info_metrics(m, prefix, rec_key, fa_key):
-    """run_info 한 줄: 재현율·오탐율·정확도·정밀도·F1 + 혼동행렬."""
+    """run_info에 쓸 한 줄(재현율, 오탐율, 정확도, 정밀도, F1과 혼동행렬)을 만듭니다."""
     g = lambda k: m.get(prefix + k)  # noqa: E731
     return (f"재현율 {_fmt_pct(g(rec_key))} / 오탐율 {_fmt_pct(g(fa_key))} / "
             f"정확도 {_fmt_pct(g('accuracy'))} / 정밀도 {_fmt_pct(g('precision'))} / "
@@ -705,26 +697,23 @@ def _info_metrics(m, prefix, rec_key, fa_key):
 
 
 def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwargs):
-    """폴더 평가 진입점 — 결과를 콘솔과 파일에 동시에 남긴다.
+    """폴더 평가 진입점입니다. 결과를 화면과 파일에 함께 남깁니다.
 
-    남는 것:
-      1) 회차 폴더       outputs/evallogs/<YYMMDD_HHMM>_<모델>_<ptY|ptN>[_span]/
-           · 콘솔 전문 로그  eval_<모델>_<ptY|ptN>_<시각>.txt
-           · 영상별 결과     eval_<모델>_<ptY|ptN>_<시각>_videos.csv
-      2) 요약 한 줄      outputs/evallogs/eval_summary.csv  (append, run 열 = 회차 폴더 이름)
-         → 5가지 학습 조합을 한 표에서 비교하려고 계속 덧붙인다.
+    남는 것
+        1) 회차 폴더 outputs/evallogs/<YYMMDD_HHMM>_<모델>_<조건>/
+            화면 전문 로그 eval_<모델>_<조건>_<시각>.txt
+            영상별 결과 eval_<모델>_<조건>_<시각>_videos.csv
+        2) 요약 한 줄 outputs/evallogs/eval_summary.csv(계속 덧붙이며, run 열은 회차 폴더 이름)
     """
     log_dir = pathlib.Path(getattr(config, 'EVAL_LOG_DIR',
                                    pathlib.Path('outputs') / 'evallogs'))
     log_dir.mkdir(parents=True, exist_ok=True)
     weights = pathlib.Path(str(config.EVAL_WEIGHTS_PATH)).name
-    # 사전학습 여부는 평가하는 가중치의 이름(_ptY_/_ptN_)으로 정한다. 이름에 없으면 config 값.
+    # 사전학습 여부는 평가하는 가중치 이름(_ptY_, _ptN_)으로 정합니다. 이름에 없으면 config 값을 씁니다.
     tag = next((t for t in ('ptY', 'ptN') if f'_{t}_' in weights),
                getattr(config, 'PRETRAIN_TAG', '?'))
-    # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다.
-    # 묶음 구성(--balance)으로 학습한 가중치는 _bal, 저화질 증강(TRAIN_LQ_AUG_PROB)은 _lq 도 붙인다.
-    # fps 증강(TRAIN_FPS_AUG_PROB)은 _fps, 224 아닌 입력 크기(INPUT_SIZE)는 _s<크기>, 헤드 시간 풀링(HEAD_TEMPORAL_POOL)은 _top3 등.
-    # 충돌 전·후 정상(_ctx)·헷갈리는 정상(_hn) 학습도 붙인다(11-22 — 없으면 평가 폴더 이름이 같은 조건의 다른 학습과 같아짐)
+    # 가중치 이름의 학습 조건 표시를 평가 폴더와 파일 이름에도 붙여 서로 다른 학습의 평가가 섞이지 않게 합니다.
+    # _span, _ctx, _hn, _bal, 저화질 증강(_lq, _lqw, _lqs, _lqws), _fps, _light, 입력 크기(_s<크기>), 헤드 시간 풀링(_top3 등)입니다.
     name_tag = (tag + ('_span' if '_span_' in weights else '')
                 + ('_ctx' if '_ctx_' in weights or '_ctxall' in weights else '')
                 + ('_hn' if '_hn_' in weights or any(f'_hn{k}_' in weights for k in range(2, 10)) else '')
@@ -734,11 +723,11 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
                 + ('_light' if '_light_' in weights else '')
                 + (f'_s{config.RESIZE[0]}' if config.RESIZE[0] != 224 else '')
                 + (f"_{config.HEAD_TEMPORAL_POOL}" if getattr(config, 'HEAD_TEMPORAL_POOL', 'avg') != 'avg' else ''))
-    # 크롭 r 을 바꿔 평가하면(main --r) 이름에 _r<값> 을 붙인다 — 요약 표의 run 열로 구분된다
+    # 크롭 r을 바꿔 평가하면(main --r) 이름에 _r<값>을 붙입니다. 요약 표의 run 열로 구분됩니다.
     r_value = float(kwargs.get('r_value', config.R_VALUE))
     if abs(r_value - 1.0) > 1e-9:
         name_tag += f'_r{r_value:g}'
-    # 판정 기준(config.A_THRESHOLD)이 0.5 가 아니면 _th<값> — 0.5 로 낸 결과와 섞이지 않게
+    # 판정 기준(config.A_THRESHOLD)이 0.5가 아니면 _th<값>을 붙여 0.5로 낸 결과와 섞이지 않게 합니다.
     if abs(config.A_THRESHOLD - 0.5) > 1e-9:
         name_tag += f'_th{config.A_THRESHOLD:g}'
     run_dir, stamp = make_run_dir(log_dir, config.MODEL_NAME, name_tag)
@@ -750,15 +739,14 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
         ('시작', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ('평가 가중치', str(config.EVAL_WEIGHTS_PATH)),
         ('평가 폴더', str(folder_path)),
-        # 2026-11-04 부터 실효 10fps 미만 평가 영상 7개를 뺌(폴더 밖으로 옮김 + 목록) — 그 전 평가는 30개, 이후 23개
+        # 실효 10fps 미만 평가 영상을 뺐는지 기록합니다.
         ('10fps 미만 영상 제외(config.LOW_FPS_VIDEOS)', '켬' if getattr(config, 'EXCLUDE_VIDEOS', None) else '끔'),
         ('크롭 r', f'{r_value:g}'),
         ('판정 기준 P(A)', f'{config.A_THRESHOLD:g}'),
         ('거친 탐색 기준 P(A)', f'{config.PREDICT_COARSE_PROB:g}'),
-        # 2026-10-30 부터 켬 — 30fps 아닌 영상의 ② 서비스 판정이 그 전 평가와 달라질 수 있다(30fps 영상은 같음)
+        # 후처리 fps 맞춤을 켰는지 기록합니다. 30fps가 아닌 영상의 서비스 판정이 이 설정에 따라 달라집니다.
         ('후처리 fps 맞춤(거친 탐색 간격·최소 길이)', '켬' if config.PREDICT_FPS_SCALED_POSTPROC else '끔'),
-        # 속도 지표는 이 설정이 같은 평가끼리만 비교한다(2026-10-22 부터 기본 끔 — GPU 추론 약 2.6배 빠름).
-        # 정확도 지표는 켬/끔 차이가 P(A) 1e-6 수준이라 그대로 비교해도 된다.
+        # 속도 지표는 이 설정이 같은 평가끼리만 비교합니다. 정확도 지표는 켬과 끔의 차이가 P(A) 1e-6 수준이라 그대로 비교해도 됩니다.
         ('GPU 메모리 배치 channels_last',
          '켬' if (is_channels_last_3d_supported(next(model.parameters()).device)
                  and config.USE_CHANNELS_LAST) else '끔'),
@@ -798,7 +786,7 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
                                      for b in speed.get('model', [])) or None),
     ])
 
-    # 영상별 결과 CSV — 어떤 영상에서 무엇이 틀렸는지 나중에 다시 보려고
+    # 어떤 영상에서 무엇이 틀렸는지 나중에 다시 볼 수 있게 영상별 결과 CSV를 남깁니다.
     rows = m.pop('_svc_rows', [])
     if rows:
         per_video = run_dir / f"eval_{config.MODEL_NAME}_{name_tag}_{stamp}_videos.csv"
@@ -808,12 +796,11 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
             w.writerows(rows)
         print(f"[로그] 영상별 결과: {per_video}")
 
-    # 요약 CSV 에 한 줄 덧붙인다(모델 비교용)
+    # 모델을 비교할 수 있게 요약 CSV에 한 줄 덧붙입니다.
     summary = log_dir / 'eval_summary.csv'
-    # base_* = ① 기존 판정(창 P(A)>기준 1개↑), svc_* = ② 서비스 판정(이벤트 1개↑). 기준이 0.5 가 아니면 run 열에 _th<값>.
-    # 둘의 tp~f1 은 같은 정의라 그대로 비교된다. svc_hit_recall 은 위치 기준(시작 ±허용 오차).
-    # ⚠️ 2026-10-12 이전 요약 파일의 'recall' 은 지금의 base_recall, 'svc_recall' 은
-    #    지금의 svc_hit_recall 이다(이름만 바뀜).
+    # base_*는 기존 판정(기준을 넘는 묶음이 하나라도 있는지), svc_*는 서비스 판정(이벤트가 하나라도 있는지)입니다.
+    # 기준이 0.5가 아니면 run 열에 _th<값>이 붙습니다. 둘의 tp부터 f1까지는 같은 정의라 그대로 비교할 수 있고,
+    # svc_hit_recall은 위치 기준(시작 허용 오차)입니다.
     cols = ['datetime', 'run', 'model', 'pretrain', 'weights', 'eval_folder', 'n_videos',
             'base_tp', 'base_fn', 'base_fp', 'base_tn', 'base_recall', 'base_false_alarm',
             'base_accuracy', 'base_precision', 'base_f1',
@@ -824,10 +811,10 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
             'svc_err_median_f', 'svc_err_median_sec',
             'n_in_train', 'clean_n', 'clean_svc_hit_recall', 'clean_svc_false_events',
             'clean_svc_video_false_alarm',
-            # 추론 속도 — 장치가 다르면 비교할 수 없으니 device 와 함께 본다
+            # 추론 속도는 장치가 다르면 비교할 수 없으니 device와 함께 봅니다.
             'device', 'speed_proc_fps', 'speed_realtime_x', 'speed_windows_eval_pct',
             'speed_model_batch', 'speed_model_clips_per_sec', 'speed_model_ms_per_clip']
-    # 컬럼 구성이 바뀐 옛 요약 파일에 이어 쓰면 열이 어긋나므로 옆으로 치워둔다
+    # 컬럼 구성이 다른 예전 요약 파일에 이어 쓰면 열이 어긋나므로 옆으로 옮겨 둡니다.
     if summary.exists():
         with open(summary, encoding='utf-8') as f:
             old_header = f.readline().strip().split(',')

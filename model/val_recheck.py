@@ -1,18 +1,17 @@
-"""지난 학습의 에포크별 가중치로 검증 지표를 다시 계산한다 — 2026-10-29 에 추가한 지표를 그 전 학습에도 채운다.
+"""지난 학습의 에포크별 가중치로 검증 지표를 다시 계산합니다.
 
-학습 중 검증(train.validate)과 같은 함수·같은 검증 영상(회차 폴더 split.json)으로 잰다.
-  · 기존 지표(균형 손실·재현율)도 다시 내서 학습 CSV 와 맞춰 본다(검산 — 맞으면 같은 검증을 재현한 것)
-  · 첫 창 재현율 : 충돌 시작 TRAIN_A_PRE_FRAMES 전부터 창 1개('pre' 학습의 val 재현율과 같은 정의)
-  · 구간 재현율 : 접근~충돌 종료 창(최대 TRAIN_SPAN_MAX_WINDOWS) 중 하나라도 A — 서비스 판정에 가깝다
-  · 구분력      : 충돌 샘플(구간 창 중 최고 점수)이 비충돌 클립보다 P(A)가 높을 확률 — 판정 기준과 무관
-학습 방식(pre/span)과 상관없이 정의가 같아, pre 학습과 span 학습을 이 지표로 서로 비교할 수 있다.
---threshold 로 판정 기준을 바꿔 다시 셀 수 있다(검증 데이터로 기준을 정할 때 — 평가 영상으로 정하지 않는다).
+학습 중 검증(train.validate)과 같은 함수, 같은 검증 영상(회차 폴더 split.json)으로 잽니다.
+    기존 지표(균형 손실, 재현율): 학습 CSV와 맞춰 보는 검산용입니다. 맞으면 같은 검증을 재현한 것입니다.
+    첫 묶음 재현율: 충돌 시작 TRAIN_A_PRE_FRAMES 전부터 묶음 하나('pre' 학습의 검증 재현율과 같은 정의)
+    구간 재현율: 접근부터 충돌 끝까지의 묶음(최대 TRAIN_SPAN_MAX_WINDOWS) 중 하나라도 A면 잡은 것으로 봅니다.
+    구분력: 충돌 샘플(구간 묶음 중 최고 점수)이 비충돌 클립보다 P(A)가 높을 확률이며, 판정 기준과 무관합니다.
+학습 방식(pre, span)과 상관없이 정의가 같아 두 방식을 이 지표로 비교할 수 있습니다.
+--threshold로 판정 기준을 바꿔 다시 셀 수 있습니다(기준은 검증 데이터로 정하고 평가 영상으로 정하지 않습니다).
 
     python -m model.val_recheck --run outputs/trainlogs/<회차 폴더>                  # 에포크 전부(epochs/)
     python -m model.val_recheck --run outputs/trainlogs/<회차 폴더> --epochs 35,41,43 --domain real
 
-결과: 회차 폴더의 val_recheck_<시각>[_th<기준>].csv · .txt. 에포크별 가중치가 없는 학습(10-22 이전)은
-work_best·work_cand_ep* 만 잰다.
+결과는 회차 폴더의 val_recheck_<시각>[_th<기준>].csv와 .txt입니다. 에포크별 가중치가 없는 학습은 work_best와 work_cand_ep*만 잽니다.
 """
 import argparse
 import csv
@@ -35,7 +34,7 @@ from evaluate import _Tee
 from hitandrun_model import HitAndRun3DCNN, check_weights
 from train import _make_loader, validate
 
-# 검증 클립 구성에 영향을 주는 설정 — 학습 당시(config_snapshot.py)와 다르면 검산이 맞지 않을 수 있다
+# 검증 클립 구성에 영향을 주는 설정입니다. 학습 당시(config_snapshot.py)와 다르면 검산이 맞지 않을 수 있습니다.
 _SAMPLE_KEYS = ('CLIP_LENGTH', 'RESIZE', 'R_VALUE', 'NORM_MEAN', 'NORM_STD', 'TRAIN_A_PRE_FRAMES',
                 'TRAIN_A_SLICE_ENABLED', 'TRAIN_A_SLICE_STRIDE', 'TRAIN_S_SLICE_ENABLED', 'TRAIN_S_SLICE_STRIDE',
                 'TRAIN_S_MAX_CLIPS_PER_VIDEO', 'TRAIN_S_REAL_USE_CAR1', 'TRAIN_SPAN_WINDOW_STRIDE',
@@ -44,7 +43,7 @@ _METRICS = ('bal', 'rec', 'prec', 'preRec', 'prePrec', 'spanRec', 'spanPrec', 'a
 
 
 def _snapshot_diff(run_dir):
-    """학습 당시 설정과 지금 설정이 다른 키 [(키, 당시, 지금)]. 스냅숏이 없으면 None."""
+    """학습 당시 설정과 지금 설정이 다른 키 [(키, 당시, 지금)]를 돌려줍니다. 스냅숏이 없으면 None입니다."""
     snap = run_dir / 'config_snapshot.py'
     if not snap.exists():
         return None
@@ -52,7 +51,7 @@ def _snapshot_diff(run_dir):
     mod = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(mod)
-    except Exception as exc:  # noqa: BLE001 — 옛 스냅숏을 못 읽어도 다시 계산은 할 수 있다
+    except Exception as exc:  # noqa: BLE001  예전 스냅숏을 못 읽어도 다시 계산은 할 수 있습니다.
         print(f'⚠️ 설정 스냅숏을 읽지 못해 비교를 건너뜁니다: {exc}')
         return None
     return [(k, getattr(mod, k, None), getattr(config, k, None)) for k in _SAMPLE_KEYS
@@ -60,7 +59,7 @@ def _snapshot_diff(run_dir):
 
 
 def _weights(run_dir, epochs):
-    """[(에포크 번호 또는 이름, 가중치 경로)]. epochs/ 가 없으면 work_best·work_cand_ep*."""
+    """[(에포크 번호 또는 이름, 가중치 경로)]를 돌려줍니다. epochs/가 없으면 work_best와 work_cand_ep*를 씁니다."""
     found = []
     for p in sorted((run_dir / 'epochs').glob('*_ep[0-9][0-9][0-9].pth')):
         found.append((int(re.search(r'_ep(\d+)\.pth$', p.name).group(1)), p))
@@ -75,16 +74,16 @@ def _weights(run_dir, epochs):
 
 
 def _val_indices(dataset, split, data_dir):
-    """split.json 의 검증 영상 → (rc 샘플 번호, real 샘플 번호, 못 찾은 검증 영상 수).
+    """split.json의 검증 영상에 맞는 (rc 샘플 번호, real 샘플 번호, 못 찾은 검증 영상 수)를 돌려줍니다.
 
-    split.json 은 train.py 가 데이터 폴더 기준 상대경로(os.path.relpath)로 남기므로 같은 방식으로 맞춘다 —
-    학습한 컴퓨터와 데이터 폴더 위치가 달라도 된다.
+    split.json은 train.py가 데이터 폴더 기준 상대경로(os.path.relpath)로 남기므로 같은 방식으로 맞춥니다.
+    학습한 컴퓨터와 데이터 폴더 위치가 달라도 됩니다.
     """
     def _key(p):
-        return str(p).replace('\\', '/')     # 다른 OS(Windows)에서 학습한 회차도 읽게
+        return str(p).replace('\\', '/')     # 다른 OS(Windows)에서 학습한 회차도 읽을 수 있게 합니다.
 
-    # 10fps 미만 영상(config.EXCLUDE_VIDEOS)은 뺀다 — 2026-11-04 전 회차의 검증(ReA_0005 포함)도
-    # 지금 검증(model/split_lock.json)과 같은 영상으로 재게 된다. 학습 CSV 와의 검산은 그만큼 다를 수 있다.
+    # 실효 10fps 미만 영상(config.EXCLUDE_VIDEOS)은 뺍니다. 그래서 예전 회차도 지금 검증과 같은 영상으로 재며,
+    # 그만큼 학습 CSV와의 검산이 다를 수 있습니다.
     excl = set(getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
     want = {_key(v) for v in split['val']
             if os.path.splitext(os.path.basename(_key(v)))[0] not in excl}
@@ -133,7 +132,7 @@ def main():
 
 
 def _run(args, run_dir, th, out_base):
-    span = '_span' in run_dir.name           # 학습 방식 — 기존 지표(손실·재현율)를 학습 때처럼 내려고
+    span = '_span' in run_dir.name           # 학습 방식에 맞춰 기존 지표(손실, 재현율)를 학습 때처럼 냅니다.
     epochs = {int(e) for e in args.epochs.split(',') if e.strip()} if args.epochs else None
     weights = _weights(run_dir, epochs)
     if not weights:
@@ -156,8 +155,8 @@ def _run(args, run_dir, th, out_base):
     if is_cuda_like(device):
         torch.backends.cudnn.benchmark = True
     channels_last = bool(config.USE_CHANNELS_LAST) and is_channels_last_3d_supported(device)
-    # 검증 영상 찾을 곳: 검증 폴더(config.VAL_DATA_DIR, 11-04~ 옮김) → 회차의 학습 폴더(그 전 회차는 여기서 나눔).
-    # 회차의 검증 영상이 모두 검증 폴더에 있으면 학습 폴더는 읽지 않는다(빠름).
+    # 검증 영상은 검증 폴더(config.VAL_DATA_DIR)에서 먼저 찾고, 없으면 회차의 학습 폴더에서 찾습니다.
+    # 회차의 검증 영상이 모두 검증 폴더에 있으면 학습 폴더는 읽지 않습니다.
     roots = []
     vdir = Path(split.get('val_dir') or getattr(config, 'VAL_DATA_DIR', '') or '')
     if str(vdir) not in ('', '.') and not vdir.exists():
@@ -190,15 +189,15 @@ def _run(args, run_dir, th, out_base):
         with open(log, encoding='utf-8') as fh:
             rows_csv = {r['epoch']: r for r in csv.DictReader(fh) if r.get('epoch')}
 
-    check_weights(weights[0][1])             # 헤드 풀링을 환경변수로 안 정했으면 이름(_top3)을 따라 — 모델 만들기 전에
+    check_weights(weights[0][1])             # 헤드 풀링을 환경변수로 정하지 않았으면 이름(_top3)을 따릅니다. 모델을 만들기 전에 불러야 합니다.
     model = HitAndRun3DCNN(num_classes=config.MODEL_NUM_CLASSES).to(device)
     if channels_last:
         model = model.to(memory_format=torch.channels_last_3d)
     out_rows, n_check, n_ok = [], 0, 0
     t0 = time.perf_counter()
     for k, (ep, path) in enumerate(weights):
-        check_weights(path)                  # 학습한 입력 크기(_s256)·헤드 풀링(_top3)이 지금 설정과 같아야 한다
-        if model.temporal_pool != config.HEAD_TEMPORAL_POOL:     # 한 회차 안이라 바뀔 일은 없다
+        check_weights(path)                  # 학습한 입력 크기(_s256)와 헤드 풀링(_top3)이 지금 설정과 같아야 합니다.
+        if model.temporal_pool != config.HEAD_TEMPORAL_POOL:     # 한 회차 안이라 바뀔 일은 없습니다.
             raise RuntimeError(f'{path.name}: 헤드 풀링이 앞 가중치와 다릅니다')
         model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True))
         row = {'epoch': ep, 'weights': path.name}
@@ -210,7 +209,7 @@ def _run(args, run_dir, th, out_base):
                          channels_last=channels_last, threshold=th) if loaders[d] else None
             for key in _METRICS:
                 row[f'{d}_{key}'] = None if m is None else m[key]
-            # 검산: 학습 CSV 의 균형 손실·재현율과 같은가(기준이 0.5 가 아니면 재현율은 빼고)
+            # 검산: 학습 CSV의 균형 손실, 재현율과 같은지 봅니다(기준이 0.5가 아니면 재현율은 뺍니다).
             if m is not None and old.get(f'val_{d}_bal'):
                 ok = abs(float(old[f'val_{d}_bal']) - m['bal']) < 2e-3
                 if abs(th - 0.5) < 1e-9 and old.get(f'val_{d}_recallA') and m['rec'] is not None:

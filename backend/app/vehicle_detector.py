@@ -1,11 +1,8 @@
-"""라이브 차량 탐지 모듈 (웹 서비스 /detect-vehicles 에서 사용).
+"""웹 서비스의 차량 자동 탐지(/detect-vehicles)에 쓰는 모듈입니다.
 
-YOLO(권장: segmentation 모델)로 프레임의 차량을 탐지하고, segmentation mask의
-실제 외곽으로 상/하/좌/우가 차량 엣지에 맞는 bbox를 계산한다. detection 모델을
-쓰면 마스크가 없어 YOLO detection bbox로 폴백한다.
-
-- 라이브 진입점: get_detector(...) 로 탐지기를 프로세스당 1회 로드·재사용.
-- 반환: VehicleDetection(class_name, confidence, bbox=(x1,y1,x2,y2)) 목록.
+YOLO(segmentation 모델 권장)로 프레임의 차량을 찾고, 마스크의 실제 외곽으로 차량 가장자리에 맞는 박스를 계산합니다.
+detection 모델을 쓰면 마스크가 없으므로 YOLO 박스를 그대로 씁니다.
+get_detector로 탐지기를 프로세스마다 한 번 불러와 재사용하고, VehicleDetection(class_name, confidence, bbox) 목록을 돌려줍니다.
 """
 
 from __future__ import annotations
@@ -19,7 +16,7 @@ import numpy as np
 
 try:
     from ultralytics import YOLO
-except ImportError as exc:  # pragma: no cover - runtime dependency 안내용
+except ImportError as exc:  # pragma: no cover  실행에 필요한 패키지를 안내합니다.
     raise SystemExit(
         "ultralytics가 설치되어 있지 않습니다. "
         "다음 명령으로 설치하세요: pip install ultralytics opencv-python"
@@ -37,7 +34,7 @@ class VehicleDetection:
 
 
 class VehicleBBoxDetector:
-    """YOLO-seg mask 외곽으로 차량 bbox를 타이트하게 재계산한다."""
+    """YOLO-seg 마스크 외곽으로 차량 박스를 딱 맞게 다시 계산합니다."""
 
     def __init__(
         self,
@@ -55,17 +52,16 @@ class VehicleBBoxDetector:
     ):
         self.model = YOLO(model_path)
         self.conf = conf
-        # imgsz 의미:
-        #   dynamic_imgsz=False → 항상 이 값으로 추론(고정).
-        #   dynamic_imgsz=True  → 프레임 긴 변에 맞춘 동적 imgsz의 '상한(cap)'.
-        #     eff = clamp(round32(long_side), imgsz_min, imgsz)
-        #     → 고해상도는 과다 다운스케일(정보손실) 방지, 저해상도는 업스케일 낭비 방지.
-        self.imgsz = imgsz              # 추론 입력 해상도(동적 모드에선 상한)
+        # imgsz의 뜻입니다.
+        # dynamic_imgsz=False면 항상 이 값으로 추론합니다.
+        # dynamic_imgsz=True면 프레임 긴 변에 맞춘 크기의 상한입니다. 실제 크기는 긴 변을 32의 배수로 맞춘 뒤
+        # imgsz_min과 imgsz 사이로 자릅니다. 고해상도는 지나치게 줄이지 않고, 저해상도는 쓸데없이 키우지 않습니다.
+        self.imgsz = imgsz              # 추론 입력 해상도(동적 모드에서는 상한)
         self.dynamic_imgsz = dynamic_imgsz
         self.imgsz_min = imgsz_min
-        self.enhance_night = enhance_night  # 어두운 프레임 CLAHE/감마 전처리 여부
+        self.enhance_night = enhance_night  # 어두운 프레임에 CLAHE와 감마 보정을 할지
         self.vehicle_classes = set(vehicle_classes)
-        self.mask_threshold = mask_threshold  # 마스크 이진화 임계값(↑ = bbox 타이트)
+        self.mask_threshold = mask_threshold  # 마스크를 이진화하는 기준값(클수록 박스가 좁아짐)
         self.min_area = min_area
         self.nms_iou = nms_iou
         self.contain_threshold = contain_threshold
@@ -129,7 +125,7 @@ class VehicleBBoxDetector:
         self,
         detections: list[VehicleDetection],
     ) -> list[VehicleDetection]:
-        """같은 차량에 여러 bbox가 생기면 confidence가 높은 bbox만 남긴다."""
+        """같은 차량에 박스가 여러 개 생기면 confidence가 높은 박스만 남깁니다."""
         kept: list[VehicleDetection] = []
         for det in sorted(detections, key=lambda item: item.confidence, reverse=True):
             duplicate = False
@@ -149,7 +145,7 @@ class VehicleBBoxDetector:
         frame_width: int,
         frame_height: int,
     ) -> tuple[int, int, int, int] | None:
-        """Segmentation mask의 실제 양수 픽셀 외곽으로 bbox를 계산한다."""
+        """마스크에서 실제로 차량인 픽셀의 외곽으로 박스를 계산합니다."""
         binary = (mask > self.mask_threshold).astype(np.uint8)
         if binary.shape[:2] != (frame_height, frame_width):
             binary = cv2.resize(
@@ -158,7 +154,7 @@ class VehicleBBoxDetector:
                 interpolation=cv2.INTER_NEAREST,
             )
 
-        # 작은 구멍이나 끊긴 mask를 약하게 정리한다.
+        # 작은 구멍이나 끊긴 마스크를 약하게 정리합니다.
         kernel = np.ones((3, 3), dtype=np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
 
@@ -177,28 +173,26 @@ class VehicleBBoxDetector:
 
     @staticmethod
     def _enhance_low_light(frame_bgr: np.ndarray, brightness_thresh: int = 80) -> np.ndarray:
-        """어두운(야간) 프레임이면 CLAHE(대비 향상)+감마 보정으로 차량 가시성을 높인다.
-
-        밝은 주간 프레임은 원본을 그대로 반환(과보정 방지). 밝기(그레이 평균)가
-        임계값 미만일 때만 보정을 적용한다.
+        """어두운(야간) 프레임이면 CLAHE(대비 향상)와 감마 보정으로 차량이 잘 보이게 합니다.
+        밝은 주간 프레임은 지나치게 보정하지 않도록 원본을 그대로 돌려주고, 밝기(회색조 평균)가 기준보다 낮을 때만 보정합니다.
         """
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         if float(gray.mean()) >= brightness_thresh:
             return frame_bgr
-        # CLAHE는 LAB의 L(밝기) 채널에만 적용 → 색 왜곡 없이 대비만 향상
+        # CLAHE는 LAB의 L(밝기) 채널에만 적용해 색은 그대로 두고 대비만 높입니다.
         lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
         l_ch, a_ch, b_ch = cv2.split(lab)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         l_ch = clahe.apply(l_ch)
         enhanced = cv2.cvtColor(cv2.merge((l_ch, a_ch, b_ch)), cv2.COLOR_LAB2BGR)
-        # 감마 보정(<1) → 어두운 영역을 밝게
+        # 1보다 작은 감마로 어두운 영역을 밝게 합니다.
         gamma = 0.7
         table = np.array([((i / 255.0) ** gamma) * 255
                           for i in range(256)], dtype=np.uint8)
         return cv2.LUT(enhanced, table)
 
     def _effective_imgsz(self, width: int, height: int) -> int:
-        """동적 모드면 프레임 긴 변을 32배수로 맞춰 [imgsz_min, imgsz]로 clamp."""
+        """동적 모드면 프레임 긴 변을 32의 배수로 맞춘 뒤 imgsz_min과 imgsz 사이로 자릅니다."""
         if not self.dynamic_imgsz:
             return self.imgsz
         long_side = max(width, height)
@@ -235,7 +229,7 @@ class VehicleBBoxDetector:
             if tight_bbox is None:
                 tight_bbox = self._clip_box(x1, y1, x2, y2, width, height)
 
-            # (엣지 정밀도는 마스크로 결정 — blind 좌우 shrink 휴리스틱은 사용하지 않음)
+            # 가장자리 정밀도는 마스크로 정합니다.
             bx1, by1, bx2, by2 = tight_bbox
             if bx2 <= bx1 or by2 <= by1:
                 continue
@@ -275,7 +269,7 @@ def read_source_frame(source: Path, frame_index: int = 0) -> np.ndarray:
     return frame
 
 
-# 프로세스당 탐지기(YOLO 모델)를 1회만 로드해 재사용 — 매 요청 재로드 오버헤드 제거.
+# 탐지기(YOLO 모델)를 프로세스마다 한 번만 불러와 재사용합니다.
 _detector_cache: dict = {}
 
 
@@ -288,11 +282,10 @@ def get_detector(
     dynamic_imgsz: bool = True,
     imgsz_min: int = 640,
 ) -> "VehicleBBoxDetector":
-    """설정별로 VehicleBBoxDetector를 캐시해 반환한다(같은 설정이면 재사용).
+    """설정별로 VehicleBBoxDetector를 저장해 두고 돌려줍니다(같은 설정이면 재사용).
 
-    YOLO 가중치 로드(≈수 초)를 요청마다 반복하지 않도록 프로세스 전역에 보관한다.
-    기본은 동적 imgsz(상한 1536): 프레임 해상도에 맞춰 imgsz를 정해 고해상도
-    정보손실과 저해상도 업스케일 낭비를 동시에 줄인다.
+    YOLO 가중치를 불러오는 데 몇 초가 걸리므로 요청마다 다시 불러오지 않도록 프로세스 전체에 보관합니다.
+    기본은 동적 imgsz(상한 1536)로, 프레임 해상도에 맞춰 크기를 정합니다.
     """
     key = (model_path, conf, imgsz, enhance_night, mask_threshold,
            dynamic_imgsz, imgsz_min)

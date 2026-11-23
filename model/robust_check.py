@@ -1,25 +1,24 @@
-"""변형 견딤 시험 — 학습한 증강과 학습하지 않은 변형(저해상도·압축)에 모델 판단이 얼마나 흔들리는지 잰다.
+"""변형 견딤 시험입니다. 학습한 증강과 학습하지 않은 변형(저해상도, 압축 등)에 모델 판단이 얼마나 흔들리는지 잽니다.
 
-    python -u -m model.robust_check                      # 평가 폴더 전부, 평가 가중치(GPU 권장, 약 5분)
+    python -u -m model.robust_check                      # 평가 폴더 전부, 평가 가중치(GPU 권장)
     python -u -m model.robust_check --weights <가중치.pth>
-    python -u -m model.robust_check --videos 4           # 사고·정상 절반씩 일부만(코드 점검용)
+    python -u -m model.robust_check --videos 4           # 사고와 정상 절반씩 일부만(코드 점검용)
 
-평가 영상(config.EVAL_FOLDER_PATH)마다 창을 고른다 — 사고 영상은 충돌 시작 앞뒤(시작 25·20·15·10·5·0프레임 전 시작),
-정상 영상은 영상 전체에 고르게 12개. 창마다 30프레임을 학습·서비스와 같이 자르고 줄인 뒤(0번 차량 박스, r=1.0)
-변형별로 P(A)를 잰다. 변형은 클립 전체에 같은 값이다(노이즈만 프레임마다, 시드 고정).
-  · 학습한 증강(dataset.py 와 같은 연산): 좌우 뒤집기 · 밝게 1.4 · 어둡게 0.6 · 대비 0.7 · 채도 0.7 · 색조 +0.1 ·
-    흑백 · 흐림(3×3) · 잔무늬 노이즈 σ8(클립 내내 같은 무늬 — 2026-11-05 학습 노이즈를 이렇게 바꿈)
-  · 참고: 예전 학습 노이즈 σ8(프레임마다 새로 뽑아 깜빡임 — 실제 압축 영상엔 없는 형태). 그 전 결과와 비교용, 평균엔 안 넣음
-  · 학습하지 않은 변형: 저해상도(차량 크롭을 64·40px 로 줄였다 다시 키움 = 화면 속 작은 차) · 압축(JPEG 화질 25) ·
-    저해상도 64px + 압축(작은 차를 압축이 심한 CCTV 로 본 것)
-  · H.264 키프레임(2026-11-05): 크롭 30프레임을 H.264(CRF 35)로 압축했다 푼다. 키프레임(화면 통째 저장)을 창 처음에만
-    두면 '압축만', 15·10프레임마다 두면 창 안에서 화질이 한순간 튄다(멈춘 장면에서 키프레임마다 잔무늬가 한꺼번에 바뀜 —
-    ReS_0018 오탐 원인). '압축만'과 비교해 튐 때문에 P(A)가 오르는지 본다(헤드 상위 3개 풀링은 이런 짧은 튐에 더 예민할 수 있음).
-    실제 영상은 화면 전체를 압축한 뒤 자르지만 여기선 자른 크롭을 압축한다(dataset 저화질 증강과 같은 근사). PyAV 가 없으면 건너뛴다.
-학습한 증강에는 판단이 덜 흔들리고 학습하지 않은 변형에 크게 흔들리면 증강이 모델에 반영된 것이다. 저해상도에서
-정상 창의 P(A)가 오르면 '흐리면 사고' 지름길을 의심한다(학습 데이터의 저화질 영상이 사고 쪽에 몰려 있음).
-판정은 창 단위 P(A)>기준(config.A_THRESHOLD, 기본 0.45) 과, 영상의 고른 창 중 하나라도 기준을 넘으면 '사고'로 보는 축약 판정이다(서비스 판정과
-다르다 — 변형끼리 비교용). 결과는 화면과 outputs/robust_check/<시각>/report.txt · windows.csv 에 남는다.
+평가 영상(config.EVAL_FOLDER_PATH)마다 묶음을 고릅니다. 사고 영상은 충돌 시작 앞뒤(시작 25, 20, 15, 10, 5, 0프레임 전에서 시작),
+정상 영상은 영상 전체에서 고르게 12개입니다. 묶음마다 30프레임을 학습, 서비스와 같이 자르고 줄인 뒤(0번 차량 박스, r=1.0)
+변형별로 P(A)를 잽니다. 변형 값은 클립 전체에 같고, 시드를 고정합니다.
+    학습한 증강(dataset.py와 같은 연산): 좌우 뒤집기, 밝게 1.4, 어둡게 0.6, 대비 0.7, 채도 0.7, 색조 +0.1, 흑백, 흐림(3x3),
+        잔무늬 노이즈(표준편차 8, 클립 내내 같은 무늬)
+    참고: 프레임마다 새로 뽑아 깜빡이는 노이즈(표준편차 8)입니다. 실제 압축 영상에는 없는 형태라 평균에는 넣지 않습니다.
+    학습하지 않은 변형: 저해상도(차량 크롭을 64px, 40px로 줄였다 다시 키움), 압축(JPEG 화질 25), 저해상도 64px와 압축을 함께
+    H.264 키프레임: 크롭 30프레임을 H.264(CRF 35)로 압축했다 풉니다. 키프레임을 묶음 처음에만 두면 '압축만'이고,
+        15프레임이나 10프레임마다 두면 묶음 안에서 화질이 한순간 튑니다(멈춘 장면에서 키프레임마다 잔무늬가 한꺼번에 바뀜).
+        '압축만'과 비교해 튐 때문에 P(A)가 오르는지 봅니다. 실제 영상은 화면 전체를 압축한 뒤 자르지만 여기서는
+        자른 크롭을 압축합니다(dataset 저화질 증강과 같은 근사). PyAV가 없으면 건너뜁니다.
+학습한 증강에는 덜 흔들리고 학습하지 않은 변형에 크게 흔들리면 증강이 모델에 반영된 것입니다.
+저해상도에서 정상 묶음의 P(A)가 오르면 '흐리면 사고'라는 지름길을 의심합니다.
+판정은 묶음 단위 P(A) > 기준(config.A_THRESHOLD)과, 영상의 고른 묶음 중 하나라도 기준을 넘으면 사고로 보는 축약 판정입니다.
+서비스 판정과 다르며 변형끼리 비교하는 용도입니다. 결과는 화면과 outputs/robust_check/<시각>/의 report.txt, windows.csv에 남습니다.
 """
 import argparse
 import csv
@@ -43,12 +42,12 @@ from device_utils import is_channels_last_3d_supported, is_cuda_like
 from evaluate import _read_label
 from main import _load_model
 
-A_OFFSETS = (25, 20, 15, 10, 5, 0)            # 사고 창 시작 = 충돌 시작 - 이 값(프레임)
+A_OFFSETS = (25, 20, 15, 10, 5, 0)            # 사고 묶음 시작은 충돌 시작에서 이 값(프레임)만큼 앞입니다.
 NOISE_SIGMA = 8.0
 
 
 class _Tee:
-    """화면과 파일에 함께 쓴다."""
+    """화면과 파일에 함께 씁니다."""
     def __init__(self, path):
         self.stdout, self.f = sys.stdout, open(path, 'w', encoding='utf-8')
 
@@ -64,28 +63,28 @@ class _Tee:
         self.f.close()
 
 
-# ───────────────────────── 변형 ─────────────────────────
+# 변형
 def _pil(fn):
-    """PIL 변환을 클립의 모든 프레임에 같은 값으로 — dataset._apply_augmentation 과 같은 연산."""
+    """PIL 변환을 클립의 모든 프레임에 같은 값으로 적용합니다(dataset._apply_augmentation과 같은 연산)."""
     return lambda frames, seed: [np.array(fn(Image.fromarray(f))) for f in frames]
 
 
 def _noise(frames, seed):
-    # 예전 학습 노이즈 — 프레임마다 새로 뽑는다(창마다 시드 고정 → 다시 돌려도 같다). 11-05 부터 학습엔 없음(참고용)
+    # 프레임마다 새로 뽑는 노이즈입니다(묶음마다 시드를 고정해 다시 돌려도 같습니다). 학습에는 쓰지 않는 참고용입니다.
     rng = np.random.default_rng(seed)
     return [np.clip(f.astype(np.float32) + rng.normal(0.0, NOISE_SIGMA, f.shape), 0, 255).astype(np.uint8)
             for f in frames]
 
 
 def _grain(frames, seed):
-    # 지금 학습 노이즈(dataset._apply_augmentation) — 클립 내내 같은 잔무늬(창마다 시드 고정)
+    # 학습 노이즈(dataset._apply_augmentation)와 같은, 클립 내내 같은 잔무늬입니다(묶음마다 시드 고정).
     rng = np.random.default_rng(seed)
     g = rng.normal(0.0, NOISE_SIGMA, frames[0].shape).astype(np.float32)
     return [np.clip(f.astype(np.float32) + g, 0, 255).astype(np.uint8) for f in frames]
 
 
 def _low(size, jpeg=None):
-    """224 크롭을 size 로 줄였다(카메라가 작게 찍은 차) 다시 키운다 — 서비스가 작은 크롭을 키우는 것과 같은 보간."""
+    """224 크롭을 size로 줄였다가(작게 찍힌 차) 다시 키웁니다. 서비스가 작은 크롭을 키우는 것과 같은 보간을 씁니다."""
     def fn(frames, seed):
         out = []
         for f in frames:
@@ -108,7 +107,7 @@ LIGHT = '불빛(야간)'
 
 
 def _light(**kw):
-    """밤처럼 어둡게(×0.4) 한 뒤 움직이는 불빛을 더한다 — dataset.add_light(불빛 증강과 같은 함수), 값은 고정."""
+    """밤처럼 어둡게(0.4배) 한 뒤 움직이는 불빛을 더합니다. 불빛 증강과 같은 dataset.add_light를 쓰고 값은 고정합니다."""
     def fn(frames, seed):
         from dataset import add_light
         return add_light(list(frames), **kw)
@@ -118,7 +117,7 @@ H264_CRF = 35
 
 
 def _h264(crf, gop):
-    """크롭 30프레임을 H.264 로 압축했다 푼다 — 키프레임은 gop 프레임마다(창 길이 이상이면 창 처음에만 = 튐 없음)."""
+    """크롭 30프레임을 H.264로 압축했다 풉니다. 키프레임은 gop 프레임마다 둡니다(묶음 길이 이상이면 처음에만 두어 튐이 없습니다)."""
     def fn(frames, seed):
         from dataset import h264_roundtrip
         return h264_roundtrip(list(frames), crf, gop)
@@ -141,7 +140,7 @@ CONDITIONS = [
     ('noise', f'깜빡이는 노이즈 σ{NOISE_SIGMA:g}', REF, _noise),
 ]
 try:
-    import av  # noqa: F401 — H.264 변형에 필요(dataset.h264_roundtrip)
+    import av  # noqa: F401  H.264 변형에 필요합니다(dataset.h264_roundtrip).
     CONDITIONS += [
         ('h264g30', f'H.264 압축만(CRF {H264_CRF})', KEYFRAME, _h264(H264_CRF, 300)),
         ('h264g15', '+ 15프레임마다 키프레임', KEYFRAME, _h264(H264_CRF, 15)),
@@ -153,7 +152,7 @@ except ImportError:
     KEYFRAME_NOTE = 'PyAV(av) 가 없어 H.264 키프레임 변형은 건너뜀 — pip install av'
 
 
-# 불빛(2026-11-05): 같은 '밤(×0.4)'에 불빛만 더한 것과 비교해 불빛 때문에 P(A)가 오르는지(정상 창) · 떨어지는지(사고 창)
+# 불빛: 같은 '밤'(0.4배)에 불빛만 더한 것과 비교해, 불빛 때문에 정상 묶음 P(A)가 오르는지, 사고 묶음 P(A)가 떨어지는지 봅니다.
 CONDITIONS += [
     ('night', '밤처럼 어둡게 ×0.4', LIGHT, _light(kind='none', dark=0.4)),
     ('lsweep', '+ 흰 빛 훑기', LIGHT, _light(kind='sweep', dark=0.4, peak=160, radius=0.35, t0=8, dur=14,
@@ -165,7 +164,7 @@ CONDITIONS += [
 ]
 
 
-# ───────────────────────── 창 고르기·읽기 ─────────────────────────
+# 묶음 고르기와 읽기
 def _windows(total, gt_sf, n_s):
     L = config.CLIP_LENGTH
     last = max(0, total - L)
@@ -175,7 +174,7 @@ def _windows(total, gt_sf, n_s):
 
 
 def _read_clips(path, bbox, starts):
-    """창 시작점들 → [(T,H,W,3) uint8] — 처음부터 차례로 읽으며(서비스처럼) 필요한 프레임만 자르고 줄인다."""
+    """묶음 시작점들로 [(T,H,W,3) uint8]을 만듭니다. 서비스처럼 처음부터 차례로 읽으며 필요한 프레임만 자르고 줄입니다."""
     L = config.CLIP_LENGTH
     need = {s + i for s in starts for i in range(L)}
     crop_self = SimpleNamespace(resize=tuple(config.RESIZE))
@@ -195,13 +194,13 @@ def _read_clips(path, bbox, starts):
         fr = [crops[s + i] for i in range(L) if s + i in crops]
         if not fr:
             continue
-        while len(fr) < L:                       # 영상이 짧으면 마지막 프레임으로 채운다(dataset.py 와 같다)
+        while len(fr) < L:                       # 영상이 짧으면 마지막 프레임으로 채웁니다(dataset.py와 같습니다).
             fr.append(fr[-1])
         clips.append((s, np.stack(fr)))
     return clips
 
 
-# ───────────────────────── 추론 ─────────────────────────
+# 추론
 def _infer(model, device, clips, batch, cl):
     mean = torch.tensor(config.NORM_MEAN, dtype=torch.float32, device=device).view(1, 3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD, dtype=torch.float32, device=device).view(1, 3, 1, 1, 1)
@@ -209,7 +208,7 @@ def _infer(model, device, clips, batch, cl):
     with torch.no_grad():
         for i in range(0, len(clips), batch):
             x = torch.from_numpy(np.stack(clips[i:i + batch])).to(device)        # (B,T,H,W,3) uint8
-            x = (x.permute(0, 4, 1, 2, 3).float() / 255.0 - mean) / std           # dataset._frames_to_tensor 와 같다
+            x = (x.permute(0, 4, 1, 2, 3).float() / 255.0 - mean) / std           # dataset._frames_to_tensor와 같은 정규화
             if cl:
                 x = x.contiguous(memory_format=torch.channels_last_3d)
             out += torch.softmax(model(x).float(), 1)[:, 1].cpu().tolist()
@@ -217,14 +216,14 @@ def _infer(model, device, clips, batch, cl):
 
 
 def _auc(pos, neg):
-    """사고 창이 정상 창보다 P(A)가 높을 확률(동점 반) — 판정 기준과 무관한 구분력."""
+    """사고 묶음이 정상 묶음보다 P(A)가 높을 확률(동점은 절반)입니다. 판정 기준과 무관한 구분력입니다."""
     if not pos or not neg:
         return float('nan')
     p, n = np.asarray(pos)[:, None], np.asarray(neg)[None, :]
     return float((p > n).mean() + 0.5 * (p == n).mean())
 
 
-# ───────────────────────── 실행 ─────────────────────────
+# 실행
 def main():
     ap = argparse.ArgumentParser(description='변형 견딤 시험')
     ap.add_argument('--weights', default=str(config.EVAL_WEIGHTS_PATH), help='시험할 가중치(기본 평가 가중치)')
@@ -246,7 +245,7 @@ def main():
     finally:
         sys.stdout = tee.stdout
         tee.close()
-        # 오류로 멈췄을 때 [저장] 을 찍으면 끝난 줄 알고 다음 단계를 시작하는 대기 명령이 속는다(11-22)
+        # 오류로 멈췄을 때 [저장]을 찍으면 이어서 기다리던 명령이 끝난 줄 알고 다음 단계를 시작하므로 [중단]을 찍습니다.
         print(f'\n[저장] {out_dir / "report.txt"}' if done else f'\n[중단] 오류로 멈춤 — 일부만 남음: {out_dir}')
 
 
@@ -265,7 +264,7 @@ def _run(args, out_dir):
     for mp4 in sorted(folder.glob('*.mp4')):
         txt = mp4.with_suffix('.txt')
         if not txt.exists() or mp4.stem in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ()):
-            continue   # 10fps 미만 영상(config.LOW_FPS_VIDEOS)은 뺀다
+            continue   # 10fps 미만 영상(config.LOW_FPS_VIDEOS)은 뺍니다.
         bboxes, gt_sf, _ = _read_label(str(txt))
         if bboxes:
             vids.append((mp4, bboxes.get(config.TARGET_ID, next(iter(bboxes.values()))), gt_sf))
@@ -278,7 +277,7 @@ def _run(args, out_dir):
     if KEYFRAME_NOTE:
         print(f'  ⚠️ {KEYFRAME_NOTE}')
 
-    rows = []                                    # (영상, gt, 창 시작, 변형, P(A))
+    rows = []                                    # (영상, gt, 묶음 시작, 변형, P(A))
     t0 = time.perf_counter()
     for vi, (mp4, bbox, gt_sf) in enumerate(vids):
         cap = cv2.VideoCapture(str(mp4))
@@ -306,14 +305,14 @@ def _report(rows):
     n_av = sum(g == 'A' for g in gt_of.values())
     n_sv = len(gt_of) - n_av
     stats = {}
-    th = config.A_THRESHOLD     # 창 판정 기준(기본 0.45)
+    th = config.A_THRESHOLD     # 묶음 판정 기준
     for key, name, group, _ in CONDITIONS:
         sub = [(v, gt, s, p) for v, gt, s, k, p in rows if k == key]
         pa = [p for v, gt, s, p in sub if gt == 'A']
         ps = [p for v, gt, s, p in sub if gt == 'S']
         d = [abs(p - base[(v, s)]) for v, gt, s, p in sub]
-        miss = sum(gt == 'A' and base[(v, s)] > th >= p for v, gt, s, p in sub)     # 사고 창: 맞던 것을 놓침
-        fa = sum(gt == 'S' and base[(v, s)] <= th < p for v, gt, s, p in sub)       # 정상 창: 새로 오탐
+        miss = sum(gt == 'A' and base[(v, s)] > th >= p for v, gt, s, p in sub)     # 사고 묶음: 원본에서 맞히던 것을 놓친 수
+        fa = sum(gt == 'S' and base[(v, s)] <= th < p for v, gt, s, p in sub)       # 정상 묶음: 새로 오탐한 수
         vmax = {}
         for v, gt, s, p in sub:
             vmax[v] = max(vmax.get(v, 0.0), p)
@@ -379,7 +378,7 @@ def _report(rows):
 
 
 def _report_light(rows, stats, th):
-    """4) 불빛: 같은 '밤'(night)에 불빛만 더했을 때 정상 창 P(A)가 오르는지(오탐 경향)·사고 창이 떨어지는지(불빛에 가려 놓침)."""
+    """4) 불빛: 같은 '밤'(night)에 불빛만 더했을 때 정상 묶음 P(A)가 오르는지(오탐 경향), 사고 묶음 P(A)가 떨어지는지(놓침) 봅니다."""
     ref = {(v, s): p for v, gt, s, k, p in rows if k == 'night'}
     c = stats['night']
     print(f'  4) 불빛(같은 밤 ×0.4 에 불빛만 더함) — 밤: 정상 창 {c["ps"]:.3f} · 사고 창 {c["pa"]:.3f}')
@@ -406,7 +405,7 @@ def _report_light(rows, stats, th):
 
 
 def _report_keyframe(rows, stats, th):
-    """3) 키프레임 화질 튐: '압축만'(h264g30) 대비 키프레임을 창 안에 둔 변형에서 P(A)가 오르는지."""
+    """3) 키프레임 화질 튐: '압축만'(h264g30)과 비교해 키프레임을 묶음 안에 둔 변형에서 P(A)가 오르는지 봅니다."""
     ref = {(v, s): p for v, gt, s, k, p in rows if k == 'h264g30'}
     c = stats['h264g30']
     print(f'  3) 키프레임 화질 튐(같은 H.264 압축에 키프레임만 더 둔 것) — 압축만: 정상 창 {c["ps"]:.3f} · 사고 창 {c["pa"]:.3f}')

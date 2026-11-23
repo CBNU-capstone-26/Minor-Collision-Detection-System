@@ -1,13 +1,13 @@
-"""검증 영상을 학습 폴더에서 검증 폴더로 옮긴다 (2026-11-04).
+"""검증 영상을 학습 폴더에서 검증 폴더로 옮깁니다.
 
-    python -m model.val_move            # 무엇을 옮길지 보기만
-    python -m model.val_move --apply    # 옮기기 (mp4 + txt)
-    python -m model.val_move --restore --apply   # 학습 폴더로 되돌리기
+    python -m model.val_move                     # 무엇을 옮길지 보기만 합니다
+    python -m model.val_move --apply             # 옮깁니다(mp4와 txt)
+    python -m model.val_move --restore --apply   # 학습 폴더로 되돌립니다
 
-옮길 목록 = config.TRAIN_SPLIT_LOCK(model/split_lock.json)의 검증 189개(학습 폴더 기준 상대경로).
-config.DATA_DIR/<상대경로> → config.VAL_DATA_DIR/<같은 상대경로>(rcdata/·realdata/ 구조 그대로).
-지우지 않고 옮기기만 한다. 옮길 곳에 같은 이름 파일이 이미 있으면 그 영상은 건너뛴다.
-옮긴 뒤 학습은 검증 폴더 전부를 검증으로 쓴다(train.py). 검증 클립 저장본은 경로가 바뀌어 첫 검증 때 다시 만든다.
+옮길 목록은 config.TRAIN_SPLIT_LOCK(model/split_lock.json)의 검증 영상입니다(학습 폴더 기준 상대경로).
+config.DATA_DIR 아래 영상을 config.VAL_DATA_DIR 아래 같은 상대경로(rcdata/, realdata/ 구조 그대로)로 옮깁니다.
+지우지 않고 옮기기만 하며, 옮길 곳에 같은 이름 파일이 이미 있으면 그 영상은 건너뜁니다.
+옮긴 뒤 학습은 검증 폴더 전부를 검증으로 씁니다(train.py). 검증 클립 저장본은 경로가 바뀌어 첫 검증 때 다시 만듭니다.
 """
 import argparse
 import json

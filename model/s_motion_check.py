@@ -1,16 +1,16 @@
-"""비충돌(S) 학습 클립의 '움직임 양'을 재서, 움직임 없는 S(빈 장면)를 솎았을 때의 A:S 비율을 미리 본다.
+"""정상(S) 학습 클립의 움직임 양을 재서, 움직임 없는 정상(빈 장면)을 솎았을 때의 A:S 비율을 미리 봅니다.
 
-    python -u -m model.s_motion_check                       # data/train 전체
-    python -u -m model.s_motion_check --workers 8 --montage # 클립 예시 그림까지
+    python -u -m model.s_motion_check                        # data/train 전체
+    python -u -m model.s_motion_check --workers 8 --montage  # 클립 예시 그림까지
 
-학습과 같은 클립 목록을 쓴다(HitAndRunDataset — A 는 pre 방식 창 1개, S 는 30프레임 간격,
-실제 영상 S 는 0·1번 차량). 클립마다 학습 입력과 같은 크롭(r=1, 224×224)에서 이웃 프레임
-차이를 구해 '움직인 화소 비율'을 잰다. GPU 는 쓰지 않는다(CPU 영상 디코딩, 영상 단위 병렬).
+학습과 같은 클립 목록을 씁니다(HitAndRunDataset의 A는 pre 방식 묶음 하나, S는 30프레임 간격, 실제 영상 S는 0번과 1번 차).
+클립마다 학습 입력과 같은 크롭(r=1, 224x224)에서 이웃 프레임 차이를 구해 움직인 화소 비율을 잽니다.
+GPU는 쓰지 않습니다(CPU 영상 디코딩, 영상 단위 병렬).
 
-움직임 값(move) = 클립 안 프레임별 '움직인 화소 비율(%)' 중 3번째로 큰 값
-    (5×5 블러 후 밝기 차이가 PIX_T 를 넘는 화소. 압축 튐 1~2프레임은 무시된다)
+움직임 값(move)은 클립 안 프레임별 움직인 화소 비율(%) 중 3번째로 큰 값입니다.
+5x5 블러 뒤 밝기 차이가 PIX_T를 넘는 화소를 셉니다. 1~2프레임짜리 압축 튐은 무시됩니다.
 
-결과: outputs/s_motion/<시각>/clips.csv(클립별 값) · report.txt(요약) · montage_*.jpg(--montage)
+결과는 outputs/s_motion/<시각>/에 clips.csv(클립별 값), report.txt(요약), montage_*.jpg(--montage)로 남습니다.
 """
 import argparse
 import csv
@@ -27,14 +27,14 @@ import numpy as np
 import config
 from dataset import HitAndRunDataset
 
-PIX_T = 15                                  # 이 밝기 차이(0~255)를 넘으면 '움직인 화소'
-THRESHOLDS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0)   # '빈 장면' 기준 후보(움직인 화소 %)
-KEEP_FRACS = (0.0, 0.2, 1 / 3, 0.5)         # 빈 장면 S 를 이 비율만 남길 때
-BATCH = 15                                  # 충돌 없는 묶음 비율 계산용(config.TRAIN_BATCH_SIZE)
+PIX_T = 15                                  # 이 밝기 차이(0~255)를 넘으면 움직인 화소로 봅니다.
+THRESHOLDS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0)   # 빈 장면 기준 후보(움직인 화소 %)
+KEEP_FRACS = (0.0, 0.2, 1 / 3, 0.5)         # 빈 장면 S를 이 비율만 남길 때를 계산합니다.
+BATCH = 15                                  # 충돌 없는 배치 비율 계산용(config.TRAIN_BATCH_SIZE)
 
 
 class _Crop:
-    """HitAndRunDataset._crop_and_pad 를 그대로 쓰기 위한 최소 객체(resize 만 필요)."""
+    """HitAndRunDataset._crop_and_pad를 그대로 쓰기 위한 최소 객체입니다(resize만 필요합니다)."""
     def __init__(self, resize):
         self.resize = resize
 
@@ -47,12 +47,12 @@ def _gray(crop):
 
 
 def _video_task(args):
-    """영상 하나를 처음부터 한 번 읽어, 필요한 박스별로 프레임 차이 시계열을 만들고 클립 값으로 묶는다."""
-    mp4, items, clip_len, resize = args       # items: [(sample_idx, start_f, bbox)]
+    """영상 하나를 처음부터 한 번 읽어, 필요한 박스별로 프레임 차이 시계열을 만들고 클립 값으로 묶습니다."""
+    mp4, items, clip_len, resize = args       # items는 [(sample_idx, start_f, bbox)]입니다.
     crop = _Crop(resize)
     boxes = sorted({tuple(b) for _, _, b in items})
     need = max(s for _, s, _ in items) + clip_len
-    frac = {b: [] for b in boxes}             # frac[b][k] = 프레임 k → k+1 움직인 화소 비율
+    frac = {b: [] for b in boxes}             # frac[b][k]는 프레임 k에서 k+1로 갈 때 움직인 화소 비율입니다.
     dmean = {b: [] for b in boxes}
     prev = dict.fromkeys(boxes)
     cap = cv2.VideoCapture(mp4)
@@ -89,7 +89,7 @@ def _scenario(file_name, domain):
 
 
 def _tile(mp4, s, bbox, clip_len, resize, text):
-    """클립 가운데 프레임 | 클립 전체 최대 프레임 차이(히트맵 겹침) — 가로 2칸."""
+    """클립 가운데 프레임과 클립 전체의 최대 프레임 차이(히트맵)를 가로 두 칸으로 붙입니다."""
     crop = _Crop(resize)
     cap = cv2.VideoCapture(mp4)
     cap.set(cv2.CAP_PROP_POS_FRAMES, s)
@@ -138,7 +138,7 @@ def main():
     ap.add_argument('--montage', action='store_true', help='움직임 단계별 S 클립·움직임 적은 A 클립 예시 그림 저장')
     args = ap.parse_args()
 
-    config.TRAIN_A_MODE = 'pre'          # 비율은 '충돌 1건 = 창 1개' 기준(span 이어도 무게 합 1)
+    config.TRAIN_A_MODE = 'pre'          # 비율은 충돌 한 건을 묶음 하나로 셉니다(span이어도 무게 합은 1).
     ds = HitAndRunDataset(data_dir=args.data_dir, augment=False)
     clip_len, resize = ds.clip_length, ds.resize
     rows = []

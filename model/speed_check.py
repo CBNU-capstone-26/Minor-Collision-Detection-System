@@ -1,29 +1,27 @@
-"""학습 속도 점검 — 병목을 찾고, 결과를 바꾸지 않고 빠르게 하는 설정 후보를 잰다.
+"""학습 속도를 점검합니다. 병목을 찾고, 결과를 바꾸지 않으면서 빠르게 하는 설정 후보를 잽니다.
 
-    python -u -m model.speed_check                # 전부(약 10~15분)
-    python -u -m model.speed_check --part gpu     # ①⑤⑥ GPU 계산만
-    python -u -m model.speed_check --part data    # ②③⑦ 데이터 준비만(GPU 없어도 됨)
-    python -u -m model.speed_check --part loader  # ③④ 로더 조합과 실제 학습 단계만(약 5분)
+    python -u -m model.speed_check                # 전부
+    python -u -m model.speed_check --part gpu     # 1, 5, 6번 GPU 계산만
+    python -u -m model.speed_check --part data    # 2, 3, 7번 데이터 준비만(GPU가 없어도 됩니다)
+    python -u -m model.speed_check --part loader  # 3, 4번 로더 조합과 실제 학습 단계만
 
-  ① GPU 계산: 학습·검증 한 단계를 channels_last 켬/끔으로(무작위 입력, 데이터 안 읽음).
-     AMP·cudnn.benchmark·gradient checkpointing·기울기 자르기(1.0)는 train.py 와 같다.
-  ② 클립 하나 만들기 단계별 시간(한 프로세스): 영상 열기 / 시작 프레임으로 이동 / 프레임 풀기 /
-     자르기·줄이기 / 색 변환(자른 뒤) / 증강 / 텐서 변환 — dataset.py __getitem__ 과 같은 순서.
-     (2026-11-16 부터 색 변환은 자른 뒤에 한다 — 전체 화면에서 하던 것과 화소가 같다)
-  ③ 데이터 로더 처리량: 학습과 같은 설정(묶음 15·셔플·미리 만들 묶음 train.loader_prefetch)의 DataLoader 로
-     묶음 하나 준비 시간을 작업자 수별(기본: 학습 로더 작업자 수 · CPU 코어 수) × 작업자당 OpenCV 스레드
-     (기본 / 1개 — config.TRAIN_CV2_THREADS)로.
-  ④ 실제 학습 단계: 학습과 같은 로더 + 지금 설정의 모델로, 지금 설정과 ③에서 가장 빨랐던 조합(10% 이상
-     빠를 때) 각각 묶음당 시간·GPU 가 데이터를 기다린 비율·남은 메모리 최소·공유 메모리 최대.
-  ⑤ gradient checkpointing 범위: backward 때 다시 계산하는 앞쪽 블록 수(지금 4 = 줄기~res4 / 3 / 2 / 0 = 끔)별
-     학습 한 단계 시간과 최대 메모리(hitandrun_model.GRAD_CHECKPOINT_BLOCKS). 기울기는 같고 BN 이동평균도 맞춘다.
-  ⑥ torch.compile: 컴파일 시간, 학습·검증 한 단계 시간, 같은 가중치·입력의 P(A) 차이.
-  ⑦ 검증 클립 저장본(config.TRAIN_VAL_CACHE): 저장본 없이 / 처음(만들며 저장) / 다음부터(읽기) 묶음 하나
-     시간과 결과가 같은지. 임시 폴더에 만들고 끝나면 지운다.
-마지막에 병목과 바꿀 만한 설정을 판정한다.
+1번 GPU 계산: 학습과 검증 한 단계를 channels_last 켬과 끔으로 잽니다(무작위 입력, 데이터는 읽지 않음).
+    AMP, cudnn.benchmark, gradient checkpointing, 기울기 자르기(1.0)는 train.py와 같습니다.
+2번 클립 하나 만들기: 영상 열기, 시작 프레임으로 이동, 프레임 풀기, 자르기와 줄이기, 색 변환, 증강, 텐서 변환의
+    단계별 시간을 한 프로세스에서 잽니다(dataset.py __getitem__과 같은 순서).
+3번 데이터 로더 처리량: 학습과 같은 설정(배치 15, 셔플, train.loader_prefetch)의 DataLoader로 배치 하나 준비 시간을
+    작업자 수(기본은 학습 로더 작업자 수와 CPU 코어 수)와 작업자당 OpenCV 스레드(기본, 1개)별로 잽니다.
+4번 실제 학습 단계: 학습과 같은 로더와 지금 설정의 모델로, 지금 설정과 3번에서 가장 빨랐던 조합(10% 이상 빠를 때) 각각의
+    배치당 시간, GPU가 데이터를 기다린 비율, 남은 메모리 최소, 공유 메모리 최대를 잽니다.
+5번 gradient checkpointing 범위: 역전파 때 다시 계산하는 앞쪽 블록 수(4, 3, 2, 0)별 학습 한 단계 시간과 최대 메모리를 잽니다
+    (hitandrun_model.GRAD_CHECKPOINT_BLOCKS). 기울기는 같고 BN 이동평균도 맞춥니다.
+6번 torch.compile: 컴파일 시간, 학습과 검증 한 단계 시간, 같은 가중치와 입력에서의 P(A) 차이를 잽니다.
+7번 검증 클립 저장본(config.TRAIN_VAL_CACHE): 저장본 없이, 처음(만들며 저장), 다음부터(읽기)의 배치 하나 시간과
+    결과가 같은지 봅니다. 임시 폴더에 만들고 끝나면 지웁니다.
+마지막에 병목과 바꿀 만한 설정을 판정합니다.
 
-⚠️ 학습을 멈춘 뒤(GPU·CPU 가 빌 때) 돌린다 — 학습 중이면 둘 다 나눠 써서 시간이 틀린다.
-결과는 화면과 outputs/speed_check/<시각>/report.txt 에 남는다.
+학습을 멈춘 뒤(GPU와 CPU가 비었을 때) 돌려야 합니다. 학습 중이면 자원을 나눠 써서 시간이 틀립니다.
+결과는 화면과 outputs/speed_check/<시각>/report.txt에 남습니다.
 """
 import argparse
 import copy
@@ -52,11 +50,11 @@ from hitandrun_model import HitAndRun3DCNN
 from train import loader_prefetch
 
 BLOCK_NAMES = ['줄기', 'res2', 'res3', 'res4', 'res5']
-CV2_DEFAULT_THREADS = cv2.getNumThreads()       # 바꾸기 전 OpenCV 기본 스레드 수(③④⑦ 뒤 되돌림)
+CV2_DEFAULT_THREADS = cv2.getNumThreads()       # 바꾸기 전 OpenCV 기본 스레드 수(3, 4, 7번 뒤에 되돌립니다)
 
 
 class _Tee:
-    """화면과 파일에 함께 쓴다."""
+    """화면과 파일에 함께 씁니다."""
     def __init__(self, path):
         self.stdout, self.f = sys.stdout, open(path, 'w', encoding='utf-8')
 
@@ -73,7 +71,7 @@ class _Tee:
 
 
 def _cur_cl(dev):
-    """지금 설정(config.USE_CHANNELS_LAST)으로 channels_last 를 쓰는지."""
+    """지금 설정(config.USE_CHANNELS_LAST)으로 channels_last를 쓰는지 돌려줍니다."""
     return bool(config.USE_CHANNELS_LAST) and is_channels_last_3d_supported(dev)
 
 
@@ -87,7 +85,7 @@ def _build(state, dev, cl):
 
 
 def _p_a(model, x, dev, amp, cl):
-    """검증 모드 P(A)."""
+    """검증 모드 P(A)를 돌려줍니다."""
     model.eval()
     xe = x.contiguous(memory_format=torch.channels_last_3d) if cl else x
     with torch.no_grad(), torch.autocast(dev.type, enabled=amp):
@@ -99,7 +97,7 @@ def _free_gpu(dev):
         torch.cuda.empty_cache()
 
 
-# ───────────────────────── ① GPU 계산 ─────────────────────────
+# 1번 GPU 계산
 def _step_times(model, x, y, channels_last, dev, amp, steps, warmup, train):
     if channels_last:
         x = x.contiguous(memory_format=torch.channels_last_3d)
@@ -137,7 +135,7 @@ def _step_times(model, x, y, channels_last, dev, amp, steps, warmup, train):
 
 
 def _gpu_run(channels_last, state, x, y, dev, amp, steps, warmup):
-    """같은 초기 가중치로 학습 단계·검증 단계 시간, 최대 메모리, 검증 P(A)를 잰다."""
+    """같은 초기 가중치로 학습 단계와 검증 단계 시간, 최대 메모리, 검증 P(A)를 잽니다."""
     model = _build(state, dev, channels_last)
     p = _p_a(model, x, dev, amp, channels_last)
     if dev.type == 'cuda':
@@ -151,7 +149,7 @@ def _gpu_run(channels_last, state, x, y, dev, amp, steps, warmup):
 
 
 def part_gpu(args, dev, amp, state, x, y):
-    """① → {channels_last 켬/끔: 학습 1단계 평균 시간(초)}."""
+    """1번 결과로 {channels_last 켬과 끔: 학습 한 단계 평균 시간(초)}을 돌려줍니다."""
     print(f'\n① GPU 계산 — 묶음 {args.batch} · {config.CLIP_LENGTH}프레임 · {config.RESIZE[0]}×{config.RESIZE[1]} · '
           f'AMP {"켬" if amp else "끔"} · gradient checkpointing {"켬" if hitandrun_model.GRAD_CHECKPOINT else "끔"} · '
           f'준비 {args.warmup} + 측정 {args.steps}단계 (무작위 입력)', flush=True)
@@ -184,9 +182,9 @@ def part_gpu(args, dev, amp, state, x, y):
     return {cl: float(v[0].mean()) for cl, v in res.items()}
 
 
-# ───────────────────────── ⑤ gradient checkpointing 범위 ─────────────────────────
+# 5번 gradient checkpointing 범위
 def part_ckpt(args, dev, amp, state, x, y):
-    """⑤ 다시 계산하는 앞쪽 블록 수별 학습 한 단계 시간·최대 메모리 → {블록 수: 결과}, 기본 블록 수."""
+    """5번: 다시 계산하는 앞쪽 블록 수별 학습 한 단계 시간과 최대 메모리를 재서 ({블록 수: 결과}, 기본 블록 수)를 돌려줍니다."""
     if not hitandrun_model.GRAD_CHECKPOINT:
         print('\n⑤ gradient checkpointing 이 꺼져 있어(환경변수 GRAD_CHECKPOINT=0) 범위 비교를 건너뜁니다')
         return None
@@ -202,7 +200,7 @@ def part_ckpt(args, dev, amp, state, x, y):
         for k in choices:
             name = _ckpt_name(k, default)
             print(f'  {name} 재는 중…', flush=True)
-            hitandrun_model.GRAD_CHECKPOINT_BLOCKS = k    # 모델을 만들 때 BN momentum 도 맞춘다
+            hitandrun_model.GRAD_CHECKPOINT_BLOCKS = k    # 모델을 만들 때 BN momentum도 맞춥니다.
             model = None
             try:
                 model = _build(state, dev, cl)
@@ -243,9 +241,9 @@ def _ckpt_name(k, default):
     return f'{k}개: {name}' + (' ← 지금' if k == default else '')
 
 
-# ───────────────────────── ⑥ torch.compile ─────────────────────────
+# 6번 torch.compile
 def part_compile(args, dev, amp, state, x, y):
-    """⑥ 컴파일 전후 학습·검증 한 단계 시간과 P(A) 차이 → 결과 dict, 실패하면 {'error': ...}."""
+    """6번: 컴파일 전후 학습과 검증 한 단계 시간, P(A) 차이를 돌려줍니다. 실패하면 {'error': ...}입니다."""
     cl = _cur_cl(dev)
     print(f'\n⑥ torch.compile — 묶음 {x.shape[0]} · 입력 {tuple(x.shape[2:])} · channels_last {"켬" if cl else "끔"}(지금 설정)'
           f'{" · 점검용 작은 입력" if args.smoke else ""}', flush=True)
@@ -258,19 +256,19 @@ def part_compile(args, dev, amp, state, x, y):
         cmodel = torch.compile(model)
         print('  컴파일 중(검증 모드)…', flush=True)
         t0 = time.perf_counter()
-        p_comp = _p_a(cmodel, x, dev, amp, cl)            # 첫 호출 = 컴파일
+        p_comp = _p_a(cmodel, x, dev, amp, cl)            # 첫 호출에서 컴파일합니다.
         c_val = time.perf_counter() - t0
         print('  컴파일 중(학습 모드)…', flush=True)
         t0 = time.perf_counter()
         _step_times(cmodel, x, y, cl, dev, amp, 1, 0, train=True)
         c_train = time.perf_counter() - t0
         print('  재는 중…', flush=True)
-        # 같은 모델의 컴파일 전(model)·후(cmodel)를 번갈아 잰다 — 학습 단계가 가중치를 바꿔도 시간과는 무관
+        # 같은 모델의 컴파일 전(model)과 후(cmodel)를 번갈아 잽니다. 학습 단계가 가중치를 바꿔도 시간과는 무관합니다.
         e_val = _step_times(model, x, y, cl, dev, amp, args.steps, args.warmup, train=False)
         k_val = _step_times(cmodel, x, y, cl, dev, amp, args.steps, args.warmup, train=False)
         e_tr = _step_times(model, x, y, cl, dev, amp, args.steps, args.warmup, train=True)
         k_tr = _step_times(cmodel, x, y, cl, dev, amp, args.steps, args.warmup, train=True)
-    except Exception as e:                                  # 컴파일러 없음·지원 안 되는 연산 등
+    except Exception as e:                                  # 컴파일러가 없거나 지원하지 않는 연산 등
         msg = f'{type(e).__name__}: {str(e).strip().splitlines()[0] if str(e).strip() else ""}'[:300]
         print(f'  실패 — {msg}')
         print('  (이 환경에서는 torch.compile 을 쓸 수 없음 — 학습은 지금처럼)')
@@ -289,9 +287,9 @@ def part_compile(args, dev, amp, state, x, y):
             'k_val': float(k_val.mean()), 'c_sec': c_train + c_val, 'diff': diff}
 
 
-# ───────────────────────── ② 클립 하나 만들기 단계별 ─────────────────────────
+# 2번 클립 하나 만들기 단계별
 def part_clip(ds, idxs):
-    """② 학습 데이터셋과 같은 순서로 클립을 만들며 단계별 시간을 잰다 → 클립 하나 평균 시간(초)."""
+    """2번: 학습 데이터셋과 같은 순서로 클립을 만들며 단계별 시간을 재고, 클립 하나 평균 시간(초)을 돌려줍니다."""
     keys = ['열기', '이동', '풀기', '자르기·줄이기', '색 변환(자른 뒤)', '증강', '텐서 변환']
     tot = dict.fromkeys(keys, 0.0)
     n_frames, n_clips = 0, 0
@@ -343,16 +341,16 @@ def part_clip(ds, idxs):
     return {'total': total, 'per': per}
 
 
-# ───────────────────────── ③ 데이터 로더 처리량 ─────────────────────────
+# 3번 데이터 로더 처리량
 def _loader(ds, idxs, batch, workers, pin, threads=None, shuffle=True):
-    """학습과 같은 설정의 로더. threads = 작업자마다 OpenCV 스레드 수(None = 기본, train.py _make_loader 와 같은 방식)."""
-    ds.cv2_threads = threads                     # 영상 풀기 스레드(작업자에 데이터셋이 복사될 때 함께 간다)
-    # OpenCV 계산 스레드는 부모에서 먼저 정해 작업자가 물려받게 한다(작업자 안에서 처음 바꾸면 멈춤 —
-    # dataset.limit_cv2_threads 주석). 작업자는 이 로더를 처음 돌릴 때 생긴다.
+    """학습과 같은 설정의 로더를 만듭니다. threads는 작업자마다 OpenCV 스레드 수입니다(None은 기본값, train.py _make_loader와 같은 방식)."""
+    ds.cv2_threads = threads                     # 영상 풀기 스레드입니다(작업자에 데이터셋이 복사될 때 함께 넘어갑니다).
+    # OpenCV 계산 스레드는 부모에서 먼저 정해 작업자가 물려받게 합니다(작업자 안에서 처음 바꾸면 멈춥니다,
+    # dataset.limit_cv2_threads 참고). 작업자는 이 로더를 처음 돌릴 때 생깁니다.
     cv2.setNumThreads(threads or CV2_DEFAULT_THREADS)
     kw = dict(batch_size=batch, shuffle=shuffle, num_workers=workers, pin_memory=pin)
     if workers > 0:
-        kw.update(persistent_workers=True, prefetch_factor=loader_prefetch(workers))   # train.py 와 같다
+        kw.update(persistent_workers=True, prefetch_factor=loader_prefetch(workers))   # train.py와 같습니다.
         if threads:
             kw['worker_init_fn'] = functools.partial(limit_cv2_threads, threads)
     return DataLoader(Subset(ds, idxs), **kw)
@@ -363,7 +361,7 @@ def _tname(threads):
 
 
 def _time_batches(dl, n):
-    """로더를 만든 순간부터 n번째 묶음까지(작업자 시작 포함) → (묶음당 초, 받은 묶음 수)."""
+    """로더를 만든 순간부터 n번째 배치까지(작업자 시작 포함) 재서 (배치당 초, 받은 배치 수)를 돌려줍니다."""
     t0 = time.perf_counter()
     it = iter(dl)
     got = 0
@@ -379,13 +377,13 @@ def _time_batches(dl, n):
 
 
 def part_loader(ds, pool, batch, workers_list, pin):
-    """③ (작업자 수, OpenCV 스레드)별 묶음 하나 준비 시간(초)."""
+    """3번: (작업자 수, OpenCV 스레드)별 배치 하나 준비 시간(초)을 돌려줍니다."""
     print(f'\n③ 데이터 로더 처리량 (묶음 {batch}, 학습과 같은 설정 · 작업자 시작부터 잼)')
     out = {}
     for w in workers_list:
-        n = max(24, 4 * w)                 # 작업자 수의 4배 묶음 — 첫 묶음들이 동시에 나오는 효과를 묻힌다
+        n = max(24, 4 * w)                 # 작업자 수의 4배만큼 배치를 받아 첫 배치들이 동시에 나오는 효과를 묻습니다.
         idxs = pool[:batch * n]
-        # 1스레드를 먼저 잰다 — 같은 영상을 두 번째로 읽을 때 디스크 캐시 이득이 지금 설정(기본) 쪽에 가도록(보수적)
+        # 1스레드를 먼저 잽니다. 같은 영상을 두 번째로 읽을 때의 디스크 캐시 이득이 지금 설정(기본) 쪽에 가도록 하려는 것입니다.
         for threads in (1, None):
             dl = _loader(ds, idxs, batch, w, pin, threads)
             sec, got = _time_batches(dl, n)
@@ -402,9 +400,9 @@ def _restore_threads(ds):
     cv2.setNumThreads(CV2_DEFAULT_THREADS)
 
 
-# ───────────────────────── ⑦ 검증 클립 저장본 ─────────────────────────
+# 7번 검증 클립 저장본
 def part_val_cache(ds, pool, batch, workers, pin, n_batches):
-    """⑦ 검증처럼(증강 없음·순서대로) 묶음 하나 시간: 저장본 없이 / 처음(만들며 저장) / 다음부터(읽기)."""
+    """7번: 검증처럼(증강 없음, 순서대로) 배치 하나 시간을 저장본 없이, 처음(만들며 저장), 다음부터(읽기)로 잽니다."""
     idxs = pool[:batch * n_batches]
     need = len(idxs) * config.CLIP_LENGTH * config.RESIZE[0] * config.RESIZE[1] * 3 / 2 ** 30
     root = Path(config.TRAIN_VAL_CACHE_DIR).parent
@@ -420,7 +418,7 @@ def part_val_cache(ds, pool, batch, workers, pin, n_batches):
         return None
     tmp = Path(tempfile.mkdtemp(prefix='speed_check_', dir=root))
     try:
-        # 학습 데이터셋(증강 켬)을 복사해 검증처럼 바꾼다 — 클립 목록을 다시 만들지 않으려고
+        # 학습 데이터셋(증강 켬)을 복사해 검증처럼 바꿉니다. 클립 목록을 다시 만들지 않으려는 것입니다.
         plain = copy.copy(ds)
         plain.augment, plain.cache_dir, plain._cache_off = False, None, False
         cached = copy.copy(plain)
@@ -432,7 +430,7 @@ def part_val_cache(ds, pool, batch, workers, pin, n_batches):
             del dl
         same = all(torch.equal(plain[i][0], cached[i][0]) for i in idxs[:5])
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)    # 이 점검이 만든 임시 폴더만 지운다
+        shutil.rmtree(tmp, ignore_errors=True)    # 이 점검이 만든 임시 폴더만 지웁니다.
         cv2.setNumThreads(CV2_DEFAULT_THREADS)
     print(f'  저장본 없이(지금까지)   : 묶음 하나 {res["none"]:.3f}초')
     print(f'  처음(만들며 저장)       : 묶음 하나 {res["first"]:.3f}초  ← 첫 학습의 첫 검증 때 한 번')
@@ -443,9 +441,9 @@ def part_val_cache(ds, pool, batch, workers, pin, n_batches):
     return res
 
 
-# ───────────────────────── ④ 실제 학습 단계 ─────────────────────────
+# 4번 실제 학습 단계
 def _shm_used_gb():
-    """공유 메모리(/dev/shm) 사용량(GB) — 로더 작업자가 만든 묶음이 여기 쌓인다. 리눅스에서만, 못 읽으면 None."""
+    """공유 메모리(/dev/shm) 사용량(GB)을 돌려줍니다. 로더 작업자가 만든 배치가 여기 쌓입니다. 리눅스에서만 읽고, 못 읽으면 None입니다."""
     try:
         return shutil.disk_usage('/dev/shm').used / 2 ** 30
     except OSError:
@@ -453,7 +451,7 @@ def _shm_used_gb():
 
 
 def part_e2e(ds, pool, batch, workers, dev, amp, n, threads):
-    """④ 실제 로더 + 모델(지금 설정)로 묶음당 시간과 데이터 기다린 시간 → (기다림, 계산, 남은 메모리 최소, 공유 메모리 최대)."""
+    """4번: 실제 로더와 모델(지금 설정)로 배치당 시간과 데이터를 기다린 시간을 재서 (기다림, 계산, 남은 메모리 최소, 공유 메모리 최대)를 돌려줍니다."""
     cl = _cur_cl(dev)
     model = HitAndRun3DCNN(num_classes=2, pretrained=False).to(dev)
     if cl:
@@ -489,14 +487,14 @@ def part_e2e(ds, pool, batch, workers, dev, amp, n, threads):
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
-        loss.item()                                  # 학습 코드처럼 매 단계 값을 꺼낸다(동기화)
+        loss.item()                                  # 학습 코드처럼 매 단계 값을 꺼냅니다(동기화).
         if dev.type == 'cuda':
             torch.cuda.synchronize()
         t2 = time.perf_counter()
-        if i > 0:                                    # 첫 묶음(작업자 시작·cudnn 탐색) 제외
+        if i > 0:                                    # 첫 배치(작업자 시작, cudnn 탐색)는 뺍니다.
             waits.append(t1 - t0)
             comps.append(t2 - t1)
-        m, s = _mem_available_gb(), _shm_used_gb()  # 미리 만든 묶음이 쌓였을 때의 메모리
+        m, s = _mem_available_gb(), _shm_used_gb()  # 미리 만든 배치가 쌓였을 때의 메모리
         mem_min = m if mem_min is None or (m is not None and m < mem_min) else mem_min
         shm_max = s if shm_max is None or (s is not None and s > shm_max) else shm_max
     del it, dl, model
@@ -511,7 +509,7 @@ def part_e2e(ds, pool, batch, workers, dev, amp, n, threads):
 
 
 def _mem_available_gb():
-    """남은 메모리(GB). 리눅스(/proc/meminfo)에서만, 못 읽으면 None."""
+    """남은 메모리(GB)를 돌려줍니다. 리눅스(/proc/meminfo)에서만 읽고, 못 읽으면 None입니다."""
     try:
         for line in open('/proc/meminfo', encoding='utf-8'):
             if line.startswith('MemAvailable:'):
@@ -586,7 +584,7 @@ def _main(args):
         if args.no_compile:
             print('\n⑥ torch.compile — 건너뜀(--no-compile)')
         else:
-            # 점검용(CPU)은 작은 입력으로 코드 경로만 확인한다 — 원래 크기는 CPU 컴파일·메모리가 너무 크다
+            # 점검용(CPU)은 작은 입력으로 코드 경로만 확인합니다. 원래 크기는 CPU에서 컴파일과 메모리 부담이 너무 큽니다.
             xc = torch.randn(1, 3, 8, 64, 64, device=dev) if args.smoke else x
             comp = part_compile(args, dev, amp, state, xc, y[:xc.shape[0]])
         del x, y
@@ -595,7 +593,7 @@ def _main(args):
         _verdict(args, gpu, None, None, None, {}, ckpt, comp, None)
         return 0
 
-    # ②③④⑦ — 학습과 같은 데이터셋(증강 켬)에서 무작위로 고른 클립
+    # 2, 3, 4, 7번은 학습과 같은 데이터셋(증강 켬)에서 무작위로 고른 클립을 씁니다.
     from dataset import HitAndRunDataset
     print(f'\n[데이터] {args.data_dir} 의 학습 클립 목록을 만드는 중…', flush=True)
     ds = HitAndRunDataset(data_dir=args.data_dir, augment=True)
@@ -613,7 +611,7 @@ def _main(args):
         workers_list = sorted({int(w) for w in args.workers.split(',') if w.strip()})
     else:
         workers_list = sorted({train_w, n_cpu})
-    # 작업자 하나가 묶음 하나(약 0.55GB, 묶음 15)를 들고 있으므로 남은 메모리로 상한을 둔다
+    # 작업자 하나가 배치 하나(배치 15에서 약 0.55GB)를 들고 있으므로 남은 메모리로 상한을 둡니다.
     mem = _mem_available_gb()
     per_w = 0.55 * args.batch / 15
     if mem is not None:
@@ -628,8 +626,8 @@ def _main(args):
 
     e2e = {}
     if args.part in ('all', 'loader') and not args.smoke and dev.type == 'cuda':
-        # 지금 설정 + ③에서 로더가 가장 빨랐던 조합(지금보다 10% 이상 빠를 때). 후보를 먼저 잰다 — 같은 영상을
-        # 두 번째로 읽을 때의 디스크 캐시 이득이 지금 설정 쪽에 가도록(보수적)
+        # 지금 설정과, 3번에서 로더가 가장 빨랐던 조합(지금보다 10% 이상 빠를 때)을 잽니다. 후보를 먼저 재서
+        # 같은 영상을 두 번째로 읽을 때의 디스크 캐시 이득이 지금 설정 쪽에 가게 합니다.
         cur = (train_w, getattr(config, 'TRAIN_CV2_THREADS', None))
         combos = [cur]
         best = min(loader, key=loader.get) if loader else None
@@ -645,13 +643,13 @@ def _main(args):
 
 
 def _verdict(args, gpu, clip, loader, train_w, e2e, ckpt, comp, val):
-    """결과만 보고 판단할 수 있게: 무엇이 오래 걸리나 / 바꿀 만한 설정은 무엇인가."""
+    """결과만 보고 판단할 수 있게 무엇이 오래 걸리는지, 바꿀 만한 설정이 무엇인지 정리합니다."""
     print('\n' + '=' * 72 + '\n[판정]')
     cur_t = getattr(config, 'TRAIN_CV2_THREADS', None)
     no = 0
 
     cur = (train_w, cur_t)
-    data_bound = None                               # 지금 설정에서 GPU 가 데이터를 기다리는 비율
+    data_bound = None                               # 지금 설정에서 GPU가 데이터를 기다리는 비율
     if e2e and cur in e2e:
         w, c = e2e[cur][:2]
         data_bound = w / (w + c)
@@ -684,7 +682,7 @@ def _verdict(args, gpu, clip, loader, train_w, e2e, ckpt, comp, val):
                 print(f'   → 병목은 GPU 계산(데이터 기다림 {data_bound * 100:.0f}%) — 데이터 쪽을 고쳐도 빨라지지 않습니다.')
             print(f'   학습 클립 1,000개당 약 {(w + c) * 1000 / args.batch / 60:.1f}분(검증 제외)')
 
-    # 2) 로더 작업자 수 × 작업자당 OpenCV 스레드
+    # 2) 로더 작업자 수와 작업자당 OpenCV 스레드
     if loader:
         no += 1
         print(f'{no}) 로더 작업자 수 × 작업자당 OpenCV 스레드 (지금: 작업자 {train_w}개 · {_tname(cur_t)})')
@@ -735,10 +733,10 @@ def _verdict(args, gpu, clip, loader, train_w, e2e, ckpt, comp, val):
         if not base or base['oom']:
             print('   지금 범위도 메모리가 모자랍니다 — 묶음 크기를 확인하세요.')
         else:
-            # 학습 중 다른 것(검증 로더·조각난 메모리)도 있으니 GPU 전체의 80% 안만 안전하다고 본다
+            # 학습 중에는 다른 것(검증 로더, 조각난 메모리)도 있으니 GPU 전체의 80% 안만 안전하다고 봅니다.
             limit = total * 0.8 if total == total else float('inf')
             ok = {k: r for k, r in res.items() if not r['oom'] and (r['resv'] != r['resv'] or r['resv'] <= limit)}
-            ok[d] = base                                   # 지금 범위는 이미 쓰고 있으니 후보에 둔다
+            ok[d] = base                                   # 지금 범위는 이미 쓰고 있으니 후보에 둡니다.
             best = min(ok, key=lambda k: ok[k]['t'])
             gain = 1 - ok[best]['t'] / base['t']
             if best != d and gain >= 0.05:

@@ -1,16 +1,19 @@
-/* 다크 모드 통일 — 새 대시보드 디자인(incident-ui.css · premium-ui.css)의 색을 다크 모드에서도 그대로 쓴다.
-   App.css 의 예전 다크 규칙(body.dark-mode .X)이 새 규칙(.dashboard-layout .X)보다 우선순위가 높아,
-   다크 모드에서만 예전 색이 섞여 보였다. 새 규칙의 색 관련 값(배경·테두리·글자·그림자)을
-   'body.dark-mode .dashboard-layout ...' 로 한 번 더 적용해 이기게 한다.
-   - 값은 대부분 --incident-* 변수라 다크 모드에선 저절로 어두운 값이 된다
-   - 새 디자인이 다크 값을 따로 정해 둔 곳은 건드리지 않는다
-   - 라이트 전용으로 밝게 적힌 값(밝은 배경·어두운 글자)은 옮기지 않는다 — 그 자리는 App.css 의 다크 규칙
-     (새 팔레트로 색만 바꿈)이 그대로 쓰인다
-   이 파일은 premium-ui.css 다음에 불러와야 한다(App.jsx). */
+/*
+   다크 모드 통일: 새 대시보드 디자인(incident-ui.css, premium-ui.css)의 색을 다크 모드에서도 그대로 씁니다.
+   App.css의 이전 다크 규칙(body.dark-mode .X)이 새 규칙(.dashboard-layout .X)보다 우선순위가 높아
+   다크 모드에서만 이전 색이 섞여 보이므로, 새 규칙의 색 관련 값(배경, 테두리, 글자, 그림자)을
+   'body.dark-mode .dashboard-layout ...'로 한 번 더 적용해 이기게 합니다.
+   값은 대부분 --incident-* 변수라 다크 모드에서는 저절로 어두운 값이 됩니다.
+   새 디자인이 다크 값을 따로 정해 둔 곳은 건드리지 않습니다.
+   라이트 전용으로 밝게 적힌 값(밝은 배경, 어두운 글자)은 옮기지 않으며, 그 자리는 App.css의 다크 규칙이 그대로 쓰입니다.
+   이 파일은 premium-ui.css 다음에 불러와야 합니다(App.jsx).
+*/
 
 body.dark-mode .dashboard-layout .top-navbar { border-color: var(--incident-line); box-shadow: 0 4px 24px #0c253507; }
-/* 왼쪽 위 글자 로고 — App.css 의 예전 로고 버튼 다크 규칙(.nav-logo: 검은 글자 #10151b, 어두운 배경, 청록 그림자)이
-   남아 있어 S·I·T 가 배경에 묻혔다. 새 디자인 값(글자 = --incident-ink, 배경·그림자 없음)으로 되돌린다. */
+/*
+   왼쪽 위 글자 로고입니다. App.css의 이전 로고 버튼 다크 규칙이 남아 있어 글자가 배경에 묻히므로
+   새 디자인 값(글자는 --incident-ink, 배경과 그림자 없음)으로 되돌립니다.
+*/
 body.dark-mode .dashboard-layout .nav-home-btn,
 body.dark-mode .dashboard-layout .nav-home-btn:hover { color: var(--incident-ink); background: transparent; box-shadow: none; }
 body.dark-mode .dashboard-layout .analysis-idle-text { color: var(--incident-muted); }
@@ -79,5 +82,5 @@ body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-day.selec
 body.dark-mode .dashboard-layout .analysis-status-box:not(.analysis-status-idle) { box-shadow: none; }
 body.dark-mode .dashboard-layout .analysis-jobs-dropdown { border-color: var(--incident-line); background: var(--incident-surface); }
 
-/* 클립 항목 왼쪽 주황 강조선 — 위 'border' 재적용이 왼쪽 선까지 덮지 않게 다크에서도 유지 */
+/* 클립 항목 왼쪽 주황 강조선입니다. 위 border 재적용이 왼쪽 선까지 덮지 않도록 다크 모드에서도 유지합니다. */
 body.dark-mode .dashboard-layout .event-item { border-left: 3px solid #db9a58; }

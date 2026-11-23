@@ -1,13 +1,13 @@
-"""학습 묶음 구성 — 빈 장면 정상 솎기(돌려 쓰기) + 묶음마다 충돌 고르게 넣기.
+"""학습 배치 구성을 정합니다. 빈 장면 정상은 돌려 쓰고, 충돌 클립은 배치마다 고르게 넣습니다.
 
-config.TRAIN_S_MOTION_CSV / TRAIN_SPREAD_A 가 켜졌을 때만 train.py 가 쓴다(기본 끔 = 예전과 같음).
-학습 쪽(train_idx)에만 적용하고 검증은 건드리지 않는다. 근거·설정은 config 주석 참고.
+config.TRAIN_S_MOTION_CSV나 TRAIN_SPREAD_A가 켜졌을 때만 train.py가 씁니다(기본은 끔).
+학습 쪽(train_idx)에만 적용하고 검증은 건드리지 않습니다.
 
-  · 빈 장면 = model/s_motion_check.py 가 잰 움직임(clips.csv 의 move_pct) < 기준인 정상 클립.
-    매 에포크 그중 KEEP 비율만 쓰되, 고정 순서에서 에포크마다 다음 구간을 잘라 써서
-    1/KEEP 에포크마다 전부 한 번씩 본다. CSV 에 없는 정상 클립은 '움직임 있음'(매번 씀).
-  · 충돌 고르게 = 묶음 순서를 섞은 뒤 충돌 클립을 묶음마다 하나씩 돌아가며 넣고(복제 없음)
-    나머지 자리를 정상으로 채운다. 충돌이 묶음 수 이상이면 모든 묶음에 충돌이 들어간다.
+빈 장면: model/s_motion_check.py가 잰 움직임(clips.csv의 move_pct)이 기준보다 작은 정상 클립입니다.
+         매 에포크 그중 KEEP 비율만 쓰되, 고정된 순서에서 에포크마다 다음 구간을 잘라 써서 1/KEEP 에포크마다 전부 한 번씩 봅니다.
+         CSV에 없는 정상 클립은 움직임 있음으로 보고 매번 씁니다.
+충돌 고르게: 배치 순서를 섞은 뒤 충돌 클립을 배치마다 하나씩 돌아가며 넣고(복제 없음) 나머지 자리를 정상으로 채웁니다.
+         충돌이 배치 수 이상이면 모든 배치에 충돌이 들어갑니다.
 """
 import csv
 import math
@@ -21,13 +21,13 @@ import config
 
 
 def resolve_csv(path):
-    """상대경로는 프로젝트 루트 기준(SERVICE_WEIGHTS 와 같은 규칙)."""
+    """상대경로는 프로젝트 루트 기준입니다."""
     p = Path(path)
     return p if p.is_absolute() else Path(config._ROOT) / p
 
 
 def load_motion(csv_path):
-    """clips.csv → {(영상 이름, 차량 번호, 시작 프레임): 움직임 %} (정상 클립만)."""
+    """clips.csv를 읽어 {(영상 이름, 차량 번호, 시작 프레임): 움직임 %}를 돌려줍니다(정상 클립만)."""
     motion = {}
     with open(csv_path, encoding='utf-8') as f:
         for r in csv.DictReader(f):
@@ -36,12 +36,12 @@ def load_motion(csv_path):
             try:
                 motion[(r['video'], int(r['car_id']), int(r['start_f']))] = float(r['move_pct'])
             except ValueError:
-                continue          # nan 등 — 못 잰 클립은 '움직임 있음'으로 둔다
+                continue          # nan 등 재지 못한 클립은 움직임 있음으로 둡니다.
     return motion
 
 
 class BalancedBatchSampler(Sampler):
-    """학습 Subset 안의 위치(0..len-1)로 에포크마다 묶음 목록을 만든다."""
+    """학습 Subset 안의 위치(0부터)로 에포크마다 배치 목록을 만듭니다."""
 
     def __init__(self, a_pos, s_move_pos, s_empty_pos, batch_size, empty_keep=1.0,
                  spread_a=False, seed=42):
@@ -52,19 +52,19 @@ class BalancedBatchSampler(Sampler):
         self.seed = int(seed)
         self.epoch = 0
         empty = np.asarray(s_empty_pos, dtype=np.int64)
-        # 빈 장면은 한 번 정한 순서에서 에포크마다 다음 구간을 잘라 쓴다(끝에 닿으면 처음으로)
+        # 빈 장면은 한 번 정한 순서에서 에포크마다 다음 구간을 잘라 씁니다(끝에 닿으면 처음으로 돌아갑니다).
         self.empty_order = np.random.RandomState(seed).permutation(empty)
         self.k_empty = (len(empty) if empty_keep >= 1
                         else int(round(len(empty) * max(0.0, float(empty_keep)))))
 
-    # 에포크당 개수 — 에포크마다 같다
+    # 에포크당 개수(에포크마다 같습니다)
     def counts(self):
         n_s = len(self.s_move) + self.k_empty
         n = len(self.a) + n_s
         nb = math.ceil(n / self.bs) if n else 0
         if self.spread_a:
             no_a = max(0, nb - len(self.a))
-        else:      # 무작위로 섞을 때 기대값
+        else:      # 무작위로 섞을 때의 기대값
             no_a = nb * ((n_s / n) ** self.bs) if n else 0
         return {'a': len(self.a), 's_move': len(self.s_move), 's_empty': self.k_empty,
                 's_empty_total': len(self.empty_order), 'n': n, 'batches': nb, 'no_a_batches': no_a}
@@ -94,7 +94,7 @@ class BalancedBatchSampler(Sampler):
         cnt = [0] * nb
         order = rng.permutation(nb)
         k = 0
-        for _ in range(len(a)):           # 섞은 묶음 순서로 한 바퀴씩 돌며 충돌을 하나씩 넣는다
+        for _ in range(len(a)):           # 섞은 배치 순서로 한 바퀴씩 돌며 충돌을 하나씩 넣습니다.
             while cnt[order[k % nb]] >= sizes[order[k % nb]]:
                 k += 1
             cnt[order[k % nb]] += 1
@@ -108,8 +108,8 @@ class BalancedBatchSampler(Sampler):
         return out
 
     def __iter__(self):
-        # 생성기라 실제로 꺼내 쓰기 시작할 때 에포크가 넘어간다 — 작업자를 유지하는 DataLoader 는
-        # 처음에 iter() 를 두 번 부르고 앞의 것을 버리는데, 그때 에포크가 건너뛰지 않게.
+        # 생성기라 실제로 꺼내 쓰기 시작할 때 에포크가 넘어갑니다. 작업자를 유지하는 DataLoader는 처음에 iter()를 두 번 부르고
+        # 앞의 것을 버리는데, 그때 에포크가 건너뛰지 않게 하려는 것입니다.
         epoch = self.epoch
         self.epoch += 1
         yield from self.batches(epoch)
@@ -120,8 +120,9 @@ class BalancedBatchSampler(Sampler):
 
 def build(train_samples, train_idx, batch_size, csv_path=None, empty_pct=0.25,
           empty_keep=1 / 3, spread_a=False, seed=42, thin_rc=True):
-    """train.py 용: 학습 쪽 위치를 충돌 / 움직임 있는 정상 / 빈 장면 정상으로 나눠 샘플러와 요약을 돌려준다.
-    thin_rc=False(config.TRAIN_S_THIN_RC) 면 RC 정상은 솎지 않고(움직임과 상관없이) 매 에포크 전부 쓴다."""
+    """train.py용입니다. 학습 쪽 위치를 충돌, 움직임 있는 정상, 빈 장면 정상으로 나눠 샘플러와 요약을 돌려줍니다.
+    thin_rc=False(config.TRAIN_S_THIN_RC)면 RC 정상은 솎지 않고 매 에포크 전부 씁니다.
+    """
     motion = load_motion(csv_path) if csv_path else {}
     a_pos, s_move, s_empty = [], [], []
     matched = rc_full = ctx = hn = 0
@@ -130,11 +131,11 @@ def build(train_samples, train_idx, batch_size, csv_path=None, empty_pct=0.25,
         if s['label'] == 1:
             a_pos.append(pos)
             continue
-        if s.get('ctx_neg'):          # 사고 영상의 충돌 전·후 정상(config.TRAIN_A_CONTEXT_NEG) — 측정표에 없음, 매번 씀
+        if s.get('ctx_neg'):          # 사고 영상의 충돌 전후 정상(config.TRAIN_A_CONTEXT_NEG)은 측정표에 없으므로 매번 씁니다.
             s_move.append(pos)
             ctx += 1
             continue
-        if s.get('hardneg'):          # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV) — 측정표의 30프레임 간격 클립이 아님, 매번 씀
+        if s.get('hardneg'):          # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV)은 측정표의 클립이 아니므로 매번 씁니다.
             s_move.append(pos)
             hn += 1
             continue
@@ -146,13 +147,13 @@ def build(train_samples, train_idx, batch_size, csv_path=None, empty_pct=0.25,
         if m is not None:
             matched += 1
         (s_empty if (m is not None and m < empty_pct) else s_move).append(pos)
-    if not csv_path:           # 솎기 끔 — 빈 장면 구분 없이 모두 '움직임 있음'(매번 씀)
+    if not csv_path:           # 솎기를 끄면 빈 장면 구분 없이 모두 움직임 있음으로 보고 매번 씁니다.
         s_move, s_empty = s_move + s_empty, []
     sampler = BalancedBatchSampler(a_pos, s_move, s_empty, batch_size,
                                    empty_keep=empty_keep if csv_path else 1.0,
                                    spread_a=spread_a, seed=seed)
     c = sampler.counts()
-    n_s_all = len(s_move) + len(s_empty) - rc_full - ctx - hn     # 솎기 대상 정상(RC 를 빼면 실제 영상만)
+    n_s_all = len(s_move) + len(s_empty) - rc_full - ctx - hn     # 솎기 대상 정상(RC를 빼면 실제 영상만)
     lines = []
     if ctx:
         lines.append(f"사고 영상의 충돌 전·후 정상 {ctx}개는 솎지 않음(TRAIN_A_CONTEXT_NEG) — 매 에포크 전부 씀")

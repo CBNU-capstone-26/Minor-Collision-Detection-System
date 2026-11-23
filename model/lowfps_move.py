@@ -1,13 +1,13 @@
-"""실제 화면 갱신이 10fps 미만인 영상(config.LOW_FPS_VIDEOS)을 학습·평가에 안 쓰는 폴더로 옮긴다 (2026-11-04).
+"""실제 화면 갱신이 10fps 미만인 영상(config.LOW_FPS_VIDEOS)을 학습과 평가에 쓰지 않는 폴더로 옮깁니다.
 
-    python -m model.lowfps_move            # 무엇을 옮길지 보기만
-    python -m model.lowfps_move --apply    # 옮기기 (mp4 + txt)
-    python -m model.lowfps_move --restore --apply   # 원래 자리로 되돌리기
+    python -m model.lowfps_move                     # 무엇을 옮길지 보기만 합니다
+    python -m model.lowfps_move --apply             # 옮깁니다(mp4와 txt)
+    python -m model.lowfps_move --restore --apply   # 원래 자리로 되돌립니다
 
-학습 폴더(config.DATA_DIR) → config.LOW_FPS_EXCLUDED_DIR/train/<같은 상대경로>,
-평가 폴더(config.EVAL_FOLDER_PATH) → config.LOW_FPS_EXCLUDED_DIR/eval/<같은 상대경로>.
-지우지 않고 옮기기만 한다. 같은 이름 파일이 옮길 곳에 이미 있으면 그 영상은 건너뛴다.
-검증은 config.TRAIN_SPLIT_LOCK 으로 고정돼 있어 옮겨도 다른 영상의 분할은 바뀌지 않는다.
+학습 폴더(config.DATA_DIR)의 영상은 config.LOW_FPS_EXCLUDED_DIR/train/ 아래로,
+평가 폴더(config.EVAL_FOLDER_PATH)의 영상은 config.LOW_FPS_EXCLUDED_DIR/eval/ 아래로 같은 상대경로에 옮깁니다.
+지우지 않고 옮기기만 하며, 옮길 곳에 같은 이름 파일이 이미 있으면 그 영상은 건너뜁니다.
+검증은 config.TRAIN_SPLIT_LOCK으로 고정돼 있어 옮겨도 다른 영상의 분할은 바뀌지 않습니다.
 """
 import argparse
 import shutil

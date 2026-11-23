@@ -1,22 +1,23 @@
-"""학습 회차의 에포크를 '검증 영상 서비스 판정'으로 순위 매긴다(2026-11-22).
+"""학습 회차의 에포크를 검증 영상 서비스 판정으로 순위 매깁니다.
 
-suggest 의 학습 중 검증 지표(판단 지표·균형손실·F1·구간 재현율·구분력)는 후보끼리의 실제 평가 순서를 무작위 수준으로만
-맞혔다(outputs/analysis/suggest_audit_261122 — 17묶음, 기준 1등 = 평가 1등 4~9개 vs 무작위 기댓값 5.1개). 검증 사고가
-첫 묶음 11개뿐이고, 서비스 판정(간격 1 · 연속 묶음 · 정상 영상에 한 번만 튀어도 오탐)과 계산이 달라서다.
-그래서 학습이 끝난 뒤 후보 에포크마다 검증 실제 영상의 간격 1 P(A)를 재고 서비스와 같은 이벤트 판정
-(postproc_check._events = 지금 설정의 판정 기준·거친 탐색·최소 길이·fps 맞춤)으로 센다.
-  · 후보: 기본은 학습한 에포크의 후반 절반(마지막 에포크 번호가 30 이면 16~30 — 조기 종료를 기다린 10에포크 포함, 유예 기간 제외).
-    지난 17회차에서 평가 1등 에포크가 후반 절반 안에 15회, 판단 지표 상위 10개 안에 13회 있었다(11-22 사용자 결정).
-    --top N 이면 판단 지표(3에포크 평균) 상위 N개, --epochs 로 직접 고를 수도.
-  · 순위: 놓친 사고 적음 → 오탐 정상 영상 적음 → 오탐 이벤트 적음 → 가장 약하게 잡은 사고의 여유 큼 → 가장 센 오탐의 여유 큼.
-    여유 = 판정 기준을 0.05 단위로 바꿔 가며 그 사고를 잡는 가장 높은 기준 / 그 정상에 이벤트가 생기는 가장 높은 기준.
-  · 검증 영상 크롭은 한 번만 읽어 모든 에포크에 다시 쓴다(검증 실제 19개 약 0.74GB).
-  · 검증 영상도 19개뿐이라 이 순위도 흔들린다. 상위 1~2개만 평가 영상으로 확인한다(평가 영상으로 여러 개를 고르면 점수가 부풀려짐).
-결과: outputs/epoch_rank/<시각>_<회차>/report.txt · probs/(postproc_check 와 같은 형식)
+학습 중 검증 지표(판단 지표, 균형 손실, F1 등)는 후보끼리의 실제 평가 순서를 잘 맞히지 못합니다.
+검증 사고가 적고, 서비스 판정(간격 1, 연속 묶음, 정상 영상에 한 번만 튀어도 오탐)과 계산이 다르기 때문입니다.
+그래서 학습이 끝난 뒤 후보 에포크마다 검증 실제 영상의 간격 1 P(A)를 재고, 서비스와 같은 이벤트 판정
+(postproc_check._events, 지금 설정의 판정 기준, 거친 탐색, 최소 길이, fps 맞춤)으로 셉니다.
 
-    python -u -m model.epoch_rank --run outputs/trainlogs/<회차>               # 후반 절반, GPU 권장(서버 RTX 5090 후보당 약 20초 예상)
-    python -u -m model.epoch_rank --run ... --top 10 | --epochs 30-45,48 | --videos 4(코드 점검)
-    python -u -m model.epoch_rank --again outputs/epoch_rank/<폴더>            # 저장한 P(A)로 다시 집계(모델 안 씀)
+후보: 기본은 학습한 에포크의 후반 절반입니다(마지막 에포크가 30이면 16~30, 조기 종료 대기 에포크 포함, 유예 기간 제외).
+      --top N이면 판단 지표(3에포크 평균) 상위 N개, --epochs로 직접 고를 수도 있습니다.
+순위: 놓친 사고가 적은 순, 오탐 정상 영상이 적은 순, 오탐 이벤트가 적은 순, 가장 약하게 잡은 사고의 여유가 큰 순,
+      가장 센 오탐의 여유가 큰 순입니다. 여유는 판정 기준을 0.05 단위로 바꿔 가며 그 사고를 잡는 가장 높은 기준,
+      그 정상에 이벤트가 생기는 가장 높은 기준입니다.
+검증 영상 크롭은 한 번만 읽어 모든 에포크에 다시 씁니다.
+검증 영상도 많지 않아 이 순위도 흔들릴 수 있으므로 상위 1~2개만 평가 영상으로 확인합니다.
+결과는 outputs/epoch_rank/<시각>_<회차>/에 report.txt와 probs/(postproc_check와 같은 형식)로 남습니다.
+
+    python -u -m model.epoch_rank --run outputs/trainlogs/<회차>          # 후반 절반, GPU 권장
+    python -u -m model.epoch_rank --run <회차> --top 10                   # 판단 지표 상위 10개
+    python -u -m model.epoch_rank --run <회차> --epochs 30-45,48          # 직접 고르기
+    python -u -m model.epoch_rank --again outputs/epoch_rank/<폴더>       # 저장한 P(A)로 다시 집계(모델을 쓰지 않음)
 """
 import argparse
 import csv
@@ -47,7 +48,7 @@ def _trainlog(run_dir):
 
 
 def _parse_epochs(spec):
-    """'30-45,48' → [30, …, 45, 48]."""
+    """'30-45,48'을 [30, 31, ..., 45, 48]로 바꿉니다."""
     out = set()
     for part in spec.split(','):
         part = part.strip()
@@ -60,8 +61,9 @@ def _parse_epochs(spec):
 
 
 def _pick(rows, top):
-    """top 이 없으면 후반 절반(마지막 에포크 번호 // 2 개), 있으면 판단 지표(3에포크 평균) 상위 top 개.
-    둘 다 유예 기간(grace=1) 에포크는 뺀다."""
+    """top이 없으면 후반 절반(마지막 에포크 번호 // 2개), 있으면 판단 지표(3에포크 평균) 상위 top개를 고릅니다.
+    둘 다 유예 기간(grace=1) 에포크는 뺍니다.
+    """
     cand = [r for r in rows.values() if r.get('grace') != '1']
     if not top:
         last = max(rows)
@@ -78,7 +80,7 @@ def _epoch_file(run_dir, e):
 
 
 def _margins(data):
-    """영상별 여유 — 사고: 잡히는 가장 높은 기준(못 잡으면 0) · 정상: 이벤트가 생기는 가장 높은 기준(없으면 0)."""
+    """영상별 여유를 돌려줍니다. 사고는 잡히는 가장 높은 기준(못 잡으면 0), 정상은 이벤트가 생기는 가장 높은 기준(없으면 0)입니다."""
     catch, fp = {}, {}
     for name, (pa, m) in data.items():
         best = 0.0
@@ -92,7 +94,7 @@ def _margins(data):
 
 
 def _summarize(ep, data, t, tr, w):
-    """tr = 그 에포크의 학습 곡선 한 줄, w = 가중치 경로."""
+    """tr은 그 에포크의 학습 곡선 한 줄, w는 가중치 경로입니다."""
     sc, _ = _score(data, t)
     catch, fp = _margins(data)
     weak = min(catch.values()) if catch else 0.0
@@ -111,7 +113,7 @@ def _run_id(w):
 
 def _report(results, t, n_val):
     results.sort(key=lambda r: r['key'])
-    multi = len({r['run'] for r in results}) > 1          # 다시 집계할 때 여러 회차가 섞였으면 회차 시각도 붙인다
+    multi = len({r['run'] for r in results}) > 1          # 다시 집계할 때 여러 회차가 섞였으면 회차 시각도 붙입니다.
     lines = [f"\n[순위] 검증 실제 {n_val}개 · 서비스 판정 기준 {t:g} — 놓침 → 오탐 영상 → 오탐 이벤트 → 약한 사고 여유 → 센 오탐 여유",
              f"  {'순위':>4}  {'에포크':<8}{'놓침':>3}{'오탐영상':>7}{'오탐이벤트':>8}{'약한사고 여유':>16}{'센 오탐 여유':>16}"
              f"   기준별 놓침/오탐영상 {' '.join(f'{x:g}' for x in THS)}   │ 학습 중: 판단지표 · 균형손실 · F1"]
@@ -240,7 +242,7 @@ def main():
             model, device = _load_model(str(w))
             model.eval()
             if is_cuda_like(device):
-                torch.backends.cudnn.benchmark = True      # 실행기를 고르기 전에 켠다(CLAUDE.md 참고)
+                torch.backends.cudnn.benchmark = True      # 실행기를 고르기 전에 켭니다(infer_runtime 참고).
             runner = get_runner(model)
             batch = args.batch or predict_batch_size(device)
             wdir = out_dir / 'probs' / _wtag(w) / 'val_none'

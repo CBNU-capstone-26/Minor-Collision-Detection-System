@@ -1,4 +1,4 @@
-"""분석 요청 / 태스크 상태 / 이벤트·클립 조회 라우터."""
+"""분석 요청, 태스크 상태, 이벤트와 클립 조회 라우터입니다."""
 from datetime import datetime
 from pathlib import Path
 
@@ -15,12 +15,12 @@ from app.routers.videos import to_event_out, _get_owned_video, raw_clip_path
 router = APIRouter(prefix="/api", tags=["analysis"])
 
 
-# 대기·진행 중으로 보는 상태
+# 대기 중이거나 진행 중으로 보는 상태
 ACTIVE_STATUSES = ("PENDING", "PROCESSING")
 
 
 def _get_owned_task(task_id: int, db: Session, user: db_models.User):
-    """다른 사용자의 작업은 조회·취소할 수 없다(없는 것처럼 404)."""
+    """다른 사용자의 작업은 조회하거나 취소할 수 없습니다(없는 것처럼 404)."""
     task = db.get(db_models.AnalysisTask, task_id)
     if task is None or task.video is None or task.video.user_id != user.id:
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
@@ -35,8 +35,9 @@ def _active_task_for_video(video_id: int, db: Session):
 
 
 def _progress(task: db_models.AnalysisTask) -> dict:
-    """처리 중이면 Celery 상태(Redis)에서 진행 정보를 읽어온다 — 진행도 %(소수 첫째 자리), 지금 단계,
-    그 단계의 개수·순번(의심 구간·클립), 단계의 남은 시간(초). 모르면 비어 있다."""
+    """처리 중이면 Celery 상태(Redis)에서 진행 정보를 읽어 옵니다. 진행률 %(소수 첫째 자리), 지금 단계,
+    그 단계의 개수와 순번(의심 구간, 클립), 단계의 남은 시간(초)이며, 모르면 비워 둡니다.
+    """
     empty = {"progress": None, "eta_sec": None, "eta_is_min": False, "stage": None,
              "stage_count": None, "stage_index": None}
     if task.status != "PROCESSING" or not task.celery_task_id:
@@ -51,9 +52,9 @@ def _progress(task: db_models.AnalysisTask) -> dict:
 
 
 def _enqueue(video_id: int, bbox: dict, db: Session) -> api_schemas.AnalyzeResponse:
-    """분석 작업을 만들어 Celery 큐에 넣는다. 같은 영상에 대기·진행 중인 분석이
-    있으면 새로 만들지 않고 그 작업을 돌려준다(같은 영상 중복 분석 방지 —
-    워커가 하나라 중복 요청은 앞 작업이 끝날 때까지 기다리기만 한다)."""
+    """분석 작업을 만들어 Celery 큐에 넣습니다. 같은 영상에 대기 중이거나 진행 중인 분석이 있으면
+    새로 만들지 않고 그 작업을 돌려줍니다. 워커가 하나라 중복 요청은 앞 작업이 끝날 때까지 기다리기만 하기 때문입니다.
+    """
     existing = _active_task_for_video(video_id, db)
     if existing is not None:
         return api_schemas.AnalyzeResponse(
@@ -65,7 +66,7 @@ def _enqueue(video_id: int, bbox: dict, db: Session) -> api_schemas.AnalyzeRespo
     db.commit()
     db.refresh(task)
 
-    # Celery 큐에 적재 (torch 미설치 웹 프로세스에서도 .delay는 동작)
+    # Celery 큐에 넣습니다. torch가 없는 웹 프로세스에서도 .delay는 동작합니다.
     from app.prediction_job import run_prediction_task
     async_result = run_prediction_task.delay(task.id)
     task.celery_task_id = async_result.id
@@ -87,13 +88,13 @@ def analyze_video(
     return _enqueue(video.id, req.model_dump(), db)
 
 
-# ⚠️ /tasks/{task_id} 보다 먼저 등록해야 한다('active' 가 task_id 로 잡히지 않게)
+# /tasks/{task_id}보다 먼저 등록해야 'active'가 task_id로 잡히지 않습니다.
 @router.get("/tasks/active", response_model=list[api_schemas.ActiveTaskOut])
 def list_active_tasks(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
-    """로그인한 사용자의 대기·진행 중 분석. 화면을 새로 열 때 이걸로 진행 상황을 복원한다."""
+    """로그인한 사용자의 대기 중이거나 진행 중인 분석입니다. 화면을 새로 열 때 이것으로 진행 상황을 복원합니다."""
     tasks = (db.query(db_models.AnalysisTask)
              .join(db_models.Video, db_models.AnalysisTask.video_id == db_models.Video.id)
              .filter(db_models.Video.user_id == user.id,
@@ -162,7 +163,7 @@ def retry_task(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_current_user),
 ):
-    """실패·취소된 분석을 같은 영상·같은 차량 박스로 다시 실행한다."""
+    """실패하거나 취소된 분석을 같은 영상, 같은 차량 박스로 다시 실행합니다."""
     task = _get_owned_task(task_id, db, user)
     if task.status in ACTIVE_STATUSES:
         raise HTTPException(status_code=409, detail="이미 대기·진행 중인 작업입니다.")
@@ -187,7 +188,7 @@ def list_events(
 
 
 def _get_owned_event(event_id: int, db: Session, user: db_models.User):
-    """본인 영상의 사고 구간만 — 남의 것이면 없는 것처럼 404."""
+    """본인 영상의 사고 구간만 돌려줍니다. 남의 것이면 없는 것처럼 404를 냅니다."""
     event = db.get(db_models.CrashEvent, event_id)
     if event is None or event.video is None or event.video.user_id != user.id:
         raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")
@@ -200,8 +201,9 @@ def download_raw_clip(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_media_user),
 ):
-    """합성(박스·상태 띠)이 전혀 없는 원본 사고 클립 내려받기.
-    <a href download> 는 헤더를 못 실어서 영상 쿠키로 확인한다(auth_guard)."""
+    """합성(박스, 상태 띠)이 전혀 없는 원본 사고 클립을 내려받습니다.
+    <a href download>는 헤더를 실을 수 없어서 영상 쿠키로 확인합니다(auth_guard).
+    """
     event = _get_owned_event(event_id, db, user)
     path = raw_clip_path(event)
     if path is None or not path.exists():
@@ -219,7 +221,7 @@ def get_event_clip(
     db: Session = Depends(get_db),
     user: db_models.User = Depends(get_media_user),
 ):
-    # <video src> 태그용 — 영상 쿠키로 확인
+    # <video src>용이라 영상 쿠키로 확인합니다.
     event = _get_owned_event(event_id, db, user)
     if not event.clip_path:
         raise HTTPException(status_code=404, detail="클립을 찾을 수 없습니다.")

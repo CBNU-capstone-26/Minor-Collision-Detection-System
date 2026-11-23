@@ -1,26 +1,26 @@
-"""판정 기준·후처리·저fps 시간축 점검 — 창마다 P(A)를 한 번 재 두고, 서비스 판정을 여러 설정으로 다시 계산한다.
+"""판정 기준, 후처리, 저fps 시간축을 점검합니다. 묶음마다 P(A)를 한 번 재 두고 서비스 판정을 여러 설정으로 다시 계산합니다.
 
-    python -u -m model.postproc_check --weights <가중치1.pth> [<가중치2.pth> ...]   # GPU 권장(가중치당 약 10분)
-    python -u -m model.postproc_check --weights ... --no-val            # 평가 영상만
-    python -u -m model.postproc_check --again outputs/postproc_check/<시각>   # 저장한 P(A)로 집계만 다시(모델 안 씀)
+    python -u -m model.postproc_check --weights <가중치1.pth> [<가중치2.pth> ...]   # GPU 권장
+    python -u -m model.postproc_check --weights ... --no-val                        # 평가 영상만
+    python -u -m model.postproc_check --again outputs/postproc_check/<시각>          # 저장한 P(A)로 집계만 다시(모델을 쓰지 않음)
 
-바꿔 보는 것 (모든 조합을 summary.csv 에 남긴다)
-  · 판정 기준 A_THRESHOLD 0.2~0.7. 거친 탐색 기준은 config 기본식 min(0.3, 0.6×기준)
-  · 후처리 단위 — 'frame' 프레임 수 고정 · 'fps' 거친 탐색 간격(10)과 최소 길이의 연속 A 창 수(7)를 30fps 기준으로 보고
-    영상 fps 에 맞춤(inference.fps_scaled_event_params — 서비스와 같은 함수, config.PREDICT_FPS_SCALED_POSTPROC).
-    10fps 면 간격 3·연속 2창. 병합 간격은 이미 초 단위
-    (2026-10-30 첫 결과 261030_070150 의 'fps맞춤'은 최소 길이를 통째로 줄여 30fps 미만에선 필터가 꺼졌던 옛 계산)
-  · 최소 길이 35·32·30·29 = 연속 A 창 7·4·2·1(=필터 끔) (이벤트 길이 = 28 + 연속 창 수, fps 맞춤이면 30fps 기준)
-  · 거친 탐색 켬·끔(끄면 모든 창을 본다 — 거친 탐색이 놓치는 것)
-  · 저fps(20 미만) 영상 시간축 — none 그대로 · repeat 프레임 반복 · blend 이웃 프레임 섞기. round(30/fps)배로 늘려
-    창 하나(30프레임)가 학습 때처럼 약 1초가 되게 한다
-영상: 평가 영상(config.EVAL_FOLDER_PATH) + 검증 실제 영상(첫 가중치 회차의 split.json 검증 중 realdata — 학습에 안 쓴 영상).
-설정은 검증 영상으로 고르고 평가 영상으로 확인한다(평가 영상으로 고르면 점수가 부풀려짐). 사고는 구간 겹침으로 센다.
-서비스 판정(거친 탐색 → 의심 창 주변 촘촘히 → 상태머신 → 병합·최소 길이)은 inference.predict_events_and_clips 의
-이벤트 결정 부분을 옮겨 창별 P(A)로 다시 계산한다. 지금 설정 그대로인 경우는 실제 서비스 함수 결과와 영상별로
-맞는지 확인한다(서비스 재현 확인 — GPU FP16 은 묶음 구성에 따라 P(A)가 1e-3 쯤 달라 기준 바로 옆 창은 갈릴 수 있다).
-결과: outputs/postproc_check/<시각>/ — report.txt(화면과 같음) · summary.csv(설정 조합별 합계) · videos.csv(영상별 P(A)
-요약·이벤트) · probs/<가중치>/<eval|val>_<none|repeat|blend>/<영상>.npz(창별 P(A) — 다시 집계·화면 확인용)
+바꿔 보는 것(모든 조합을 summary.csv에 남깁니다)
+    판정 기준 A_THRESHOLD 0.2~0.7. 거친 탐색 기준은 config 기본식 min(0.3, 0.6 * 기준)을 씁니다.
+    후처리 단위: 'frame'은 프레임 수 고정, 'fps'는 거친 탐색 간격(10)과 최소 길이의 연속 A 묶음 수(7)를 30fps 기준으로 보고
+        영상 fps에 맞춥니다(서비스와 같은 inference.fps_scaled_event_params). 10fps면 간격 3, 연속 2묶음입니다.
+        병합 간격은 이미 초 단위입니다.
+    최소 길이 35, 32, 30, 29: 연속 A 묶음 7, 4, 2, 1(필터 끔)입니다(이벤트 길이는 28 + 연속 묶음 수).
+    거친 탐색 켬과 끔: 끄면 모든 묶음을 봐서 거친 탐색이 놓치는 것을 알 수 있습니다.
+    저fps(20 미만) 영상 시간축: none은 그대로, repeat는 프레임 반복, blend는 이웃 프레임 섞기입니다.
+        round(30/fps)배로 늘려 묶음 하나(30프레임)가 학습 때처럼 약 1초가 되게 합니다.
+영상은 평가 영상(config.EVAL_FOLDER_PATH)과 검증 실제 영상(첫 가중치 회차 split.json의 realdata 검증 영상)입니다.
+설정은 검증 영상으로 고르고 평가 영상으로 확인합니다(평가 영상으로 고르면 점수가 부풀려집니다). 사고는 구간이 겹치면 잡은 것으로 셉니다.
+서비스 판정(거친 탐색, 의심 묶음 주변 촘촘히, 상태 기계, 병합과 최소 길이)은 inference.predict_events_and_clips의
+이벤트 결정 부분을 옮겨 묶음별 P(A)로 다시 계산합니다. 지금 설정 그대로인 경우는 실제 서비스 함수 결과와 영상별로 맞춰 봅니다.
+GPU FP16은 배치 구성에 따라 P(A)가 1e-3쯤 달라 기준 바로 옆 묶음은 갈릴 수 있습니다.
+결과는 outputs/postproc_check/<시각>/에 남습니다.
+    report.txt(화면과 같음), summary.csv(설정 조합별 합계), videos.csv(영상별 P(A) 요약과 이벤트),
+    probs/<가중치>/<eval|val>_<none|repeat|blend>/<영상>.npz(묶음별 P(A), 다시 집계와 확인용)
 """
 import argparse
 import contextlib
@@ -52,11 +52,11 @@ SETS = (('eval', '평가'), ('val', '검증'))
 
 
 def _now_post():
-    """지금 서비스의 후처리 단위."""
+    """지금 서비스의 후처리 단위를 돌려줍니다."""
     return 'fps' if config.PREDICT_FPS_SCALED_POSTPROC else 'frame'
 
 
-# ── 영상 목록 ──────────────────────────────────────────────────────────────
+# 영상 목록
 
 def _label(mp4):
     bboxes, sf, ef = _read_label(str(mp4.with_suffix('.txt')))
@@ -66,7 +66,7 @@ def _label(mp4):
 
 
 def _excluded(name):
-    """10fps 미만 영상(config.EXCLUDE_VIDEOS)인가 — 폴더에 남아 있어도·저장한 P(A)를 다시 집계해도 뺀다."""
+    """실효 10fps 미만 영상(config.EXCLUDE_VIDEOS)인지 봅니다. 폴더에 남아 있거나 저장한 P(A)를 다시 집계할 때도 뺍니다."""
     return name in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
 
 
@@ -82,7 +82,7 @@ def _folder_videos(folder):
 
 
 def _split_path(weights, arg):
-    """검증 영상 목록 — 지정한 split.json, 가중치 회차 폴더의 것, 없으면 가장 최근 학습의 것(분할은 seed 고정)."""
+    """검증 영상 목록을 돌려줍니다. 지정한 split.json, 가중치 회차 폴더의 것, 없으면 가장 최근 학습의 것 순으로 찾습니다."""
     if arg:
         return Path(arg)
     p = Path(weights).resolve().parent.parent / 'split.json'
@@ -100,7 +100,7 @@ def _val_videos(split):
         rel = rel.replace('\\', '/')
         if not rel.startswith('realdata/'):
             continue
-        # 검증 폴더(config.VAL_DATA_DIR, 11-04~)로 옮긴 영상도, 예전처럼 학습 폴더에 있는 영상도 찾는다
+        # 검증 폴더(config.VAL_DATA_DIR)로 옮긴 영상도, 학습 폴더에 남아 있는 영상도 찾습니다.
         roots = [Path(r) for r in (getattr(config, 'VAL_DATA_DIR', None), config.DATA_DIR) if r]
         mp4 = next((r / rel for r in roots if (r / rel).exists()), Path(config.DATA_DIR) / rel)
         if _excluded(mp4.stem):
@@ -111,10 +111,10 @@ def _val_videos(split):
     return out
 
 
-# ── 창별 P(A) ─────────────────────────────────────────────────────────────
+# 묶음별 P(A)
 
 def _read_crops(mp4, bbox):
-    """서비스와 같은 크롭(0번 차량 박스, r=config.R_VALUE, 224) — uint8 RGB 목록."""
+    """서비스와 같은 크롭(0번 차량 박스, r=config.R_VALUE, 224)을 uint8 RGB 목록으로 돌려줍니다."""
     from inference import _crop_square_and_pad
     cap = cv2.VideoCapture(str(mp4))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -131,7 +131,7 @@ def _read_crops(mp4, bbox):
 
 
 def _resample(frames, factor, mode):
-    """시간축을 factor 배로 — repeat: 프레임 반복, blend: 다음 프레임과 섞어 사이를 채움."""
+    """시간축을 factor배로 늘립니다. repeat는 프레임 반복, blend는 다음 프레임과 섞어 사이를 채웁니다."""
     if factor <= 1 or mode == 'none':
         return frames
     out = []
@@ -148,9 +148,9 @@ def _resample(frames, factor, mode):
 
 
 def _window_probs(runner, device, frames, batch):
-    """간격 1 모든 창의 P(A). 서비스 _clip 과 같은 정규화. 영상을 장치에 한 번 올려 창마다 잘라 쓴다."""
+    """간격 1로 모든 묶음의 P(A)를 잽니다. 서비스 _clip과 같은 정규화를 쓰고, 영상을 장치에 한 번 올려 묶음마다 잘라 씁니다."""
     frames = list(frames)
-    while len(frames) < L:                       # 짧은 영상은 마지막 프레임 반복(서비스와 같음)
+    while len(frames) < L:                       # 짧은 영상은 마지막 프레임을 반복합니다(서비스와 같음).
         frames.append(frames[-1])
     u8 = torch.from_numpy(np.stack(frames)).to(device)          # T,H,W,3
     mean = torch.tensor(config.NORM_MEAN, dtype=torch.float32, device=device).view(1, 3, 1, 1, 1)
@@ -171,13 +171,13 @@ def _window_probs(runner, device, frames, batch):
 
 
 def _measure(weights, sets, out_dir, batch_arg):
-    """가중치 하나로 영상 묶음마다 none·repeat·blend P(A)를 재서 npz 로 남긴다. 반환: (모델, 실행기 이름)."""
+    """가중치 하나로 영상마다 none, repeat, blend P(A)를 재서 npz로 남깁니다. (모델, 실행기 이름)을 돌려줍니다."""
     from infer_runtime import get_runner
     from main import _load_model
     model, device = _load_model(weights)
     model.eval()
     if is_cuda_like(device):
-        torch.backends.cudnn.benchmark = True      # 실행기를 고르기 전에 켠다(CLAUDE.md 참고)
+        torch.backends.cudnn.benchmark = True      # 실행기를 고르기 전에 켭니다(infer_runtime 참고).
     runner = get_runner(model)
     batch = batch_arg or predict_batch_size(device)
     wtag = _wtag(weights)
@@ -213,7 +213,7 @@ def _wtag(weights):
 
 
 def _load_probs(wdir, set_key, mode):
-    """{영상이름: (pa, meta)}. repeat·blend 폴더엔 저fps 영상만 있어 나머지는 none 으로 채운다."""
+    """{영상 이름: (pa, meta)}를 돌려줍니다. repeat, blend 폴더에는 저fps 영상만 있어 나머지는 none으로 채웁니다."""
     out = {}
     for m in ([mode, 'none'] if mode != 'none' else ['none']):
         for p in sorted((wdir / f'{set_key}_{m}').glob('*.npz')):
@@ -223,11 +223,12 @@ def _load_probs(wdir, set_key, mode):
     return dict(sorted(out.items()))
 
 
-# ── 서비스 판정 다시 계산 ────────────────────────────────────────────────────
+# 서비스 판정 다시 계산
 
 def _events(pa, meta, t, *, coarse_prob=None, fps_scale=None, min_span=None, use_coarse=None):
-    """inference.predict_events_and_clips 의 이벤트 결정(창 간격 1). 반환: [(시작, 끝)] 원본 프레임, 평가한 창 수.
-    fps_scale None 이면 지금 서비스 설정(config.PREDICT_FPS_SCALED_POSTPROC)."""
+    """inference.predict_events_and_clips의 이벤트 결정(묶음 간격 1)을 옮긴 것입니다. [(시작, 끝)] 원본 프레임과 평가한 묶음 수를 돌려줍니다.
+    fps_scale이 None이면 지금 서비스 설정(config.PREDICT_FPS_SCALED_POSTPROC)을 따릅니다.
+    """
     coarse_pad = config.PREDICT_COARSE_PAD
     min_span = config.PREDICT_MIN_EVENT_SPAN_FRAMES if min_span is None else min_span
     use_coarse = config.PREDICT_USE_COARSE_SCAN if use_coarse is None else use_coarse
@@ -243,16 +244,16 @@ def _events(pa, meta, t, *, coarse_prob=None, fps_scale=None, min_span=None, use
     if grid > 1:
         ev = np.zeros(nw, dtype=bool)
         ev[::grid] = True
-        ev[last] = True                          # 영상 끝 창이 격자에 없으면 거친 창으로 붙인다
+        ev[last] = True                          # 영상 끝 묶음이 격자에 없으면 거친 묶음으로 붙입니다.
         hot = np.nonzero(ev & (pa > coarse_prob))[0]
-        if len(hot):                             # 의심 창 주변 ±pad 를 모두 본다
+        if len(hot):                             # 의심 묶음 주변 pad 범위를 모두 봅니다.
             cover = np.zeros(nw + 1, dtype=np.int32)
             np.add.at(cover, np.maximum(0, hot - coarse_pad), 1)
             np.add.at(cover, np.minimum(nw, hot + coarse_pad + 1), -1)
             ev |= np.cumsum(cover[:nw]) > 0
     else:
         ev = np.ones(nw, dtype=bool)
-    pred = ev & (pa > t)                         # 평가 안 한 창은 비사고
+    pred = ev & (pa > t)                         # 평가하지 않은 묶음은 사고가 아닌 것으로 봅니다.
     d = np.diff(np.concatenate(([0], pred.astype(np.int8), [0])))
     starts, ends = np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]
     events = [[int(s), int(e) + L - 2 if e < nw else n_real - 1] for s, e in zip(starts, ends)]
@@ -269,7 +270,7 @@ def _events(pa, meta, t, *, coarse_prob=None, fps_scale=None, min_span=None, use
 
 
 def _score(data, t, **kw):
-    """사고는 구간 겹침으로 잡았는지, 오탐 이벤트 = 정상 영상의 이벤트 + 사고 영상에서 충돌과 안 겹친 이벤트."""
+    """사고는 구간이 겹치면 잡은 것으로 보고, 오탐 이벤트는 정상 영상의 이벤트와 사고 영상에서 충돌과 겹치지 않은 이벤트입니다."""
     rows = []
     for name, (pa, m) in data.items():
         evs, _ = _events(pa, m, t, **kw)
@@ -292,14 +293,14 @@ def _score(data, t, **kw):
 
 
 def _short(name):
-    """260828_TA_0001 → TA_0001."""
+    """260828_TA_0001을 TA_0001로 줄입니다."""
     return name.split('_', 1)[1] if '_' in name else name
 
 
-# ── 서비스 재현 확인 ────────────────────────────────────────────────────────
+# 서비스 재현 확인
 
 def _service_check(model, wtag, sets, probs_root):
-    """지금 설정 그대로의 다시 계산이 실제 서비스 함수(predict_events_and_clips)와 같은지 영상별로."""
+    """지금 설정 그대로 다시 계산한 결과가 실제 서비스 함수(predict_events_and_clips)와 같은지 영상별로 확인합니다."""
     from inference import predict_events_and_clips
     tmp = Path(tempfile.mkdtemp(prefix='postproc_check_'))
     print(f'\n[서비스 재현 확인] {wtag} — 지금 설정(기준 {config.A_THRESHOLD:g}, 거친 탐색 {config.PREDICT_COARSE_PROB:g}, '
@@ -327,7 +328,7 @@ def _service_check(model, wtag, sets, probs_root):
     return bad, total
 
 
-# ── 집계·보고 ───────────────────────────────────────────────────────────────
+# 집계와 보고
 
 def _grid():
     for mode in RESAMPLES:
@@ -339,7 +340,7 @@ def _grid():
 
 
 def _cfg_name(mode, post, ms, coarse, t):
-    """지금 설정과 다른 것만 이름에 붙인다."""
+    """지금 설정과 다른 것만 이름에 붙입니다."""
     parts = [f'기준 {t:g}']
     if post != _now_post():
         parts.append('fps맞춤' if post == 'fps' else '프레임고정')
@@ -398,7 +399,7 @@ def _aggregate(out_dir, probs_root, suffix=''):
 
 
 def _videos_csv(path, wdir, cache, write_header):
-    """영상별 — P(A) 최대·위치, 충돌 구간 창/바깥 창 최대, 지금 기준·최소 길이에서 프레임 고정·fps 맞춤 후처리의 이벤트."""
+    """영상별로 P(A) 최대와 위치, 충돌 구간 안팎 묶음의 최대, 지금 기준과 최소 길이에서 프레임 고정과 fps 맞춤 후처리의 이벤트를 남깁니다."""
     cols = ['weights', 'set', 'resample', 'file', 'gt', 'fps', 'factor', 'width', 'height', 'box_w', 'box_h',
             'gt_start', 'gt_end', 'n_windows', 'p_max', 'p_max_frame', 'p_max_gt', 'p_max_outside',
             'events_frame', 'caught_frame', 'events_fps', 'caught_fps']
@@ -409,10 +410,10 @@ def _videos_csv(path, wdir, cache, write_header):
         for (set_key, mode), data in cache.items():
             for name, (pa, m) in data.items():
                 if mode != 'none' and m['resample'] == 'none':
-                    continue                         # repeat·blend 묶음에 채워 넣은 원본 영상은 none 줄과 같다
+                    continue                         # repeat, blend 묶음에 채워 넣은 원본 영상은 none 줄과 같습니다.
                 f_ = m['factor']
                 ws = np.arange(len(pa))
-                lo, hi = ws // f_, (ws + L - 1) // f_    # 창이 덮는 원본 프레임
+                lo, hi = ws // f_, (ws + L - 1) // f_    # 묶음이 덮는 원본 프레임
                 if m['gt_sf'] is not None:
                     in_gt = (lo <= m['gt_ef']) & (hi >= m['gt_sf'])
                     p_gt = f'{pa[in_gt].max():.4f}' if in_gt.any() else ''
@@ -433,7 +434,7 @@ def _videos_csv(path, wdir, cache, write_header):
 
 
 def _wrong_now(wtag, cache):
-    """지금 설정에서 틀린 영상 — 모델이 못 본 것(P(A) 낮음)인지 후처리가 지운 것인지 가르려고 P(A) 최대를 함께."""
+    """지금 설정에서 틀린 영상을 보여 줍니다. 모델이 못 본 것(P(A) 낮음)인지 후처리가 지운 것인지 가르려고 P(A) 최대도 함께 씁니다."""
     print(f'\n[{wtag}] 지금 설정(기준 {config.A_THRESHOLD:g}, 후처리 {_now_post()})에서 틀린 영상 — fps · 박스 · '
           f'P(A) 최대(사고는 충돌 구간 창 / 그 밖 창)')
     for set_key, set_name in SETS:
@@ -444,7 +445,7 @@ def _wrong_now(wtag, cache):
         wrong = [r for r in rows if (r['gt'] == 'A' and not r['caught']) or (r['gt'] == 'S' and r['events'])]
         night = getattr(config, 'NIGHT_VIDEOS', ()) or ()
         nr = [r for r in rows if r['name'] in night]
-        if nr:     # 야간 영상만 따로(불빛 오탐 추적, config.NIGHT_VIDEOS)
+        if nr:     # 야간 영상만 따로 봅니다(config.NIGHT_VIDEOS).
             na = [r for r in nr if r['gt'] == 'A']
             ns = [r for r in nr if r['gt'] == 'S']
             print(f'  {set_name} 야간 {len(nr)}개: 사고 {len(na)}개 중 잡음 {sum(1 for r in na if r["caught"])}개 · '
@@ -492,7 +493,7 @@ def _report(results, wtags):
                 tot = results.get((wtag, *cfg), {}).get(set_key)
                 if tot:
                     print(f'  {_cfg_name(*cfg):<38} {_fmt(tot)}  {_lists(tot)}')
-        # 검증 영상으로 고른 설정 → 평가 영상에서 확인
+        # 검증 영상으로 고른 설정을 평가 영상에서 확인합니다.
         both = [(k, v) for k, v in results.items() if k[0] == wtag and 'val' in v and 'eval' in v]
         if not both:
             continue
@@ -512,7 +513,7 @@ def _report(results, wtags):
     print('· 모든 조합은 summary.csv, 영상별 P(A)·이벤트는 videos.csv, 창별 P(A)는 probs/ 에 있다.')
 
 
-# ── 실행 ────────────────────────────────────────────────────────────────────
+# 실행
 
 def main():
     ap = argparse.ArgumentParser(description='판정 기준·후처리·저fps 시간축 점검')
@@ -547,7 +548,7 @@ def main():
     finally:
         sys.stdout = tee.stdout
         tee.close()
-        # 오류로 멈췄을 때 [저장] 을 찍으면 끝난 줄 알고 다음 단계를 시작하는 대기 명령이 속는다(11-22)
+        # 오류로 멈췄을 때 [저장]을 찍으면 이어서 기다리던 명령이 끝난 줄 알고 다음 단계를 시작하므로 [중단]을 찍습니다.
         print(f'\n[저장] {out_dir}' if done else f'\n[중단] 오류로 멈춤 — 일부만 남음: {out_dir}')
 
 
@@ -562,7 +563,7 @@ def _run(args, out_dir, suffix):
         sets = {'eval': _folder_videos(args.folder)}
         print(f'평가 영상: {args.folder} — {len(sets["eval"])}개')
         if not args.no_val:
-            # 가중치마다 회차의 검증 영상이 다를 수 있어(TRAIN_FORCE_TRAIN_VIDEOS 등) 모두의 검증에 공통인 영상만 쓴다
+            # 가중치마다 회차의 검증 영상이 다를 수 있어(TRAIN_FORCE_TRAIN_VIDEOS 등) 모두의 검증에 공통인 영상만 씁니다.
             splits = ([Path(args.split)] if args.split else
                       list(dict.fromkeys(p for p in (_split_path(w, None) for w in args.weights) if p)))
             if not splits:

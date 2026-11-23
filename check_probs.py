@@ -1,18 +1,16 @@
-"""학습 중 저장된 best 가중치로 '검증셋 A 확률 분포'를 직접 확인한다.
+"""학습 중 저장된 가중치로 검증셋의 A 확률 분포를 직접 확인합니다.
 
-recall/acc 는 argmax(임계값 0.5) 기준이라, 모델이 A 확률을 0.1 → 0.45 로
-올리는 동안 계속 0 으로 찍힌다. "배우고 있는 중"인지 "아무것도 못 배웠는지"
-구분이 안 되므로 확률을 직접 본다.
+재현율과 정확도는 판정 기준(0.5)으로 계산하므로, 모델이 A 확률을 0.1에서 0.45로 올리는 동안에도 계속 0으로 나옵니다.
+배우는 중인지 아무것도 못 배웠는지 가를 수 없어 확률을 직접 봅니다.
+    A 샘플과 S 샘플의 평균 A 확률: 둘이 벌어지면 가르고 있는 것입니다.
+    AUC: 기준과 무관한 구분력입니다(0.5는 무작위, 1.0은 완벽).
+    기준별 재현율과 정밀도: 0.5가 아닌 기준에서 잡히는지 봅니다.
 
-  · A 샘플의 평균 A확률 vs S 샘플의 평균 A확률 → 둘이 벌어지면 판별 중
-  · AUC → 임계값과 무관한 판별력 (0.5 = 무작위, 1.0 = 완벽)
-  · 임계값별 recall/precision → 0.5 가 아닌 값에서 잡히는지
+GPU 메모리에 여유가 있으면 학습과 동시에 돌릴 수 있습니다.
+검증 분할은 이 스크립트가 seed 42 방식으로 직접 나눕니다. 지금 학습은 검증 폴더(data/val)를 따로 쓰므로 검증 영상이 다를 수 있습니다.
 
-학습과 동시에 실행 가능(GPU 메모리 여유가 있으면). 분할은 train.py 와 같은
-seed 42 를 쓰므로 검증셋이 정확히 일치한다.
-
-사용:
-    cd model && python3 ../check_probs.py ../weights/hitandrun_x3d_260922_33ep_earlyY_ptY_0.1999.pth
+사용
+    cd model && python3 ../check_probs.py ../weights/<가중치>.pth
 """
 from __future__ import annotations
 
@@ -22,7 +20,7 @@ import sys
 import torch
 from torch.utils.data import DataLoader, Subset
 
-sys.path.insert(0, os.getcwd())          # 모델 폴더 안에서 실행하는 것을 전제
+sys.path.insert(0, os.getcwd())          # 모델 폴더 안에서 실행하는 것을 전제로 합니다.
 
 import config                             # noqa: E402
 from dataset import HitAndRunDataset      # noqa: E402
@@ -31,7 +29,7 @@ from hitandrun_model import HitAndRun3DCNN  # noqa: E402
 
 
 def _split_val(dataset, ratio=config.TRAIN_SPLIT_RATIO):
-    """train.py 와 동일한 계층적 영상단위 분할 (seed 42) → (val_rc, val_real) 인덱스."""
+    """seed 42로 영상 단위 계층 분할을 해 (val_rc, val_real) 인덱스를 돌려줍니다."""
     groups: dict = {}
     for i, s in enumerate(dataset.samples):
         parts = os.path.normpath(s['mp4_path']).split(os.sep)
@@ -60,11 +58,11 @@ def _split_val(dataset, ratio=config.TRAIN_SPLIT_RATIO):
 
 
 def _auc(pos, neg):
-    """Mann-Whitney U 로 AUC. pos/neg = A·S 샘플의 A확률 리스트."""
+    """Mann-Whitney U로 AUC를 계산합니다. pos와 neg는 A, S 샘플의 A 확률 목록입니다."""
     if not pos or not neg:
         return None
     ranked = sorted([(p, 1) for p in pos] + [(n, 0) for n in neg])
-    # 동점은 평균 순위로
+    # 동점은 평균 순위로 처리합니다.
     r, i, s_pos = 0.0, 0, 0.0
     while i < len(ranked):
         j = i
@@ -86,7 +84,7 @@ def main() -> int:
     weights = sys.argv[1]
     device = get_device(config.INFER_DEVICE_TYPE)
 
-    ds_eval = HitAndRunDataset(augment=False)      # 검증은 증강 없음
+    ds_eval = HitAndRunDataset(augment=False)      # 검증은 증강하지 않습니다.
     val_rc, val_real = _split_val(ds_eval)
     print(f"[분할] val_rc {len(val_rc)}클립 / val_real {len(val_real)}클립 (seed 42)")
 

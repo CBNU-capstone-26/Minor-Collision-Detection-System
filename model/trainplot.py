@@ -1,18 +1,17 @@
-"""학습 곡선 CSV → PNG 그래프.
+"""학습 곡선 CSV를 PNG 그래프로 그립니다.
 
-train.py 가 매 에포크 끝에 호출해 `outputs/trainlogs/<회차>/<로그이름>.png` 를 갱신한다
-(학습이 중간에 끊겨도 그때까지의 곡선이 남는다). 지난 로그도 그릴 수 있다:
+train.py가 매 에포크 끝에 불러 outputs/trainlogs/<회차>/<로그 이름>.png를 갱신합니다.
+학습이 중간에 끊겨도 그때까지의 곡선이 남습니다. 지난 로그도 그릴 수 있습니다.
 
     python trainplot.py ../outputs/trainlogs/*/*.csv
 
-세 칸으로 그린다 (x축 = 에포크, 칸마다 y축 하나):
-  1) 손실 — train / val_rc / val_real, 그리고 best 판단 지표(있으면)
-  2) 검증 충돌(A) recall(실선)·precision(점선) — val_real / val_rc
-  3) 헤드 학습률(로그 스케일) — ReduceLROnPlateau 가 언제 깎았는지
-best 에포크는 실선, 후보 에포크는 점선 세로줄로 표시한다.
+세 칸으로 그립니다(x축은 에포크).
+    1) 손실: train, val_rc, val_real, 그리고 best 판단 지표(있으면)
+    2) 검증 충돌(A) 재현율(실선)과 정밀도(점선): val_real, val_rc
+    3) 헤드 학습률(로그 스케일): ReduceLROnPlateau가 언제 줄였는지
+best 에포크는 실선, 후보 에포크는 점선 세로줄로 표시합니다.
 
-그래프 안 글자는 한글로 쓴다. 한글 글꼴(맑은 고딕·애플 SD 고딕 Neo·나눔고딕·Noto Sans CJK)이
-없는 컴퓨터(예: 글꼴을 깔지 않은 리눅스 서버)에선 글자가 네모로 깨지므로 영문으로 쓴다.
+그래프 글자는 한글로 씁니다. 한글 글꼴이 없는 컴퓨터(글꼴을 설치하지 않은 리눅스 서버 등)에서는 글자가 깨지므로 영문으로 씁니다.
 """
 from __future__ import annotations
 
@@ -22,24 +21,23 @@ import math
 import sys
 from pathlib import Path
 
-# 색은 '대상'을 따른다 — 세 칸 모두 같은 대상은 같은 색.
-# (검증된 기본 범주 팔레트 1~3번. 3번 청록은 배경 대비가 2.7:1 로 낮아 선 끝에
-#  이름을 직접 붙여 보완한다.)
-C_REAL = '#2a78d6'    # val_real — 서비스 대상(실차)이라 가장 먼저
+# 색은 대상을 따릅니다. 세 칸 모두 같은 대상은 같은 색입니다.
+# 3번 청록은 배경 대비가 낮아 선 끝에 이름을 직접 붙여 보완합니다.
+C_REAL = '#2a78d6'    # val_real(서비스 대상인 실차라 가장 먼저)
 C_RC = '#eb6834'      # val_rc
 C_TRAIN = '#1baf7a'   # train
-INK = '#0b0b0b'       # 글자·best 표시
-INK2 = '#52514e'      # 보조 글자·후보 표시·학습률
+INK = '#0b0b0b'       # 글자와 best 표시
+INK2 = '#52514e'      # 보조 글자, 후보 표시, 학습률
 GRID = '#e4e3df'
 SURFACE = '#fcfcfb'
 
-# 한글 글꼴 — 앞에서부터 찾는다(Windows → macOS → 리눅스)
+# 한글 글꼴을 앞에서부터 찾습니다(Windows, macOS, 리눅스 순).
 KO_FONTS = ('Malgun Gothic', 'Apple SD Gothic Neo', 'AppleGothic',
             'NanumGothic', 'Noto Sans CJK KR', 'Noto Sans KR', 'Noto Sans CJK JP')
-# WSL 은 Windows 글꼴이 자동 등록되지 않아 파일로 직접 넣는다
+# WSL은 Windows 글꼴이 자동으로 등록되지 않아 파일로 직접 넣습니다.
 KO_FONT_FILES = ('/mnt/c/Windows/Fonts/malgun.ttf',)
 
-# 그래프 안 글자 — 한글 글꼴이 있으면 KO, 없으면 EN
+# 그래프 글자입니다. 한글 글꼴이 있으면 KO, 없으면 EN을 씁니다.
 LABELS = {
     'ko': {
         'train': '학습 (증강, 드롭아웃 켬)', 'train_end': '학습',
@@ -67,7 +65,7 @@ LABELS = {
 
 
 def _korean_font():
-    """쓸 수 있는 한글 글꼴 이름. 없으면 None."""
+    """쓸 수 있는 한글 글꼴 이름을 돌려줍니다. 없으면 None입니다."""
     from matplotlib import font_manager as fm
     names = {f.name for f in fm.fontManager.ttflist}
     for name in KO_FONTS:
@@ -94,8 +92,9 @@ def _load(csv_path: Path):
 
 
 def _pick_best(rows, col, result):
-    """best 에포크: 학습 결과 파일(.result.json) → 판단 지표 열 → 옛 기준 순으로.
-    (에포크, 근거 'metric'|'old_real'|'old_rc') 를 돌려준다."""
+    """best 에포크를 학습 결과 파일(.result.json), 판단 지표 열, 예전 기준 순으로 찾습니다.
+    (에포크, 근거 'metric' 또는 'old_real' 또는 'old_rc')를 돌려줍니다.
+    """
     if result.get('best_epoch'):
         return int(result['best_epoch']), 'metric'
     ep = [int(r['epoch']) for r in rows]
@@ -110,7 +109,7 @@ def _pick_best(rows, col, result):
 
 
 def _end_label(ax, xs, ys, text, color):
-    """선 끝에 이름을 붙인다(범례와 함께 — 색만으로 구분하지 않게)."""
+    """색만으로 구분하지 않도록 범례와 함께 선 끝에도 이름을 붙입니다."""
     pts = [(x, y) for x, y in zip(xs, ys) if not math.isnan(y)]
     if not pts:
         return
@@ -121,7 +120,7 @@ def _end_label(ax, xs, ys, text, color):
 
 
 def plot_trainlog(csv_path, out_path=None):
-    """CSV 하나를 그려 PNG 경로를 돌려준다. 행이 없으면 None."""
+    """CSV 하나를 그려 PNG 경로를 돌려줍니다. 행이 없으면 None입니다."""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -141,7 +140,7 @@ def plot_trainlog(csv_path, out_path=None):
 
     font = _korean_font()
     L = LABELS['ko' if font else 'en']
-    # 한글 글꼴에 없는 글자(수식 등)는 DejaVu Sans 로 채운다. 마이너스는 글꼴마다 없을 수 있어 '-' 로.
+    # 한글 글꼴에 없는 글자(수식 등)는 DejaVu Sans로 채웁니다. 마이너스는 글꼴마다 없을 수 있어 '-'로 씁니다.
     rc = {'font.family': [font, 'DejaVu Sans'], 'axes.unicode_minus': False} if font else {}
     with plt.rc_context(rc):
         fig = _draw(plt, L, csv_path, rows, col, ep, best, best_why, cands, result)
@@ -156,7 +155,7 @@ def _draw(plt, L, csv_path, rows, col, ep, best, best_why, cands, result):
         gridspec_kw={'height_ratios': [3, 2, 1.1], 'hspace': 0.22})
     fig.patch.set_facecolor(SURFACE)
 
-    # ── 1) 손실 ──
+    # 1) 손실
     ax1.plot(ep, col('train_loss'), color=C_TRAIN, lw=2, label=L['train'])
     ax1.plot(ep, col('val_rc_loss'), color=C_RC, lw=2, label=L['val_rc'])
     ax1.plot(ep, col('val_real_loss'), color=C_REAL, lw=2, label=L['val_real'])
@@ -170,28 +169,28 @@ def _draw(plt, L, csv_path, rows, col, ep, best, best_why, cands, result):
     ax1.legend(loc='lower left', bbox_to_anchor=(0, 1.0), ncol=4, fontsize=8.5,
                frameon=False, labelcolor=INK2, handlelength=2.6, columnspacing=1.4)
 
-    # ── 2) 검증 충돌 recall / precision (0.5 임계값) ──
+    # 2) 검증 충돌 재현율과 정밀도
     for key, color in (('val_real', C_REAL), ('val_rc', C_RC)):
         ax2.plot(ep, col(f'{key}_recallA'), color=color, lw=2,
                  label=L['recall'].format(L[key]))
         ax2.plot(ep, col(f'{key}_precA'), color=color, lw=1.6, ls=(0, (2, 2)),
                  label=L['precision'].format(L[key]))
     ax2.set_ylim(-0.03, 1.05)
-    ax2.set_ylabel(L['collision'], color=INK2, linespacing=1.6)  # 한글 글꼴은 두 줄이 겹쳐서
+    ax2.set_ylabel(L['collision'], color=INK2, linespacing=1.6)  # 한글 글꼴은 두 줄이 겹쳐서 줄 간격을 넓힙니다.
     ax2.legend(loc='lower left', bbox_to_anchor=(0, 1.0), ncol=4, fontsize=8.5,
                frameon=False, labelcolor=INK2, handlelength=2.6, columnspacing=1.4)
 
-    # ── 3) 학습률 ──
+    # 3) 학습률
     ax3.step(ep, col('lr'), where='post', color=INK2, lw=1.8)
     ax3.set_yscale('log')
-    # 눈금 숫자는 '3e-5' 로 — 기본(3×10⁻⁵ 수식)은 한글 글꼴에 수식용 마이너스가 없어 깨진다
+    # 눈금 숫자는 '3e-5'처럼 씁니다. 기본 수식 표기는 한글 글꼴에 수식용 마이너스가 없어 깨집니다.
     from matplotlib.ticker import LogFormatter
     ax3.yaxis.set_major_formatter(LogFormatter(labelOnlyBase=False))
     ax3.yaxis.set_minor_formatter(LogFormatter(labelOnlyBase=False))
     ax3.set_ylabel(L['lr'], color=INK2)
     ax3.set_xlabel(L['epoch'], color=INK2)
 
-    # ── best / 후보 표시 ──
+    # best와 후보 표시
     for ax in (ax1, ax2, ax3):
         ax.set_facecolor(SURFACE)
         ax.grid(True, color=GRID, lw=0.8)

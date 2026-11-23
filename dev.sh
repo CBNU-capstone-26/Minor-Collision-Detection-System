@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 개발용 서비스 한 번에 켜기/끄기 — tmux 세션 하나에 백엔드·워커·UI 를 칸 3개로 띄운다.
+# 개발용 서비스를 한 번에 켜고 끕니다. tmux 세션 하나에 백엔드, 워커, UI를 칸 3개로 띄웁니다.
 #
 #   ./dev.sh            서비스 시작(이미 떠 있으면 그 화면으로 들어감)
 #   ./dev.sh stop       서비스 모두 종료
@@ -7,14 +7,14 @@
 #   ./dev.sh status     상태 확인
 #   ./dev.sh attach     떠 있는 화면으로 들어가기
 #
-# 코드를 저장하면 자동으로 반영된다(껐다 켤 필요 없음):
-#   · 백엔드  : backend/app 의 .py 저장 → uvicorn --reload 가 재시작
-#   · 워커    : backend/app · model 의 .py 저장 → watchfiles 가 재시작
-#              ⚠️ 분석이 돌던 중이면 그 분석은 중단된다('서버 재시작으로 중단' → 다시 실행)
-#   · UI     : Vite 가 저장 즉시 반영
+# 코드를 저장하면 자동으로 반영됩니다(껐다 켤 필요 없음).
+#   백엔드: backend/app의 .py를 저장하면 uvicorn --reload가 다시 시작합니다.
+#   워커: backend/app, model의 .py를 저장하면 watchfiles가 다시 시작합니다.
+#         분석이 돌던 중이면 그 분석은 중단됩니다('서버 재시작으로 중단'으로 표시되며 다시 실행할 수 있습니다).
+#   UI: Vite가 저장 즉시 반영합니다.
 #
-# tmux 조작: Ctrl+b 후 방향키 = 칸 이동 · Ctrl+b d = 화면에서 나오기(서비스는 계속 돔)
-#            Ctrl+b [ = 로그 위로 스크롤(q 로 종료)
+# tmux 조작: Ctrl+b 후 방향키는 칸 이동, Ctrl+b d는 화면에서 나오기(서비스는 계속 돕니다),
+#            Ctrl+b [는 로그 위로 스크롤(q로 종료)입니다.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,19 +28,19 @@ err() { printf '\033[1;31m[dev]\033[0m %s\n' "$*" >&2; }
 
 port_in_use() { ss -ltn "sport = :$1" 2>/dev/null | grep -q LISTEN; }
 
-# 워커 감싸개: watchfiles 가 재시작하려고 보내는 SIGINT 를 Celery 의 즉시 종료(SIGQUIT)로
-# 바꿔 전달한다. SIGINT 를 그대로 받으면 Celery 는 진행 중 분석이 끝날 때까지 기다리는
-# '정상 종료'를 해서, 코드를 고쳐도 반영이 늦고 강제 종료 시 하위 프로세스가 남을 수 있다.
+# 워커 감싸개입니다. watchfiles가 다시 시작하려고 보내는 SIGINT를 Celery의 즉시 종료(SIGQUIT)로 바꿔 전달합니다.
+# SIGINT를 그대로 받으면 Celery는 진행 중 분석이 끝날 때까지 기다리는 정상 종료를 해서, 코드를 고쳐도 반영이 늦고
+# 강제 종료 때 하위 프로세스가 남을 수 있습니다.
 #
-# 저장을 연달아 하면(2초 안) 두 번째 SIGINT 가 감싸개가 막 뜬 사이에 와서 15초 뒤 감싸개만 SIGKILL 로 죽고
-# Celery 는 고아로 남았다 — 예전 코드의 워커가 분석을 나눠 받아 새 기능이 빠진 결과가 저장됐다(2026-10-27).
-# 그래서 신호 처리를 Celery 를 띄우기 '전에' 걸고, 띄울 때 남아 있는 이 프로젝트의 워커를 먼저 정리한다.
+# 저장을 연달아 하면 두 번째 SIGINT가 감싸개가 막 뜬 사이에 와서 Celery가 고아 프로세스로 남을 수 있습니다.
+# 그러면 이전 코드의 워커가 분석을 나눠 받습니다. 그래서 신호 처리를 Celery를 띄우기 전에 걸고,
+# 띄울 때 남아 있는 이 프로젝트의 워커를 먼저 정리합니다.
 run_worker() {
   cd "$ROOT/backend"
   local pid=""
   local pattern="$PY/celery -A app.worker worker"
-  # Celery 를 띄우기 전이면 그냥 끝내고, 띄운 뒤면 즉시 종료(QUIT)를 전하고 끝날 때까지 기다린다.
-  # Celery 는 막 뜨는 중엔 QUIT 를 무시해(실측) 5초 안에 안 끝나면 강제 종료한다(하위 프로세스 포함)
+  # Celery를 띄우기 전이면 그냥 끝내고, 띄운 뒤면 즉시 종료(QUIT)를 전하고 끝날 때까지 기다립니다.
+  # Celery는 막 뜨는 중에는 QUIT를 무시하므로 5초 안에 끝나지 않으면 강제 종료합니다(하위 프로세스 포함).
   trap 'if [ -n "$pid" ]; then kill -QUIT "$pid" 2>/dev/null || true; ( sleep 5; pkill -KILL -P "$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null ) & else exit 0; fi' INT TERM
   if pgrep -f "$pattern" >/dev/null; then
     echo "[dev] 남아 있던 워커를 정리합니다: $(pgrep -f "$pattern" | tr '\n' ' ')"
@@ -61,7 +61,7 @@ start() {
     exec tmux attach -t "$SESSION"
   fi
 
-  # 준비물 확인
+  # 준비물을 확인합니다.
   [[ -x "$PY/python" ]] || { err "venv311 이 없습니다. CLAUDE.md 의 '실행 방법 0)' 으로 먼저 만드세요."; exit 1; }
   for p in "$BACKEND_PORT" "$UI_PORT"; do
     if port_in_use "$p"; then
@@ -74,7 +74,7 @@ start() {
     (cd "$ROOT/ui" && npm install)
   fi
 
-  # DB·Redis (docker-compose 에 restart: unless-stopped 가 있어 보통 이미 떠 있다)
+  # DB와 Redis입니다(docker-compose에 restart: unless-stopped가 있어 보통 이미 떠 있습니다).
   log "DB·Redis 확인"
   if ! (cd "$ROOT" && docker compose up -d db redis); then
     err "docker compose 실행 실패 — Docker Desktop 이 켜져 있는지 확인하세요."
@@ -84,7 +84,7 @@ start() {
   log "tmux 세션 '$SESSION' 에 백엔드·워커·UI 를 띄웁니다"
   tmux new-session -d -s "$SESSION" -n services -c "$ROOT/backend" \
     "$PY/python -m uvicorn app.main:app --port $BACKEND_PORT --reload --reload-dir app"
-  # 프로그램이 죽어도 칸을 닫지 않아 오류 로그를 볼 수 있게
+  # 프로그램이 죽어도 칸을 닫지 않아 오류 로그를 볼 수 있게 합니다.
   tmux set-option -t "$SESSION" remain-on-exit on
   tmux set-option -t "$SESSION" pane-border-status top
   tmux set-option -t "$SESSION" mouse on
@@ -111,7 +111,7 @@ stop() {
     return 0
   fi
   log "서비스 종료 중…"
-  # 각 칸에 Ctrl+C 를 보내 정상 종료를 시도하고, 끝나길 잠깐 기다린 뒤 세션을 닫는다
+  # 각 칸에 Ctrl+C를 보내 정상 종료를 시도하고, 끝나기를 잠깐 기다린 뒤 세션을 닫습니다.
   for pane in $(tmux list-panes -t "$SESSION" -F '#{pane_id}'); do
     tmux send-keys -t "$pane" C-c 2>/dev/null || true
   done
@@ -142,6 +142,6 @@ case "${1:-start}" in
   restart) stop; start ;;
   status)  status ;;
   attach)  exec tmux attach -t "$SESSION" ;;
-  _worker) run_worker ;;   # 내부용: watchfiles 가 워커를 띄울 때 쓴다
+  _worker) run_worker ;;   # 내부용: watchfiles가 워커를 띄울 때 씁니다.
   *) echo "사용법: ./dev.sh [start|stop|restart|status|attach]"; exit 1 ;;
 esac

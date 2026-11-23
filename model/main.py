@@ -7,36 +7,35 @@ import config
 from device_utils import get_device, is_channels_last_3d_supported
 from hitandrun_model import HitAndRun3DCNN, check_weights
 
-'''
-학습 시작
-python3 -m model.main --mode train                 # A 클립 방식 pre (기본)
-python3 -m model.main --mode train --a-mode span   # A 클립 방식 span (config 주석 참고)
-python3 -m model.main --mode train --scratch       # 사전학습 없이 무작위 초기화(scratch)
-python3 -m model.main --mode train --scratch --lr 1e-3   # 학습률 직접 지정
-python3 -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv   # 빈 장면 정상 솎기 + 묶음마다 충돌(이름 _bal)
-python3 -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv --dry-run   # 묶음 구성만 출력(학습 안 함)
+'''학습
+python3 -m model.main --mode train                         # 사전학습 모델로 시작(기본)
+python3 -m model.main --mode train --a-mode span           # 충돌 구간 전체를 여러 묶음으로 학습
+python3 -m model.main --mode train --scratch               # 사전학습 없이 무작위 초기화로 시작
+python3 -m model.main --mode train --scratch --lr 1e-3     # 학습률 직접 지정
+python3 -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv             # 배치 구성 조정(이름 _bal)
+python3 -m model.main --mode train --balance outputs/s_motion/<시각>/clips.csv --dry-run   # 학습 없이 구성만 출력
 
-평가 시작 (--weights 를 안 주면 config.EVAL_WEIGHTS_PATH)
-python3 -m model.main --mode eval --weights weights/hitandrun_x3d_..._ptY_span_0.1234.pth
-python3 -m model.main --mode eval --weights weights/....pth --r 1.5   # 크롭 r 만 바꿔 평가(이번 실행만, 결과 이름 _r1.5)
+평가(--weights를 주지 않으면 config.EVAL_WEIGHTS_PATH)
+python3 -m model.main --mode eval --weights weights/<가중치>.pth
+python3 -m model.main --mode eval --weights weights/<가중치>.pth --r 1.5   # 이번 실행만 크롭 배율을 바꿔 평가(결과 이름 _r1.5)
 
-평가해 볼 에포크 추천 — 학습 회차 폴더의 곡선 CSV 로(학습 중·중단 후에도). 에포크별 가중치는 그 폴더 epochs/
+평가할 에포크 추천(학습 회차 폴더의 학습 곡선 CSV를 읽습니다. 에포크별 가중치는 그 폴더의 epochs/에 있습니다)
 python3 -m model.main --mode suggest --run outputs/trainlogs/<회차 폴더>
 
-추론 실행 방식 자가 검사 — 서버 설치 직후 한 번 (--weights 를 안 주면 서비스 가중치)
+추론 실행 방식 자가 검사(서버 설치 직후 한 번, --weights를 주지 않으면 서비스 가중치)
 python3 -m model.main --mode check-backend
 
-영상 하나 분석 — 서비스와 같은 방식(사고 의심 구간 + 클립). 결과는 outputs/detect/<시각>_<영상이름>/
-python3 -m model.main --mode detect --video data/eval/260828_TA_0001.mp4          # 박스는 같은 이름 .txt 의 0번 차량
-python3 -m model.main --mode detect --video 영상.mp4 --bbox 101,45,198,153         # 박스 직접 지정(원본 해상도 x1,y1,x2,y2)
+영상 하나를 서비스와 같은 방식으로 분석(결과는 outputs/detect/<시각>_<영상 이름>/)
+python3 -m model.main --mode detect --video data/eval/<영상>.mp4                # 박스는 같은 이름 .txt의 0번 차량
+python3 -m model.main --mode detect --video <영상>.mp4 --bbox 101,45,198,153    # 박스를 원본 해상도 x1,y1,x2,y2로 직접 지정
 
-예측 시작 (개발용: config 의 영상 전체에 CAM 합성)
+전체 영상에 CAM을 합성한 예측 영상 만들기(개발용, config의 영상 사용)
 python3 -m model.main --mode predict
 '''
 
 def _load_model(weights_path):
-    # _load_model은 predict/eval(추론)에서만 사용 → INFER 디바이스 사용
-    check_weights(weights_path)              # 학습한 입력 크기(_s256)·헤드 풀링(_top3)이 지금 설정과 같아야 한다
+    # 평가와 예측(추론)에서만 쓰므로 추론 장치(INFER)를 씁니다.
+    check_weights(weights_path)              # 학습한 입력 크기(_s256)와 헤드 풀링(_top3)이 지금 설정과 같아야 합니다.
     device = get_device(config.INFER_DEVICE_TYPE)
     model = HitAndRun3DCNN(num_classes=config.MODEL_NUM_CLASSES).to(device)
     if is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST:
@@ -77,9 +76,8 @@ def run_predict():
 
 
 def run_detect(video, bbox_arg=None, r=None):
-    """영상 하나를 서비스와 똑같이 분석한다 — 사고 의심 구간을 찾고 그 구간 클립을 만든다.
-
-    r 을 주면 크롭 배율만 그 값으로 바꿔 분석한다(안 주면 config.R_VALUE).
+    """영상 하나를 서비스와 똑같이 분석해 사고 의심 구간을 찾고 그 구간 클립을 만듭니다.
+    r을 주면 크롭 배율만 그 값으로 바꿔 분석합니다(주지 않으면 config.R_VALUE).
     """
     from datetime import datetime
     from inference import predict_events_and_clips
@@ -120,10 +118,10 @@ def run_detect(video, bbox_arg=None, r=None):
 
 
 def run_check_backend():
-    """서비스 추론 실행 방식을 지금 이 컴퓨터에서 다시 자가 검사하고 결과를 저장한다.
+    """서비스 추론 실행 방식을 이 컴퓨터에서 다시 자가 검사하고 결과를 저장합니다.
 
-    서비스 워커는 처음 분석 때 같은 검사를 하므로 안 해도 동작은 한다. 미리 해 두면 첫 분석이
-    검사 시간만큼 빨라진다. 가중치·패키지·하드웨어를 바꾼 뒤에도 다시 돌리면 된다.
+    서비스 워커가 첫 분석 때 같은 검사를 하므로 하지 않아도 동작합니다. 미리 해 두면 첫 분석이 검사 시간만큼 빨라집니다.
+    가중치, 패키지, 하드웨어를 바꾼 뒤에도 다시 돌리면 됩니다.
     """
     from infer_runtime import get_runner
     model, device = _load_model(config.CHECK_WEIGHTS_PATH)
@@ -132,7 +130,7 @@ def run_check_backend():
 
 
 def run_eval(r=None):
-    """r 을 주면 크롭 배율만 그 값으로 바꿔 평가한다(기존·서비스 판정 모두, 이번 실행만)."""
+    """r을 주면 이번 실행만 크롭 배율을 그 값으로 바꿔 평가합니다(기존 판정과 서비스 판정 모두)."""
     from evaluate import evaluate_folder_accuracy
     model, _ = _load_model(config.EVAL_WEIGHTS_PATH)
     evaluate_folder_accuracy(model, **({} if r is None else {'r_value': r}))
@@ -202,7 +200,7 @@ if __name__ == "__main__":
     if (args.run or args.paths) and args.mode != "suggest":
         parser.error("--run·--paths 는 --mode suggest 에만 씁니다.")
     if args.a_mode and args.mode != "train":
-        # 추론(평가·서비스)은 A 방식과 무관하다 — span 으로 학습한 가중치를 --weights 로 고른다
+        # 추론(평가, 서비스)은 학습 방식과 무관합니다. span으로 학습한 가중치는 --weights로 고릅니다.
         parser.error("--a-mode 는 학습(--mode train)에만 씁니다. 평가할 가중치는 --weights 로 고르세요.")
     if args.weights and args.mode == "train":
         parser.error("--weights 는 eval·predict·check-backend·detect 에만 씁니다.")
@@ -224,7 +222,7 @@ if __name__ == "__main__":
     if args.lr is not None and args.lr <= 0:
         parser.error("--lr 은 0보다 커야 합니다.")
     if args.scratch:
-        # 이름표(ptN)도 함께 바꾼다 — config 가 읽힐 때 이미 정해진 값이라서
+        # 이름표(ptN)도 함께 바꿉니다. config를 불러올 때 이미 정해진 값이기 때문입니다.
         config.PRETRAINED = False
         config.PRETRAIN_TAG = "ptN"
     if args.a_mode:
@@ -249,7 +247,7 @@ if __name__ == "__main__":
         from epoch_suggest import candidate_paths
         paths = candidate_paths(args.run)
         if not paths:
-            # 경로 대신 안내문이 W=$(...) 에 들어가지 않게 화면 오류로만 알리고 실패로 끝낸다
+            # 안내문이 경로 대신 W=$(...)에 들어가지 않도록 오류 출력으로만 알리고 실패로 끝냅니다.
             import sys
             print(f"추천할 에포크 가중치가 없습니다: {args.run}", file=sys.stderr)
             sys.exit(1)

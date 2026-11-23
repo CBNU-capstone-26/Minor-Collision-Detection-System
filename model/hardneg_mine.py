@@ -1,22 +1,20 @@
-"""학습 영상에서 '지나가는 차' 같은 헷갈리는 정상 묶음을 캔다(하드 네거티브, 2026-11-22).
+"""학습 영상에서 다른 차가 지나가는 장면처럼 헷갈리는 정상 묶음(하드 네거티브)을 찾습니다.
 
-남은 오탐(평가 TS_0002·0007·0009·0011, 검증 ReS_0007·0009)은 모두 다른 차가 대상 차 앞·뒤·옆을 지나가는 장면이다
-(outputs/analysis/static_veto_261122/look — 멀고 작은 박스라 화면 전체로는 멈춘 장면처럼 보임). 학습 정상 영상은 30프레임
-간격으로 이미 전부 쓰지만 사고 영상의 충돌과 먼 구간은 학습에 안 쓴다. 가중치(기본 서비스 가중치)로 학습 영상의 간격 1
-P(A)를 재서, 정상인데 높게 나온 묶음을 고른다 → 학습 옵션 TRAIN_HARDNEG_CSV 로 정상 클립에 더한다.
-  · 대상: 학습 폴더(config.DATA_DIR)만. 검증 고정 목록(split_lock.json)에 있는 영상은 학습 폴더에 남아 있어도 뺀다.
-    - 실제 정상 영상: 학습 정상 클립과 같은 차(0번 + 1번)
-    - 실제 사고 영상: 충돌에서 --margin-sec(기본 3초) 이상 떨어진 묶음만(0번 차). 안 B(충돌 0.5초 옆을 정상으로)는
-      미세 충돌을 놓치게 해서(11-22) 충돌과 먼 곳만 쓴다.
-    - --rc 면 RC 영상도 같은 규칙(서버에만 있음, RC 정상은 0번 차만 — 학습 S 와 같음)
-  · P(A) > --min-prob(기본 0.3)인 묶음을 이어진 구간으로 묶고, 구간마다 가장 높은 묶음부터 10프레임 이상 떨어진 것
-    최대 --per-seg(기본 3)개를 고른다(한 장면이 학습을 덮지 않게).
-  · 결과: outputs/hardneg/<시각>/hardneg.csv · report.txt · sheet_NN.jpg(구간마다 가장 높은 묶음의 6프레임 —
-    정말 정상인지 눈으로 확인. 레이블이 빠진 충돌이 섞여 있으면 그 줄을 CSV 에서 지우고 쓴다)
+가중치(기본 서비스 가중치)로 학습 영상의 간격 1 P(A)를 재서, 정상인데 높게 나온 묶음을 고릅니다.
+고른 묶음은 학습 옵션 TRAIN_HARDNEG_CSV로 정상 클립에 더할 수 있습니다.
 
-    python -u -m model.hardneg_mine                       # GPU 권장, 서비스 가중치, 실제 영상
-    python -u -m model.hardneg_mine --rc                  # RC 도
-    python -u -m model.hardneg_mine --videos 2            # 코드 점검(종류마다 가장 짧은 영상 2개)
+대상은 학습 폴더(config.DATA_DIR)뿐이며, 검증 고정 목록(split_lock.json)에 있는 영상은 학습 폴더에 남아 있어도 뺍니다.
+    실제 정상 영상: 학습 정상 클립과 같은 차(0번과 1번)
+    실제 사고 영상: 충돌에서 --margin-sec(기본 3초) 이상 떨어진 묶음만(0번 차)
+    --rc를 주면 RC 영상도 같은 규칙으로 봅니다(RC 정상은 학습과 같이 0번 차만).
+P(A)가 --min-prob(기본 0.3)보다 높은 묶음을 이어진 구간으로 묶고, 구간마다 가장 높은 묶음부터
+10프레임 이상 떨어진 것을 최대 --per-seg(기본 3)개 고릅니다. 한 장면이 학습을 덮지 않게 하려는 것입니다.
+결과는 outputs/hardneg/<시각>/에 hardneg.csv, report.txt, sheet_NN.jpg로 남습니다.
+그림으로 정말 정상인지 확인하고, 레이블이 빠진 충돌이 섞여 있으면 그 줄을 CSV에서 지운 뒤 씁니다.
+
+    python -u -m model.hardneg_mine               # GPU 권장, 서비스 가중치, 실제 영상
+    python -u -m model.hardneg_mine --rc          # RC 영상도
+    python -u -m model.hardneg_mine --videos 2    # 코드 점검(종류마다 가장 짧은 영상 2개)
 """
 import argparse
 import csv
@@ -37,12 +35,12 @@ from evaluate import _Tee, _read_label
 from postproc_check import _excluded, _short, _window_probs
 
 L = config.CLIP_LENGTH
-PIX_T = 15          # 움직인 화소 기준(s_motion_check 와 같음)
+PIX_T = 15          # 움직인 화소 기준(s_motion_check와 같습니다)
 SHEET_ROWS = 10
 
 
 def _val_lock_stems():
-    """검증 고정 목록의 영상 이름 — 학습 폴더에 남아 있어도(옮기기 전 서버) 캐지 않는다."""
+    """검증 고정 목록의 영상 이름입니다. 학습 폴더에 남아 있어도 캐지 않습니다."""
     p = getattr(config, 'TRAIN_SPLIT_LOCK', None)
     try:
         with open(p, encoding='utf-8') as f:
@@ -52,7 +50,7 @@ def _val_lock_stems():
 
 
 def _videos(use_rc, n_check):
-    """[(mp4, 영역, 종류, [(차 번호, 박스)], 충돌 시작, 끝)] — 학습 폴더만."""
+    """학습 폴더의 [(mp4, 영역, 종류, [(차 번호, 박스)], 충돌 시작, 충돌 끝)]을 돌려줍니다."""
     lock = _val_lock_stems()
     out = []
     for dom in ('realdata', 'rcdata') if use_rc else ('realdata',):
@@ -84,7 +82,7 @@ def _videos(use_rc, n_check):
 
 
 def _read_multi(mp4, boxes):
-    """서비스와 같은 크롭(r=config.R_VALUE, 224)을 차마다 — 영상을 한 번만 읽는다. {차: [uint8 RGB]}, fps."""
+    """서비스와 같은 크롭(r=config.R_VALUE, 224)을 차마다 만듭니다. 영상은 한 번만 읽고 ({차: [uint8 RGB]}, fps)를 돌려줍니다."""
     from inference import _crop_square_and_pad
     cap = cv2.VideoCapture(str(mp4))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -101,14 +99,14 @@ def _read_multi(mp4, boxes):
 
 
 def _motion(frames, w):
-    """묶음 안 이웃 프레임 '움직인 화소 비율(%)'의 3번째로 큰 값(s_motion_check 와 같은 계산)."""
+    """묶음 안 이웃 프레임의 움직인 화소 비율(%) 중 3번째로 큰 값입니다(s_motion_check와 같은 계산)."""
     gs = [cv2.GaussianBlur(cv2.cvtColor(f, cv2.COLOR_RGB2GRAY), (5, 5), 0) for f in frames[w:w + L]]
     v = sorted(float((cv2.absdiff(a, b) > PIX_T).mean()) * 100 for a, b in zip(gs[1:], gs[:-1]))
     return v[-3] if len(v) >= 3 else (v[-1] if v else 0.0)
 
 
 def _segments(idx, gap=3):
-    """정렬된 묶음 번호 → 이어진 구간 [(시작, 끝)]."""
+    """정렬된 묶음 번호를 이어진 구간 [(시작, 끝)]으로 묶습니다."""
     segs = []
     for i in idx:
         if segs and i - segs[-1][1] <= gap:
@@ -157,12 +155,12 @@ def main():
         model, device = _load_model(args.weights)
         model.eval()
         if is_cuda_like(device):
-            torch.backends.cudnn.benchmark = True      # 실행기를 고르기 전에 켠다(CLAUDE.md 참고)
+            torch.backends.cudnn.benchmark = True      # 실행기를 고르기 전에 켭니다(infer_runtime 참고).
         runner = get_runner(model)
         batch = args.batch or predict_batch_size(device)
         print(f"실행기 {runner.name} · 장치 {device} · 묶음 {batch}", flush=True)
 
-        rows, sheet = [], []          # sheet: 최소 힙 (최대 P, 순번, 그림 줄)
+        rows, sheet = [], []          # sheet는 (최대 P, 순번, 그림 줄)을 담는 최소 힙입니다.
         scanned = {k: 0 for k in ('정상', '사고먼곳')}
         t0 = time.perf_counter()
         for vi, (mp4, dom, kind, boxes, sf, ef) in enumerate(vids, 1):

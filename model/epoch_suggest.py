@@ -1,17 +1,17 @@
-"""학습 곡선 CSV 로 '평가 영상으로 비교해 볼 에포크'를 고른다.
+"""학습 곡선 CSV로 평가해 볼 후보 에포크를 고릅니다.
 
-판단 지표(검증 균형 손실의 3에포크 평균)는 실제 검증 충돌이 적어(약 12개) 흔들리고, 평균이라
-저장이 약 1에포크 늦게 따라간다. 또 손실 기준은 판정(P(A) 0.5)이 바뀌지 않아도 확률만 오르면
-좋아져서, 재현율은 그대로인데 오탐이 는 에포크를 고르기도 한다(2026-10-22 학습: 판단 지표
-1위 44에포크 7/12·오탐 6 vs 38에포크 7/12·오탐 2). 그래서 세 기준의 상위를 합쳐 후보로 낸다.
-  ① 판단 지표(3에포크 평균) ② 그 에포크 균형손실 ③ 그 에포크 F1(서비스와 같은 0.5 판정의 재현율·정밀도)
-구간 재현율(접근~충돌 종료 창 중 하나라도 A)·구분력은 2026-10-29 부터 학습 CSV 에 있고, 보여 주기만 하며 고르는 기준엔
-넣지 않는다(그 전 학습은 '-' — python -m model.val_recheck 로 다시 계산).
-기준마다 상위 k개(config.TRAIN_SUGGEST_TOPK)를 서로 TRAIN_TOPK_MIN_GAP 에포크 이상 떨어진 것만
-고른다(붙은 에포크는 사실상 같은 모델). 검증 충돌이 적어 어느 기준도 흔들리므로 이것은 '후보'일 뿐이고,
-최종 선택은 평가 영상(서비스 판정·정상 영상 오탐)으로 한다. 에포크별 가중치는 회차 폴더 epochs/ 에 있다.
+세 기준의 상위를 합쳐 후보로 냅니다.
+    1) 판단 지표(검증 균형 손실의 3에포크 평균)
+    2) 그 에포크의 균형 손실
+    3) 그 에포크의 F1(서비스와 같은 판정 기준의 재현율과 정밀도)
+손실 기준은 판정이 바뀌지 않아도 확률만 오르면 좋아지므로 F1을 함께 봅니다.
+구간 재현율과 구분력은 보여 주기만 하고 고르는 기준에는 넣지 않습니다.
+기준마다 상위 k개(config.TRAIN_SUGGEST_TOPK)를 서로 TRAIN_TOPK_MIN_GAP 에포크 이상 떨어진 것만 고릅니다.
 
-    python -m model.main --mode suggest --run outputs/trainlogs/<회차 폴더>   # 학습 중·중단 후에도
+이 기준들은 검증 충돌이 적어 후보끼리의 실제 순서를 잘 맞히지 못합니다.
+그래서 마지막에 검증 영상 서비스 판정으로 순위를 매기는 epoch_rank 명령도 함께 안내합니다.
+
+    python -m model.main --mode suggest --run outputs/trainlogs/<회차 폴더>   # 학습 중이나 중단한 뒤에도 쓸 수 있습니다
 """
 import csv
 from pathlib import Path
@@ -27,7 +27,7 @@ def _f(row, col):
 
 
 def _f1(row, dom):
-    """그 에포크 검증의 F1. 충돌로 판정한 클립이 없으면(정밀도 빈칸) 0."""
+    """그 에포크 검증의 F1을 돌려줍니다. 충돌로 판정한 클립이 없으면(정밀도 빈칸) 0입니다."""
     r, p = _f(row, f'val_{dom}_recallA'), _f(row, f'val_{dom}_precA')
     if not r or not p:
         return 0.0
@@ -35,7 +35,7 @@ def _f1(row, dom):
 
 
 def _top(rows, key, k, gap):
-    """key 가 작은 순으로, 이미 고른 에포크와 gap 이상 떨어진 것만 k 개."""
+    """key가 작은 순으로, 이미 고른 에포크와 gap 이상 떨어진 것만 k개 고릅니다."""
     picked = []
     for r in sorted((r for r in rows if key(r) is not None), key=key):
         e = int(r['epoch'])
@@ -52,8 +52,9 @@ def _epoch_file(ep_dir, e):
 
 
 def candidate_paths(run_dir):
-    """추천 에포크 가중치의 절대 경로(파일이 있는 것만) — main --mode suggest --paths 가 한 줄에 하나씩 낸다.
-    이어 돌리는 서버 명령이 출력에서 경로를 정규식으로 뽑다가 상대 경로 앞부분(outputs)을 잘라 먹은 일이 있어(11-22) 따로 둔다."""
+    """추천 에포크 가중치의 절대 경로(파일이 있는 것만)를 돌려줍니다. main --mode suggest --paths가 한 줄에 하나씩 출력합니다.
+    이어서 돌리는 명령이 출력 문장에서 경로를 뽑지 않아도 되게 따로 둡니다.
+    """
     pick, _ = suggest(run_dir)
     run_dir = Path(run_dir)
     ep_dir = (run_dir.parent if run_dir.suffix == '.csv' else run_dir) / 'epochs'
@@ -61,7 +62,7 @@ def candidate_paths(run_dir):
 
 
 def suggest(run_dir, k=None, gap=None):
-    """(추천 에포크 목록, 출력 줄들). run_dir 은 회차 폴더(또는 그 안의 trainlog CSV)."""
+    """(추천 에포크 목록, 출력 줄들)을 돌려줍니다. run_dir은 회차 폴더(또는 그 안의 trainlog CSV)입니다."""
     k = int(k or getattr(config, 'TRAIN_SUGGEST_TOPK', 2))
     gap = int(gap or getattr(config, 'TRAIN_TOPK_MIN_GAP', 3))
     run_dir = Path(run_dir)
@@ -70,17 +71,17 @@ def suggest(run_dir, k=None, gap=None):
         return [], [f"학습 곡선 CSV 가 없습니다: {run_dir}"]
     run_dir = csv_path.parent
     with open(csv_path, encoding='utf-8') as fh:
-        # 유예 기간(grace=1) 에포크는 추천하지 않는다 — best·조기 종료도 세지 않은 구간
+        # 유예 기간(grace=1) 에포크는 추천하지 않습니다. best와 조기 종료도 세지 않는 구간입니다.
         rows = [r for r in csv.DictReader(fh) if r.get('epoch') and r.get('grace') != '1']
     if not rows:
         return [], ["학습 곡선이 아직 비어 있습니다"]
-    # 실제 영상 검증이 있으면 그쪽, 없으면 RC 검증
+    # 실제 영상 검증이 있으면 그것을, 없으면 RC 검증을 씁니다.
     dom = 'real' if any(_f(r, 'val_real_bal') is not None for r in rows) else 'rc'
     bal = f'val_{dom}_bal'
     picks = {
         '판단지표': _top(rows, lambda r: _f(r, 'monitor'), k, gap),
         '균형손실': _top(rows, lambda r: _f(r, bal), k, gap),
-        # F1 이 같으면 균형손실이 낮은 쪽
+        # F1이 같으면 균형 손실이 낮은 쪽
         'F1': _top(rows, lambda r: (-_f1(r, dom), _f(r, bal) if _f(r, bal) is not None else 9.0), k, gap),
     }
     pick = sorted({e for v in picks.values() for e in v})
@@ -110,19 +111,19 @@ def suggest(run_dir, k=None, gap=None):
                      f"{fp.name if fp else '(없음 — 에포크별 저장 전 학습)'}")
     have = [p for p in files if p]
     if have:
-        # 224 아닌 입력 크기로 학습한 회차(_s256 등)는 평가도 같은 크기로 — 다르면 가중치를 읽을 때 멈춘다
+        # 224가 아닌 입력 크기로 학습한 회차(_s256 등)는 평가도 같은 크기로 해야 합니다. 다르면 가중치를 읽을 때 멈춥니다.
         from hitandrun_model import weights_head_pool, weights_input_size
         size = weights_input_size(have[0].name)
-        pool = weights_head_pool(have[0].name)      # avg 아닌 헤드 풀링(_top3 등)도 같은 값으로
+        pool = weights_head_pool(have[0].name)      # avg가 아닌 헤드 풀링(_top3 등)도 같은 값으로 맞춥니다.
         env = (f"INPUT_SIZE={size} " if size else "") + (f"HEAD_TEMPORAL_POOL={pool} " if pool != 'avg' else "")
-        # 화면 로그도 남긴다 — tee 는 폴더가 없으면 말없이 실패해서 먼저 만든다(프로젝트 루트에서 실행)
+        # 화면 로그도 남깁니다. tee는 폴더가 없으면 조용히 실패하므로 먼저 만듭니다(프로젝트 루트에서 실행).
         lines.append("  평가 명령(하나씩 차례로 · 화면 로그는 outputs/console/):")
         lines.append("    mkdir -p outputs/console && for w in \\")
         lines += [f"      {p} \\" for p in have[:-1]] + [f"      {have[-1]}; do"]
         lines.append(f"      {env}python -u -m model.main --mode eval --weights \"$w\"; done 2>&1 "
                      f"| tee outputs/console/eval_{run_dir.name}_$(date +%y%m%d_%H%M).log")
-        # 위 기준들은 후보끼리의 실제 평가 순서를 무작위 수준으로만 맞혔다(11-22 outputs/analysis/suggest_audit_261122) —
-        # 검증 영상 서비스 판정으로 다시 순위를 매긴 뒤 상위 1~2개만 평가하는 쪽을 권한다
+        # 위 기준들은 후보끼리의 실제 평가 순서를 잘 맞히지 못하므로,
+        # 검증 영상 서비스 판정으로 순위를 다시 매긴 뒤 상위 1~2개만 평가하는 쪽을 권합니다.
         lines.append("  권장: 검증 영상 서비스 판정으로 순위(후반 절반 에포크를 재고 상위 2개 평가 명령을 냄):")
         lines.append(f"    {env}python -u -m model.epoch_rank --run {run_dir} 2>&1 "
                      f"| tee outputs/console/rank_{run_dir.name}_$(date +%y%m%d_%H%M).log")

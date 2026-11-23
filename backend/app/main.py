@@ -1,4 +1,4 @@
-"""FastAPI 진입점 — CORS, 라우터 등록, 시작 시 테이블 생성, 보관 기간 지난 영상 정리."""
+"""FastAPI 진입점입니다. CORS와 라우터를 등록하고, 시작할 때 테이블을 만들고, 보관 기간이 지난 영상을 정리합니다."""
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -6,20 +6,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db_connection import engine, Base
-from app import db_models  # noqa: F401  (테이블 등록을 위해 임포트)
+from app import db_models  # noqa: F401  테이블을 등록하려고 불러옵니다.
 from app.settings import settings
 from app.routers import auth, videos, analysis
 
 
 async def _retention_loop():
-    """보관 기간(VIDEO_RETENTION_DAYS)이 지난 영상을 서버가 켜질 때 한 번, 그 뒤 1시간마다 지운다."""
+    """보관 기간(VIDEO_RETENTION_DAYS)이 지난 영상을 서버가 켜질 때 한 번 지우고, 그 뒤로는 1시간마다 지웁니다."""
     from app.retention import CHECK_INTERVAL_SEC, delete_expired_videos
     while True:
         try:
             deleted = await asyncio.to_thread(delete_expired_videos)
             if deleted:
                 print(f"[보관기간] {settings.VIDEO_RETENTION_DAYS}일 지난 영상 {len(deleted)}개를 지웠습니다: {deleted}", flush=True)
-        except Exception as exc:  # noqa: BLE001 — 정리에 실패해도 서버는 계속 돈다(다음 회차에 다시)
+        except Exception as exc:  # noqa: BLE001  정리에 실패해도 서버는 계속 돌고, 다음 회차에 다시 시도합니다.
             print(f"[보관기간] 정리 실패(다음에 다시): {exc}", flush=True)
         await asyncio.sleep(CHECK_INTERVAL_SEC)
 
@@ -42,11 +42,10 @@ app.add_middleware(
 )
 
 def _wait_for_db(timeout_sec=60):
-    """DB(MySQL)가 연결을 받을 때까지 기다린다.
+    """DB가 연결을 받을 때까지 기다립니다.
 
-    DB 컨테이너를 막 띄운 직후엔 MySQL 이 준비되기 전이라 첫 연결이 끊기고, 예전엔 그때
-    백엔드가 바로 죽어 화면에서 로그인이 502 가 났다. 바로 죽지 않고 잠깐씩 다시 시도한다
-    (어떤 OS·실행 방법으로 띄워도 같다).
+    DB 컨테이너를 막 띄운 직후에는 MySQL이 아직 준비되지 않아 첫 연결이 끊길 수 있습니다.
+    이때 백엔드가 바로 종료되지 않도록 잠깐씩 다시 시도합니다.
     """
     import time
     from sqlalchemy import text
@@ -64,13 +63,14 @@ def _wait_for_db(timeout_sec=60):
             time.sleep(2)
 
 
-# 서버 시작 시 테이블이 없으면 자동 생성 — DB 가 준비될 때까지 기다린 뒤
+# DB가 준비되면 없는 테이블을 만듭니다.
 _wait_for_db()
 Base.metadata.create_all(bind=engine)
 
 def _ensure_column(table, column_ddl):
-    """나중에 추가한 컬럼을 기존 테이블에도 넣는다 (create_all 은 이미 있는 테이블을 고치지 않는다).
-    이미 있으면 MySQL 이 오류를 내므로 그냥 넘어간다."""
+    """나중에 추가한 컬럼을 기존 테이블에도 넣습니다. create_all은 이미 있는 테이블을 고치지 않기 때문입니다.
+    컬럼이 이미 있으면 MySQL이 오류를 내므로 그냥 넘어갑니다.
+    """
     from sqlalchemy import text
     with engine.connect() as conn:
         try:
@@ -81,15 +81,16 @@ def _ensure_column(table, column_ddl):
 
 
 _ensure_column("videos", "detected_vehicles TEXT NULL")
-_ensure_column("videos", "title VARCHAR(100) NULL")             # 업로드할 때 넣은 제목
-_ensure_column("analysis_tasks", "finished_at DATETIME NULL")   # 분석 이력: 끝난 시각
-_ensure_column("analysis_tasks", "event_count INT NULL")        # 분석 이력: 찾은 클립 수
-_ensure_column("crash_events", "clip_start_sec FLOAT NULL")     # 클립이 원본의 몇 초부터인지(재생 화면 CAM 겹쳐 보기)
+_ensure_column("videos", "title VARCHAR(100) NULL")             # 업로드할 때 입력한 제목
+_ensure_column("analysis_tasks", "finished_at DATETIME NULL")   # 분석이 끝난 시각
+_ensure_column("analysis_tasks", "event_count INT NULL")        # 분석이 찾은 사고 의심 클립 수
+_ensure_column("crash_events", "clip_start_sec FLOAT NULL")     # 클립이 원본 영상의 몇 초부터인지(재생 화면에서 클립을 겹쳐 보일 때 씁니다)
 
 
 def _drop_column(table, column):
-    """더 이상 쓰지 않는 컬럼을 기존 테이블에서 지운다.
-    이미 없으면 MySQL 이 오류를 내므로 그냥 넘어간다."""
+    """더 이상 쓰지 않는 컬럼을 기존 테이블에서 지웁니다.
+    컬럼이 이미 없으면 MySQL이 오류를 내므로 그냥 넘어갑니다.
+    """
     from sqlalchemy import text
     with engine.connect() as conn:
         try:
@@ -99,7 +100,7 @@ def _drop_column(table, column):
             pass
 
 
-# 녹화 시작 시각 — 입력받지 않아 늘 기본값(20:30)이었다. 시간대별 통계와 함께 삭제(2026-10-18)
+# 쓰지 않는 녹화 시작 시각 컬럼을 지웁니다.
 _drop_column("videos", "recording_start_time")
 
 app.include_router(auth.router)

@@ -31,7 +31,7 @@ class EarlyStopping:
         self.best_score = None
         self.early_stop = False
         self.val_loss_min = float('inf')
-        # 최종 파일명 규칙에 쓸 값 — best 가중치가 저장된 에포크(1-index)
+        # 최종 파일 이름에 쓸 값으로, best 가중치를 저장한 에포크(1부터)입니다.
         self.best_epoch = None
 
     def __call__(self, val_loss, model, epoch):
@@ -59,7 +59,7 @@ class EarlyStopping:
 
 
 def _unique_path(path):
-    """path 가 이미 있으면 이름 뒤에 _2, _3 … 을 붙인 경로(다른 학습의 결과를 덮어쓰지 않게)."""
+    """path가 이미 있으면 이름 뒤에 _2, _3 등을 붙인 경로를 돌려줍니다(다른 학습의 결과를 덮어쓰지 않게)."""
     path, n = Path(path), 1
     out = path
     while out.exists():
@@ -69,18 +69,15 @@ def _unique_path(path):
 
 
 def loader_prefetch(workers):
-    """작업자마다 미리 만들어 둘 묶음 수 — 작업자 수와 상관없이 모두 합쳐 약 32묶음이 되게 한다.
-
-    묶음 하나가 공유 메모리 약 0.27GB(묶음 15)라, 작업자를 24개로 늘리고 4묶음씩 두면 96묶음(약 26GB)까지
-    쌓일 수 있다. 작업자 8개면 지금까지와 같은 4, 24개면 1.
+    """작업자마다 미리 만들어 둘 배치 수입니다. 작업자 수와 상관없이 모두 합쳐 약 32개가 되게 합니다.
+    배치 하나가 공유 메모리 약 0.27GB(배치 15)라, 작업자가 많을 때 많이 쌓으면 메모리가 부족해집니다. 작업자 8개면 4, 24개면 1입니다.
     """
     return max(1, 32 // max(1, workers))
 
 
 def span_weights(sizes, first_w, device):
-    """span: 창별 (무게, 주인 샘플 번호). 샘플마다 무게 합 = 1.
-
-    창 1개(비충돌·짧은 충돌)면 1, 여러 개면 첫 창 first_w + 나머지가 1 − first_w 를 나눈다.
+    """span: 묶음별 (무게, 주인 샘플 번호)를 돌려줍니다. 샘플마다 무게 합은 1입니다.
+    묶음이 하나(정상, 짧은 충돌)면 1이고, 여러 개면 첫 묶음이 first_w, 나머지가 1 - first_w를 나눕니다.
     """
     w, owner = [], []
     for i, k in enumerate(sizes.tolist()):
@@ -91,9 +88,8 @@ def span_weights(sizes, first_w, device):
 
 
 def _run_windows(model, x, batch_size, channels_last=False):
-    """검증: 창들을 배치 크기 단위로 나눠 추론한다(fp32, 'pre' 검증과 같은 조건).
-
-    span 은 창이 샘플보다 많아 한 번에 넣으면 메모리가 부족할 수 있다. → 로짓 (N, 2)
+    """검증: 묶음들을 배치 크기 단위로 나눠 추론합니다(fp32, 'pre' 검증과 같은 조건).
+    span은 묶음이 샘플보다 많아 한 번에 넣으면 메모리가 부족할 수 있습니다. 로짓 (N, 2)를 돌려줍니다.
     """
     outs = []
     for i in range(0, x.size(0), batch_size):
@@ -105,7 +101,7 @@ def _run_windows(model, x, batch_size, channels_last=False):
 
 
 def _max_window(logits, sizes):
-    """샘플마다 충돌 점수(logit_A − logit_S)가 가장 높은 창의 위치(전체 창 기준)."""
+    """샘플마다 충돌 점수(logit_A - logit_S)가 가장 높은 묶음의 위치(전체 묶음 기준)를 돌려줍니다."""
     score = logits[:, 1] - logits[:, 0]
     picks, off = [], 0
     for k in sizes.tolist():
@@ -115,7 +111,7 @@ def _max_window(logits, sizes):
 
 
 def _auc(pos, neg):
-    """충돌 샘플 점수가 비충돌 샘플보다 높을 확률(동점 반) — 판정 기준과 무관한 구분력."""
+    """충돌 샘플 점수가 정상 샘플보다 높을 확률(동점은 절반)입니다. 판정 기준과 무관한 구분력입니다."""
     if not pos or not neg:
         return None
     p, n = torch.tensor(pos)[:, None], torch.tensor(neg)[None, :]
@@ -124,32 +120,29 @@ def _auc(pos, neg):
 
 def validate(model, loader, device, *, span, criterion, batch_size, class_w=None,
              first_w=0.5, channels_last=False, threshold=None):
-    """검증 로더 하나 → 지표 dict (로더가 없으면 None). 학습 중 검증과 val_recheck 가 같이 쓴다.
+    """검증 로더 하나로 지표 dict를 돌려줍니다(로더가 없으면 None). 학습 중 검증과 val_recheck가 함께 씁니다.
 
-    span              : 학습이 span 방식인가 — 손실·기존 판정을 학습 방식대로 낸다.
-    loss/acc/rec/prec : 기존 지표. 판정은 P(A) > 기준(config.A_THRESHOLD, 기본 0.45 — 0.5 = argmax).
-                        'pre' 는 첫 창, span 은 창 하나라도 A 면 A(점수가 가장 높은 창).
-    lossA / lossS     : 충돌·비충돌 클립 각각의 평균 손실(가중치 없는 CE).
-    bal               : (lossA + lossS) / 2 — 클래스 균형 손실.
-    preRec/prePrec    : 학습 방식과 상관없이 첫 창 1개(충돌 시작 TRAIN_A_PRE_FRAMES 전부터)로 판정.
-                        'pre' 학습의 rec/prec 와 같다.
-    spanRec/spanPrec  : 학습 방식과 상관없이 접근~충돌 종료 창(최대 TRAIN_SPAN_MAX_WINDOWS) 중
-                        하나라도 A 면 A — 서비스 판정에 가깝다(구간 재현율). span 학습의 rec/prec 와 같다.
-    auc               : 구분력 — 충돌 샘플(구간 창 중 최고 점수)이 비충돌 클립보다 P(A)가 높을 확률.
-                        판정 기준과 무관하다(1 이 완벽, 0.5 는 무작위).
-    로더가 창 묶음(span_collate)이 아니면 샘플마다 창 1개라 pre·span 지표가 같다.
+    span: 학습이 span 방식인지. 손실과 기존 판정을 학습 방식대로 냅니다.
+    loss/acc/rec/prec: 기존 지표입니다. 판정은 P(A) > 기준(config.A_THRESHOLD)이며,
+        'pre'는 첫 묶음, span은 묶음 하나라도 A면 A(점수가 가장 높은 묶음)입니다.
+    lossA/lossS: 충돌 클립과 정상 클립 각각의 평균 손실(가중치 없는 CE)
+    bal: (lossA + lossS) / 2, 클래스 균형 손실
+    preRec/prePrec: 학습 방식과 상관없이 첫 묶음 하나(충돌 시작 TRAIN_A_PRE_FRAMES 전부터)로 판정합니다.
+    spanRec/spanPrec: 학습 방식과 상관없이 접근부터 충돌 끝까지의 묶음(최대 TRAIN_SPAN_MAX_WINDOWS) 중
+        하나라도 A면 A로 봅니다. 서비스 판정에 가깝습니다(구간 재현율).
+    auc: 구분력입니다. 충돌 샘플(구간 묶음 중 최고 점수)이 정상 클립보다 P(A)가 높을 확률이며 판정 기준과 무관합니다.
+    로더가 묶음 여러 개(span_collate)가 아니면 샘플마다 묶음이 하나라 pre와 span 지표가 같습니다.
 
-    ⚠️ val_real 은 51클립 중 40개가 비충돌이라 그냥 손실은 78%가 '비충돌을
-       얼마나 확신하느냐'로 정해진다. 목표는 충돌을 놓치지 않는 것이므로
-       best 판단에는 두 클래스를 같은 무게로 보는 bal 을 쓴다.
-       acc 도 A:S 불균형 때문에 전부 S로 찍어도 높게 나오니 recall 을 본다.
+    val_real은 대부분 정상 클립이라 그냥 손실은 정상을 얼마나 확신하느냐로 정해집니다.
+    목표는 충돌을 놓치지 않는 것이므로 best 판단에는 두 클래스를 같은 무게로 보는 bal을 씁니다.
+    acc도 불균형 때문에 전부 정상으로 찍어도 높게 나오니 재현율을 봅니다.
     """
     if loader is None:
         return None
     cuda_like = is_cuda_like(device)
     model.eval()
     vloss, correct = 0.0, 0
-    cnt = {k: [0, 0, 0] for k in ('base', 'pre', 'span')}   # 판정 방식별 [tp, fp, fn] — A(=1) 기준
+    cnt = {k: [0, 0, 0] for k in ('base', 'pre', 'span')}   # 판정 방식별 [tp, fp, fn](A=1 기준)
     sum_a = sum_s = 0.0
     n_a = n_s = 0
     score_a, score_s = [], []
@@ -163,12 +156,11 @@ def validate(model, loader, device, *, span, criterion, batch_size, class_w=None
             inputs = inputs.to(device, non_blocking=cuda_like)
             labels = labels.to(device, non_blocking=cuda_like)
             logits = _run_windows(model, inputs, batch_size, channels_last)
-            first = (torch.cumsum(sizes, 0) - sizes).tolist()    # 샘플마다 첫 창 위치
+            first = (torch.cumsum(sizes, 0) - sizes).tolist()    # 샘플마다 첫 묶음 위치
             best = _max_window(logits, sizes)
             if span:
-                # 손실: 학습과 같은 무게(첫 창 + 나머지 창)로 샘플별 손실을 낸다.
-                # 판정(acc·recall·prec): 서비스처럼 창 하나라도 A면 A —
-                #   충돌 점수가 가장 높은 창으로 판정한다.
+                # 손실은 학습과 같은 무게(첫 묶음과 나머지 묶음)로 샘플별로 냅니다.
+                # 판정(acc, recall, prec)은 서비스처럼 묶음 하나라도 A면 A로 보고, 충돌 점수가 가장 높은 묶음으로 판정합니다.
                 w, owner = span_weights(sizes, first_w, device)
                 ce = torch.zeros(labels.size(0), device=device).index_add_(
                     0, owner, w * F.cross_entropy(logits, labels[owner], reduction='none'))
@@ -210,7 +202,7 @@ def validate(model, loader, device, *, span, criterion, batch_size, class_w=None
         'loss': vloss / n, 'acc': correct / n,
         'rec': rec, 'prec': prec,
         'lossA': loss_a, 'lossS': loss_s,
-        # 검증셋에 한 클래스가 없으면 균형 손실을 못 구한다
+        # 검증셋에 한 클래스가 없으면 균형 손실을 구할 수 없습니다.
         'bal': (loss_a + loss_s) / 2 if (n_a and n_s) else None,
         'preRec': pre_rec, 'prePrec': pre_prec, 'spanRec': span_rec, 'spanPrec': span_prec,
         'auc': _auc(score_a, score_s),
@@ -218,9 +210,9 @@ def validate(model, loader, device, *, span, criterion, batch_size, class_w=None
 
 
 def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sampler=None, workers=None):
-    # CUDA: 멀티워커 + prefetch 활성화 (① Ryzen 7 5700X 16스레드 기준)
-    # CPU : Windows 멀티프로세싱 충돌 방지 및 디바이스 컨텍스트 공유 불가 문제로 단일 프로세스 사용
-    # workers: 작업자 수(None = min(8, CPU)). 학습 로더만 config.TRAIN_NUM_WORKERS 를 넘긴다.
+    # CUDA: 작업자 여러 개와 prefetch를 씁니다.
+    # CPU: Windows 멀티프로세싱 충돌과 장치 컨텍스트를 공유할 수 없는 문제 때문에 단일 프로세스로 씁니다.
+    # workers: 작업자 수(None이면 min(8, CPU))입니다. 학습 로더만 config.TRAIN_NUM_WORKERS를 넘깁니다.
     if is_cuda_like(device):
         num_workers = workers or min(8, os.cpu_count() or 2)
     else:
@@ -230,18 +222,18 @@ def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sa
         'pin_memory': is_cuda_like(device),
     }
     if batch_sampler is not None:
-        # 묶음 구성(train_balance)이 에포크마다 묶음을 직접 짠다 — batch_size·shuffle 대신
+        # 배치 구성(train_balance)을 쓰면 batch_size와 shuffle 대신 에포크마다 배치를 직접 짭니다.
         kwargs['batch_sampler'] = batch_sampler
     else:
         kwargs.update({'batch_size': batch_size, 'shuffle': shuffle})
     if collate_fn is not None:
         kwargs['collate_fn'] = collate_fn
     if num_workers > 0:
-        # ② prefetch — GPU 연산 중 다음 배치를 미리 준비(작업자 8개면 4, 전체 약 32묶음 — loader_prefetch)
+        # GPU 연산 중 다음 배치를 미리 준비합니다(작업자 8개면 4, 전체 약 32개, loader_prefetch).
         kwargs.update({'persistent_workers': True, 'prefetch_factor': loader_prefetch(num_workers)})
-        # ③ 작업자마다 OpenCV 스레드 수(config.TRAIN_CV2_THREADS, 기본 None = OpenCV 기본).
-        #    부모에서 먼저 정해 작업자가 물려받게 한다(작업자 안에서 처음 바꾸면 멈춤 — dataset.py 주석).
-        #    영상 풀기 스레드는 dataset.py 가 같은 값으로 연다.
+        # 작업자마다 OpenCV 스레드 수(config.TRAIN_CV2_THREADS, 기본 None은 OpenCV 기본값)입니다.
+        # 부모에서 먼저 정해 작업자가 물려받게 합니다(작업자 안에서 처음 바꾸면 멈춥니다, dataset.py 주석 참고).
+        # 영상 풀기 스레드는 dataset.py가 같은 값으로 엽니다.
         threads = getattr(config, 'TRAIN_CV2_THREADS', None)
         if threads:
             limit_cv2_threads(threads)
@@ -265,12 +257,11 @@ def train_model(
     use_channels_last=config.USE_CHANNELS_LAST,
     dry_run=False,
 ):
-    """dry_run=True 면 데이터 분할·묶음 구성만 출력하고 학습하지 않는다(회차 폴더도 안 만듦)."""
+    """dry_run=True면 데이터 분할과 배치 구성만 출력하고 학습하지 않습니다(회차 폴더도 만들지 않습니다)."""
     device = get_device(config.TRAIN_DEVICE_TYPE)
     cuda_like = is_cuda_like(device)
-    # 학습률: 따로 안 주면 사전학습(미세조정)과 scratch 의 기본값이 다르다(config 주석).
-    # 사전학습이면 백본은 ×0.1 로 보수적으로, scratch 면 지킬 사전학습 가중치가 없으니
-    # 백본도 헤드와 같은 학습률로 학습한다.
+    # 학습률을 따로 주지 않으면 사전학습(미세조정)과 scratch의 기본값이 다릅니다(config 주석 참고).
+    # 사전학습이면 백본은 0.1배로 보수적으로 학습하고, scratch면 지킬 사전학습 가중치가 없으니 백본도 헤드와 같은 학습률을 씁니다.
     if learning_rate is None:
         learning_rate = (config.TRAIN_LEARNING_RATE if config.PRETRAINED
                          else config.TRAIN_SCRATCH_LEARNING_RATE)
@@ -280,51 +271,48 @@ def train_model(
     if cuda_like:
         torch.backends.cudnn.benchmark = True
 
-    # 학습용(증강 O) / 검증용(증강 X) 데이터셋을 각각 생성해 동일 인덱스로 분할.
-    # → 검증 세트는 매 epoch 결정적이라 val loss가 안정되고 best model 선택이 신뢰됨.
+    # 학습용(증강 있음)과 검증용(증강 없음) 데이터셋을 따로 만들어 같은 번호로 나눕니다.
+    # 검증 세트는 매 에포크 결정적이라 검증 손실이 안정되고 best 선택을 믿을 수 있습니다.
     train_dataset = HitAndRunDataset(
         data_dir=data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=True,
     )
-    # 검증 폴더(config.VAL_DATA_DIR)에 영상이 있으면 그 폴더 전부가 검증, 학습 폴더 전부가 학습 — 분할 계산 없음
-    # (2026-11-04~, python -m model.val_move --apply 로 옮김). 비어 있으면 학습 폴더 안에서 나눈다(아래).
+    # 검증 폴더(config.VAL_DATA_DIR)에 영상이 있으면 그 폴더 전부가 검증, 학습 폴더 전부가 학습입니다(분할 계산 없음).
+    # 비어 있으면 학습 폴더 안에서 나눕니다(아래).
     val_dir = getattr(config, 'VAL_DATA_DIR', None)
     val_dir = Path(val_dir) if val_dir else None
     use_val_dir = val_dir is not None and val_dir.exists() and any(val_dir.rglob('*.mp4'))
-    # 검증 클립은 매 에포크 같으므로 처음 만든 것을 저장해 두고 읽는다(config.TRAIN_VAL_CACHE, 결과 같음)
+    # 검증 클립은 매 에포크 같으므로 처음 만든 것을 저장해 두고 읽습니다(config.TRAIN_VAL_CACHE, 결과는 같습니다).
     val_dataset = HitAndRunDataset(
         data_dir=val_dir if use_val_dir else data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=False,
         cache_dir=config.TRAIN_VAL_CACHE_DIR if getattr(config, 'TRAIN_VAL_CACHE', False) else None,
-        # 충돌 샘플을 접근~충돌 종료 창 묶음으로 — 기존 지표는 첫 창(= 'pre' 의 창)으로, 구간 재현율은 창 전부로
+        # 충돌 샘플을 접근부터 충돌 끝까지의 묶음 여러 개로 만듭니다. 기존 지표는 첫 묶음('pre'의 묶음)으로, 구간 재현율은 묶음 전부로 잽니다.
         span_windows=not getattr(config, 'TRAIN_A_SLICE_ENABLED', False),
     )
-    # 계층적 분할(stratified): 그룹을 세분화해 각 그룹을 train_split_ratio(8:2)로 나눈다.
-    #   rc  : 방향(N/S/L/R) × 클래스(A/S) → 최대 8그룹 (각 방향·클래스가 train/val에 고루 분포)
-    #   real: 클래스(A/S)만 → 2그룹 (실제 영상엔 방향 개념이 없음)
-    #   → train은 모든 그룹의 학습분(80%)을 합쳐 학습, val은 rc용/real용을 분리해 각각 측정.
+    # 계층 분할: 그룹을 나눠 각 그룹을 train_split_ratio(8:2)로 나눕니다.
+    # rc는 방향(N, S, L, R)과 클래스(A, S)로 최대 8그룹, real은 클래스(A, S)만으로 2그룹입니다(실제 영상에는 방향이 없습니다).
+    # train은 모든 그룹의 학습분을 합쳐 학습하고, val은 rc용과 real용을 나눠 각각 잽니다.
     def _domain(mp4_path):
         parts = os.path.normpath(mp4_path).split(os.sep)
         return 'real' if 'realdata' in parts else 'rc'
 
     def _direction(file_name):
-        # 파일명 예: 220510_LA_0001 → 두 번째 토큰의 첫 글자가 방향(N/L/R/S)
+        # 파일 이름 예: 220510_LA_0001. 두 번째 토큰의 첫 글자가 방향(N, L, R, S)입니다.
         seg = file_name.split('_')
         return seg[1][0] if len(seg) > 1 and seg[1] else '?'
 
     def _scenario(file_name):
-        # 두 번째 토큰의 마지막 글자가 시나리오/클래스 코드
-        #   rc: A(충돌)/V(주차)/S(직진)/W(배회),  real: A(충돌)/S(비충돌)
+        # 두 번째 토큰의 마지막 글자가 시나리오, 클래스 코드입니다.
+        # rc는 A(충돌), V(주차), S(직진), W(배회), real은 A(충돌), S(정상)입니다.
         seg = file_name.split('_')
         return seg[1][-1] if len(seg) > 1 and seg[1] else '?'
 
-    # 층화 그룹: rc = 방향(N/L/R/S) × 시나리오(A/V/S/W) → 최대 16그룹,
-    #            real = 시나리오(A/S) → 2그룹. 각 그룹을 train_split_ratio(8:2)로 나눈다.
-    #   ※ 실제 학습 라벨은 그대로 txt 기반 이진값(A vs 비A) — 시나리오는 '분할 균형'에만 사용.
-    # ⚠️ 분할은 반드시 '영상 단위'로 한다. 비충돌 영상은 한 영상에서 여러 클립이
-    #    나오는데(S 슬라이싱), 그 클립들이 train과 val로 갈리면 같은 장면을 이미
-    #    학습한 상태로 검증하게 되어 검증 점수가 부풀려진다(데이터 누수).
-    groups = {}  # (domain, direction, scenario) -> {video_key: [sample_idx, ...]}
+    # 층화 그룹: rc는 방향(N, L, R, S)과 시나리오(A, V, S, W)로 최대 16그룹, real은 시나리오(A, S)로 2그룹입니다.
+    # 각 그룹을 train_split_ratio(8:2)로 나눕니다. 실제 학습 레이블은 txt 기반 이진값(A와 그 밖)이고, 시나리오는 분할 균형에만 씁니다.
+    # 분할은 반드시 영상 단위로 합니다. 정상 영상은 한 영상에서 여러 클립이 나오는데, 그 클립들이 train과 val로 갈리면
+    # 같은 장면을 학습한 상태로 검증하게 되어 검증 점수가 부풀려집니다(데이터 누수).
+    groups = {}  # (domain, direction, scenario)에서 {video_key: [sample_idx, ...]}로
     for i, s in enumerate(train_dataset.samples):
         dom = _domain(s['mp4_path'])
         direction = _direction(s['file_name']) if dom == 'rc' else '-'
@@ -335,8 +323,8 @@ def train_model(
     train_idx, val_rc_idx, val_real_idx = [], [], []
     split_videos = {'train': [], 'val': []}  # 회차 폴더에 남길 영상 목록(나중에 누수 확인용)
     n_train_vid = n_val_vid = 0
-    # 검증 고정 파일(config.TRAIN_SPLIT_LOCK)이 있으면 그 목록이 검증, 나머지 전부 학습 — 폴더에 영상을
-    # 더하거나 빼도 검증이 다시 섞이지 않는다. 없으면 예전처럼 그룹마다 seed 42 로 8:2.
+    # 검증 고정 파일(config.TRAIN_SPLIT_LOCK)이 있으면 그 목록이 검증이고 나머지 전부가 학습입니다.
+    # 폴더에 영상을 더하거나 빼도 검증이 다시 섞이지 않습니다. 없으면 그룹마다 seed 42로 8:2로 나눕니다.
     lock_path = getattr(config, 'TRAIN_SPLIT_LOCK', None)
     lock_path = Path(lock_path) if lock_path and Path(lock_path).exists() else None
     lock_val = set()
@@ -344,7 +332,7 @@ def train_model(
         with open(lock_path, encoding='utf-8') as _f:
             lock_val = {v.replace('\\', '/') for v in json.load(_f)['val']}
     if use_val_dir:
-        # 검증 = 검증 폴더 전부. 고정 목록의 검증 영상이 학습 폴더에 남아 있으면(덜 옮김) 학습에 섞이지 않게 뺀다.
+        # 검증은 검증 폴더 전부입니다. 고정 목록의 검증 영상이 학습 폴더에 남아 있으면(덜 옮김) 학습에 섞이지 않게 뺍니다.
         left = []
         for (dom, direction, scen), vid_map in sorted(groups.items()):
             for vk in sorted(vid_map):
@@ -393,9 +381,9 @@ def train_model(
     else:
         if getattr(config, 'TRAIN_SPLIT_LOCK', None):
             print(f"[분할] ⚠️ 검증 고정 파일이 없어 예전 방식(seed 42)으로 나눕니다 -> {config.TRAIN_SPLIT_LOCK}")
-        gen = torch.Generator().manual_seed(42)  # 재현 가능한 분할 (seed 고정)
+        gen = torch.Generator().manual_seed(42)  # 재현 가능한 분할(seed 고정)
         for (dom, direction, scen), vid_map in sorted(groups.items()):
-            vkeys = sorted(vid_map)                      # 영상 목록(그룹 내)
+            vkeys = sorted(vid_map)                      # 그룹 안 영상 목록
             order = torch.randperm(len(vkeys), generator=gen).tolist()
             shuffled = [vkeys[i] for i in order]
             cut = int(train_split_ratio * len(vkeys))
@@ -408,12 +396,12 @@ def train_model(
             n_train_vid += cut
             n_val_vid += len(vkeys) - cut
 
-    # 검증 대신 학습에 넣을 영상(config.TRAIN_FORCE_TRAIN_VIDEOS) — 분할은 그대로 하고 검증에 뽑힌 것만 옮겨
-    # 다른 영상의 분할이 바뀌지 않게 한다
+    # 검증 대신 학습에 넣을 영상(config.TRAIN_FORCE_TRAIN_VIDEOS)입니다. 분할은 그대로 하고 검증에 뽑힌 것만 옮겨
+    # 다른 영상의 분할이 바뀌지 않게 합니다.
     force = {str(n) for n in (getattr(config, 'TRAIN_FORCE_TRAIN_VIDEOS', ()) or ())}
     forced = []
     if use_val_dir:
-        # 폴더로 나눈 뒤엔 파일 위치가 곧 분할이다 — 검증 폴더에 들어 있으면 알리기만 한다
+        # 폴더로 나눈 뒤에는 파일 위치가 곧 분할이므로, 검증 폴더에 들어 있으면 알리기만 합니다.
         in_val = sorted(os.path.splitext(os.path.basename(v))[0] for v in split_videos['val']
                         if os.path.splitext(os.path.basename(v))[0] in force)
         if in_val:
@@ -437,8 +425,8 @@ def train_model(
         print(f"[분할] 학습 쪽 고정(config.TRAIN_FORCE_TRAIN_VIDEOS): 검증에서 옮김 {', '.join(forced) or '없음'}"
               + (f" · ⚠️ 데이터에 없음 {', '.join(missing)}" if missing else ''))
 
-    # 10fps 미만 영상(config.EXCLUDE_VIDEOS) — 보통은 lowfps_move 로 이미 폴더 밖에 있다. 아직 남아 있는
-    # 컴퓨터(옮기기 전 서버 등)에서도 같은 학습이 되게 분할 뒤에 한 번 더 뺀다(다른 영상의 분할은 그대로).
+    # 실효 10fps 미만 영상(config.EXCLUDE_VIDEOS)은 보통 lowfps_move로 이미 폴더 밖에 있습니다. 아직 남아 있는 컴퓨터에서도
+    # 같은 학습이 되도록 분할 뒤에 한 번 더 뺍니다(다른 영상의 분할은 그대로).
     excl = set(getattr(config, 'EXCLUDE_VIDEOS', ()) or ())
     excluded = []
     if excl:
@@ -446,7 +434,7 @@ def train_model(
             return os.path.splitext(os.path.basename(v))[0]
         drop = {i for i, s in enumerate(train_dataset.samples)
                 if _stem(s.get('video_key', s['mp4_path'])) in excl}
-        # 검증 번호는 검증 폴더를 쓰면 val_dataset 기준, 아니면 학습 데이터셋과 같은 번호
+        # 검증 번호는 검증 폴더를 쓰면 val_dataset 기준, 아니면 학습 데이터셋과 같은 번호입니다.
         drop_val = ({i for i, s in enumerate(val_dataset.samples) if _stem(s.get('video_key', s['mp4_path'])) in excl}
                     if use_val_dir else drop)
         if drop or drop_val:
@@ -464,8 +452,8 @@ def train_model(
             print(f"[제외] 10fps 미만(config.LOW_FPS_VIDEOS) 중 데이터 폴더에 남아 있던 {len(excluded)}개를 뺌: "
                   f"{', '.join(sorted(excluded))} — python -m model.lowfps_move --apply 로 옮기세요")
 
-    # RC 정상 1번 차량 클립(config.TRAIN_S_RC_USE_CAR1)은 학습에만 쓴다 — 검증은 예전처럼 0번만(다른 학습과 지표 비교).
-    # 데이터셋은 학습·검증이 같은 규칙으로 샘플을 만들어야 번호가 맞아서(검증 폴더가 없을 때) 여기서 검증 쪽만 뺀다.
+    # RC 정상 1번 차량 클립(config.TRAIN_S_RC_USE_CAR1)은 학습에만 씁니다. 검증은 0번만 써서 다른 학습과 지표를 비교합니다.
+    # 검증 폴더가 없을 때는 학습과 검증 데이터셋이 같은 규칙으로 샘플을 만들어야 번호가 맞으므로 여기서 검증 쪽만 뺍니다.
     rc_car1_val_dropped = 0
     if getattr(config, 'TRAIN_S_RC_USE_CAR1', False):
         vs = val_dataset.samples if use_val_dir else train_dataset.samples
@@ -473,9 +461,9 @@ def train_model(
         val_rc_idx[:] = [i for i in val_rc_idx
                          if not (vs[i]['label'] == 0 and vs[i].get('car_id') == 1 and _domain(vs[i]['mp4_path']) == 'rc')]
         rc_car1_val_dropped = n0 - len(val_rc_idx)
-    # 사고 영상의 충돌 전·후 정상 클립(config.TRAIN_A_CONTEXT_NEG)은 학습 데이터셋에만 있고 맨 뒤에 붙는다.
-    # 검증 폴더가 없어 학습 폴더 안에서 나눌 때 검증 쪽에 들어간 것은 뺀다(검증 데이터셋엔 그 번호가 없음).
-    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV)도 같다.
+    # 사고 영상의 충돌 전후 정상 클립(config.TRAIN_A_CONTEXT_NEG)은 학습 데이터셋에만 있고 맨 뒤에 붙습니다.
+    # 검증 폴더 없이 학습 폴더 안에서 나눌 때 검증 쪽에 들어간 것은 뺍니다(검증 데이터셋에는 그 번호가 없습니다).
+    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV)도 같습니다.
     if not use_val_dir:
         _extra = lambda i: train_dataset.samples[i].get('ctx_neg') or train_dataset.samples[i].get('hardneg')  # noqa: E731
         val_rc_idx[:] = [i for i in val_rc_idx if not _extra(i)]
@@ -503,10 +491,10 @@ def train_model(
         print(f"[체크포인팅] 앞 블록 {hitandrun_model.GRAD_CHECKPOINT_BLOCKS}개만 다시 계산"
               f"(GRAD_CHECKPOINT_BLOCKS, 기본 4) — 바뀐 블록은 BN momentum 을 맞춰 결과 같음")
 
-    # ── A 클립 방식 (config.TRAIN_A_MODE) ──
-    # 'span' 이면 충돌 샘플 하나가 '접근~충돌 종료'를 덮는 창들이다. 창을 전부 A로 학습하되
-    # 충돌 1건의 무게 합은 1(첫 창 TRAIN_SPAN_FIRST_WEIGHT + 나머지가 남은 무게를 나눔).
-    # 회차 폴더·가중치 이름에 _span 을 붙여 'pre' 결과와 섞이지 않게 한다.
+    # 사고 클립 방식(config.TRAIN_A_MODE)
+    # 'span'이면 충돌 샘플 하나가 접근부터 충돌 끝까지를 덮는 묶음들입니다. 묶음을 모두 A로 학습하되
+    # 충돌 한 건의 무게 합은 1입니다(첫 묶음 TRAIN_SPAN_FIRST_WEIGHT, 나머지가 남은 무게를 나눔).
+    # 회차 폴더와 가중치 이름에 _span을 붙여 'pre' 결과와 섞이지 않게 합니다.
     span = train_dataset.span
     run_tag = f"{config.PRETRAIN_TAG}_span" if span else config.PRETRAIN_TAG
     collate = span_collate if span else None
@@ -534,10 +522,10 @@ def train_model(
               f"판정 기준 P(A) {config.A_THRESHOLD:g}")
     else:
         print("[검증 지표] A 슬라이싱(TRAIN_A_SLICE_ENABLED)이 켜져 있어 구간 재현율 = 첫 창 재현율")
-    # 실제 영상 S 의 1번 차량 클립 (config.TRAIN_S_REAL_USE_CAR1)
+    # 실제 영상 정상의 1번 차량 클립(config.TRAIN_S_REAL_USE_CAR1)
     car1 = [s for s in train_dataset.samples if s.get('car_id') == 1 and s['label'] == 0]
     if getattr(config, 'TRAIN_S_RC_USE_CAR1', False):
-        # RC 1번 차량도 켠 학습 — 실제 영상·RC 를 나눠 학습 쪽 수만 센다(검증 쪽 RC 1번은 위에서 뺐음)
+        # RC 1번 차량도 켠 학습이면 실제 영상과 RC를 나눠 학습 쪽 수만 셉니다(검증 쪽 RC 1번은 위에서 뺐습니다).
         tr1 = [train_dataset.samples[i] for i in train_idx
                if train_dataset.samples[i].get('car_id') == 1 and train_dataset.samples[i]['label'] == 0]
         real1 = [s for s in tr1 if _domain(s['mp4_path']) == 'real']
@@ -549,7 +537,7 @@ def train_model(
         s_car_info = (f"0번 + 실제 영상 S 는 1번도 (1번 클립 {len(car1)}개, "
                       f"영상 {len({s['video_key'] for s in car1})}개)" if car1 else "0번만")
     print(f"[S 클립 차량] {s_car_info}")
-    # 사고 영상의 충돌 전·후를 정상으로 (config.TRAIN_A_CONTEXT_NEG, 기본 끔) — 켜면 이름에 _ctx · _ctxall
+    # 사고 영상의 충돌 전후를 정상으로 학습합니다(config.TRAIN_A_CONTEXT_NEG, 기본 끔). 켜면 이름에 _ctx나 _ctxall이 붙습니다.
     ctx_mode = getattr(config, 'TRAIN_A_CONTEXT_NEG', None)
     ctx_info = '끔'
     if ctx_mode:
@@ -565,7 +553,7 @@ def train_model(
                     f"(충돌 전 {n_pre} · 후 {n_post}, 실제 {n_dom['real']} · RC {n_dom['rc']}) · 사고 영상 {n_vid}개 · 매 에포크 전부")
         run_tag = f"{run_tag}_ctx{'' if ctx_mode == 'real' else 'all'}{'' if abs(margin - 0.5) < 1e-9 else f'{margin:g}'}"
         print(f"[충돌 전·후 정상] {ctx_info}")
-    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV, 기본 끔) — 켜면 이름에 _hn(반복 k≠1 이면 _hn<k>)
+    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV, 기본 끔)입니다. 켜면 이름에 _hn(반복이 1이 아니면 _hn<k>)이 붙습니다.
     hn_csv = getattr(config, 'TRAIN_HARDNEG_CSV', None)
     hn_info = '끔'
     if hn_csv:
@@ -580,8 +568,8 @@ def train_model(
         run_tag = f"{run_tag}_hn{'' if rep == 1 else rep}"
         print(f"[헷갈리는 정상] {hn_info}")
 
-    # ── 학습 묶음 구성 (config.TRAIN_S_MOTION_CSV · TRAIN_SPREAD_A, 기본 끔) ──
-    # 학습 쪽만 바꾸고 검증 로더는 그대로다. 켜면 이름에 _bal 을 붙여 기존 학습과 구분한다.
+    # 학습 배치 구성(config.TRAIN_S_MOTION_CSV, TRAIN_SPREAD_A, 기본 끔)
+    # 학습 쪽만 바꾸고 검증 로더는 그대로입니다. 켜면 이름에 _bal을 붙여 다른 학습과 구분합니다.
     motion_csv = getattr(config, 'TRAIN_S_MOTION_CSV', None)
     spread_a = bool(getattr(config, 'TRAIN_SPREAD_A', False))
     balance_on = bool(motion_csv) or spread_a
@@ -608,12 +596,12 @@ def train_model(
         print(f"[묶음] 기본(무작위) — 에포크당 충돌 {n_a} · 정상 {n_s} = 1:{n_s / max(n_a, 1):.1f} · "
               f"묶음 {nb}개 · 충돌 없는 묶음 기대 {nb * (n_s / len(train_idx)) ** batch_size:.0f}개")
 
-    # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
+    # 저화질(압축) 증강(config.TRAIN_LQ_AUG_PROB, 기본 끔)입니다. 켜면 이름에 _lq를 붙여 다른 학습과 구분합니다.
     lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
     lq_default = (abs(float(config.TRAIN_LQ_SIZE_PROB) - 0.5) < 1e-9 and tuple(config.TRAIN_LQ_CRF_RANGE) == (28, 42))
     lq_small = bool(getattr(config, 'TRAIN_LQ_SMALL', False))
     if lq_p > 0:
-        # 10-29 의 설정 그대로면 _lq, 줄이기 비율·CRF 상한을 바꾼 약한 설정이면 _lqw(섞이지 않게). 작은 크롭도면 끝에 s
+        # 기본 설정이면 _lq, 줄이기 비율이나 CRF 상한을 바꾼 약한 설정이면 _lqw이고, 작은 크롭도 켜면 끝에 s를 붙입니다.
         run_tag = f"{run_tag}_{'lq' if lq_default else 'lqw'}{'s' if lq_small else ''}"
         lo, hi = config.TRAIN_LQ_SIZE_RANGE
         c_lo, c_hi = config.TRAIN_LQ_CRF_RANGE
@@ -632,7 +620,7 @@ def train_model(
     elif lq_small:
         print("⚠️ TRAIN_LQ_SMALL 은 저화질 증강(TRAIN_LQ_AUG_PROB)이 켜져 있어야 씁니다 — 이번 학습엔 적용 안 됨")
 
-    # ── r 증강 (config.TRAIN_R_AUGMENT_PROB, 기본 끔 — 2026-11-16 비교용으로 되살림) ── 켜면 이름에 _raug
+    # r 증강(config.TRAIN_R_AUGMENT_PROB, 기본 끔)입니다. 켜면 이름에 _raug가 붙습니다.
     r_aug_p = float(getattr(config, 'TRAIN_R_AUGMENT_PROB', 0) or 0)
     r_aug_vals = tuple(getattr(config, 'TRAIN_R_AUGMENT_VALUES', ()) or ())
     if r_aug_p > 0 and r_aug_vals:
@@ -640,26 +628,26 @@ def train_model(
         print(f"[r 증강] 켬 — 학습 클립의 {r_aug_p:.0%} 를 r {'·'.join(f'{v:g}' for v in r_aug_vals)} 중 하나로 넓게 자름"
               f"(검증·서비스는 r=1)")
 
-    # ── 불빛 증강 (config.TRAIN_LIGHT_AUG_PROB, 기본 끔) ── 켜면 이름에 _light
+    # 불빛 증강(config.TRAIN_LIGHT_AUG_PROB, 기본 끔)입니다. 켜면 이름에 _light가 붙습니다.
     light_p = float(getattr(config, 'TRAIN_LIGHT_AUG_PROB', 0) or 0)
     if light_p > 0:
         run_tag = f"{run_tag}_light"
         print(f"[불빛 증강] 켬 — 확률 {light_p:g} · 사고·정상 같은 확률 · 훑기 60%/비추기 40% · "
               f"{config.TRAIN_LIGHT_DARK_PROB:.0%}는 먼저 어둡게(0.25~0.6)")
 
-    # ── 입력 크기 (config.INPUT_SIZE, 기본 224) ── 다르면 이름에 _s<크기> — 가중치를 읽을 때 이 표시로 크기를 맞춘다
+    # 입력 크기(config.INPUT_SIZE, 기본 224)가 다르면 이름에 _s<크기>를 붙입니다. 가중치를 읽을 때 이 표시로 크기를 맞춥니다.
     if config.RESIZE[0] != 224:
         run_tag = f"{run_tag}_s{config.RESIZE[0]}"
         print(f"[입력 크기] {config.RESIZE[0]}×{config.RESIZE[1]} (기본 224) — 평가·서비스도 INPUT_SIZE={config.RESIZE[0]} 로")
 
-    # ── 헤드 시간 풀링 (config.HEAD_TEMPORAL_POOL, 기본 avg) ── 다르면 이름에 _top3·_avgtop3 — 가중치를 읽을 때 이 표시로 맞춘다
+    # 헤드 시간 풀링(config.HEAD_TEMPORAL_POOL, 기본 avg)이 다르면 이름에 _top3나 _avgtop3를 붙입니다. 가중치를 읽을 때 이 표시로 맞춥니다.
     pool = getattr(config, 'HEAD_TEMPORAL_POOL', 'avg')
     if pool != 'avg':
         run_tag = f"{run_tag}_{pool}"
         print(f"[헤드 시간 풀링] {pool}(채널·칸마다 시간 축 상위 {config.HEAD_TEMPORAL_TOPK}개"
               f"{' 평균' if pool == 'top3' else ' 평균과 30시점 평균의 평균'}) — 평가·서비스도 HEAD_TEMPORAL_POOL={pool} 로")
 
-    # ── fps 증강 (config.TRAIN_FPS_AUG_PROB, 기본 끔) ── 켜면 이름에 _fps 를 붙여 기존 학습과 구분한다
+    # fps 증강(config.TRAIN_FPS_AUG_PROB, 기본 끔)입니다. 켜면 이름에 _fps를 붙여 다른 학습과 구분합니다.
     fps_p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0) or 0)
     fps_ks = tuple(getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3)))
     if fps_p > 0:
@@ -668,8 +656,8 @@ def train_model(
               f"{'·'.join(f'{30 / k:g}' for k in fps_ks)}fps 처럼) · 결과 {config.TRAIN_FPS_AUG_MIN_FPS:g}fps 미만·"
               f"짧은 영상·창 묶음 샘플은 그대로")
 
-    # ── 클래스 가중치 (config.TRAIN_CLASS_WEIGHTS, 기본 None) ── 켜면 이름에 _cw<사고 배수>
-    # 'auto' 는 에포크당 실제로 쓰는 수(balance 면 솎은 뒤)로 √(정상/충돌)
+    # 클래스 가중치(config.TRAIN_CLASS_WEIGHTS, 기본 None)입니다. 켜면 이름에 _cw<사고 배수>가 붙습니다.
+    # 'auto'는 에포크당 실제로 쓰는 수(balance면 솎은 뒤)로 sqrt(정상 / 충돌)를 계산합니다.
     class_weights = getattr(config, 'TRAIN_CLASS_WEIGHTS', None)
     if class_weights:
         if batch_sampler is not None:
@@ -709,52 +697,49 @@ def train_model(
         Subset(val_dataset, val_real_idx), batch_size=batch_size,
         shuffle=False, device=device, collate_fn=val_collate) if val_real_idx else None
 
-    # ── 이번 학습의 회차 폴더 ──────────────────────────────────────
-    # outputs/trainlogs/<YYMMDD_HHMM>_<모델>_<ptY|ptN>[_span]/ 에 이번 학습의 산출물을 모은다.
-    # 가중치 파일 이름에도 같은 시각을 붙여, 어느 회차에서 나온 가중치인지 맞춰 볼 수 있다.
+    # 이번 학습의 회차 폴더
+    # outputs/trainlogs/<YYMMDD_HHMM>_<모델>_<조건>/에 이번 학습의 결과를 모읍니다.
+    # 가중치 파일 이름에도 같은 시각을 붙여 어느 회차에서 나온 가중치인지 맞춰 볼 수 있습니다.
     run_started = datetime.now()
     run_dir, run_stamp = make_run_dir(
         config.TRAIN_LOG_DIR, config.MODEL_NAME, run_tag, run_started)
     print(f"[로그] 이번 학습 산출물 폴더: {run_dir}")
-    # 학습 중 best·후보 가중치(작업용)는 이 회차 폴더 안에 둔다. 회차 폴더는 학습마다 새로
-    # 만들어지므로, 같은 조건(ptY끼리 등)의 학습을 동시에 돌려도 서로의 파일을 덮어쓰거나
-    # 지우지 않는다. 학습이 끝나면 규칙 파일명으로 weights_dir(= save_path 의 폴더)에 옮긴다.
-    # 중간에 멈춘 학습의 best 는 이 폴더의 work_best.pth 에 남는다.
+    # 학습 중 best와 후보 가중치(작업용)는 이 회차 폴더 안에 둡니다. 회차 폴더는 학습마다 새로 만들어지므로,
+    # 같은 조건의 학습을 동시에 돌려도 서로의 파일을 덮어쓰거나 지우지 않습니다. 학습이 끝나면 규칙 파일 이름으로
+    # weights_dir(save_path의 폴더)에 옮깁니다. 중간에 멈춘 학습의 best는 이 폴더의 work_best.pth에 남습니다.
     weights_dir = Path(save_path).parent
-    # 학습 시작 때 만들어 둔다 — weights/ 는 git 에 없어 새 서버에선 clone 해도 없고, 끝에 옮길 때 없으면
-    # 몇 시간 학습한 뒤 최종 가중치 저장에서 멈춘다(2026-11-16 vast 대조군에서 그렇게 멈춤)
+    # 학습 시작 때 만들어 둡니다. weights/는 git에 없어 새 서버에서는 clone해도 없고, 끝에 옮길 때 없으면 최종 가중치 저장에서 멈춥니다.
     weights_dir.mkdir(parents=True, exist_ok=True)
     work_best = run_dir / 'work_best.pth'
-    # 에포크별 가중치(config.TRAIN_SAVE_ALL_EPOCHS) — 회차 폴더 안이라 학습끼리 섞이지 않는다
+    # 에포크별 가중치(config.TRAIN_SAVE_ALL_EPOCHS)입니다. 회차 폴더 안이라 학습끼리 섞이지 않습니다.
     epochs_dir = run_dir / 'epochs' if getattr(config, 'TRAIN_SAVE_ALL_EPOCHS', False) else None
     if epochs_dir is not None:
         epochs_dir.mkdir(exist_ok=True)
-    # 에포크 파일 이름 = hitandrun_<모델>_<시작 시각>[_n]_<ptY|ptN>[_span][_bal]_ep<번호>.pth
-    #   → 폴더 밖으로 꺼내도 어느 학습(회차 폴더 <시각>[_n]_<모델>_<조건>)의 몇 에포크인지 알 수 있다.
-    #   같은 분에 같은 조건으로 시작해 회차 폴더에 _2 가 붙은 경우 그 번호도 넣는다(이름이 겹치지 않게).
+    # 에포크 파일 이름은 hitandrun_<모델>_<시작 시각>[_n]_<조건>_ep<번호>.pth입니다.
+    # 폴더 밖으로 꺼내도 어느 학습의 몇 에포크인지 알 수 있습니다. 같은 분에 같은 조건으로 시작해 회차 폴더에 _2가 붙은 경우 그 번호도 넣습니다.
     run_dup = run_dir.name[len(f"{run_stamp}_{config.MODEL_NAME}_{run_tag}"):]
     epoch_prefix = f"hitandrun_{config.MODEL_NAME}_{run_stamp}{run_dup}_{run_tag}"
-    # 그때의 설정을 그대로 남긴다 — 나중에 config.py 가 바뀌어도 이 회차 조건을 알 수 있다
+    # 그때의 설정을 그대로 남깁니다. 나중에 config.py가 바뀌어도 이 회차 조건을 알 수 있습니다.
     shutil.copy2(config.__file__, run_dir / 'config_snapshot.py')
-    # 학습/검증에 쓴 영상 목록 — 평가 영상과 겹치지 않았는지 나중에 확인할 수 있다
+    # 학습과 검증에 쓴 영상 목록입니다. 평가 영상과 겹치지 않았는지 나중에 확인할 수 있습니다.
     with open(run_dir / 'split.json', 'w', encoding='utf-8') as _f:
         root = Path(data_dir)
         json.dump({
             'data_dir': str(root),
             'n_train_videos': len(split_videos['train']),
             'n_val_videos': len(split_videos['val']),
-            # 검증 폴더를 쓰면 val 경로는 그 폴더 기준 상대경로(학습 폴더와 같은 rcdata/·realdata/ 구조)
+            # 검증 폴더를 쓰면 val 경로는 그 폴더 기준 상대경로입니다(학습 폴더와 같은 rcdata/, realdata/ 구조).
             'val_dir': str(val_dir) if use_val_dir else None,
             'split_lock': str(lock_path) if lock_path is not None else None,
             'excluded_in_folder': sorted(excluded),   # 폴더에 남아 있어 목록으로 뺀 10fps 미만 영상
             'train': sorted(os.path.relpath(v, root) for v in split_videos['train']),
             'val': sorted(os.path.relpath(v, val_dir if use_val_dir else root) for v in split_videos['val']),
         }, _f, ensure_ascii=False, indent=2)
-    # 유예 기간(config.TRAIN_GRACE_EPOCHS — scratch 기본 20, 사전학습 0): 이 동안은 조기 종료·LR 감소·best 선택을 미룬다
+    # 유예 기간(config.TRAIN_GRACE_EPOCHS, scratch 기본 20, 사전학습 0)에는 조기 종료, 학습률 감소, best 선택을 미룹니다.
     grace = getattr(config, 'TRAIN_GRACE_EPOCHS', None)
     if grace is None:
         grace = 0 if config.PRETRAINED else int(getattr(config, 'TRAIN_SCRATCH_GRACE_EPOCHS', 0))
-    grace = max(0, min(int(grace), num_epochs - 1))     # 끝까지 유예면 best 가 없어 최종 가중치를 못 정한다
+    grace = max(0, min(int(grace), num_epochs - 1))     # 끝까지 유예 기간이면 best가 없어 최종 가중치를 정할 수 없습니다.
     if grace:
         print(f"[유예 기간] 처음 {grace}에포크는 조기 종료·학습률 감소·best 선택 없이 학습(에포크별 가중치는 저장) — "
               f"그 뒤부터 조기 종료 {early_stopping_patience}·학습률 반감을 새로 센다")
@@ -777,7 +762,7 @@ def train_model(
         ('최종 가중치', '(학습이 끝나면 기록됨)'),
         ('작업 중 best 가중치', f'{work_best} (학습이 끝나면 최종 가중치로 옮겨짐)'),
         ('에포크별 가중치', f'{epochs_dir} (매 에포크)' if epochs_dir is not None else '저장 안 함'),
-        # 에포크 시간은 이 설정이 같은 학습끼리만 비교한다(끔이 RTX 3080 에서 약 2.3배 빠름, 결과는 같음)
+        # 에포크 시간은 이 설정이 같은 학습끼리만 비교합니다(결과는 같습니다).
         ('GPU 메모리 배치 channels_last',
          '켬' if (use_channels_last and is_channels_last_3d_supported(device)) else '끔'),
         ('데이터 폴더', str(data_dir)),
@@ -804,8 +789,8 @@ def train_model(
     ]
     write_run_info(run_dir, run_info)
 
-    # ── 학습 곡선 로그 (CSV) ───────────────────────────────────────
-    # 파일명에도 모델·사전학습여부·시각을 넣어, 회차 폴더 밖으로 꺼내도 구분된다.
+    # 학습 곡선 로그(CSV)
+    # 파일 이름에도 모델, 사전학습 여부, 시각을 넣어 회차 폴더 밖으로 꺼내도 구분됩니다.
     log_path = run_dir / (
         f"trainlog_{config.MODEL_NAME}_{run_tag}_{run_stamp}.csv")
     with open(log_path, 'w', newline='', encoding='utf-8') as _f:
@@ -813,28 +798,27 @@ def train_model(
             'epoch', 'lr', 'train_loss',
             'val_rc_loss', 'val_rc_acc', 'val_rc_recallA', 'val_rc_precA',
             'val_real_loss', 'val_real_acc', 'val_real_recallA', 'val_real_precA',
-            # ↓ 클래스별 평균 손실과 균형 손실, best 판단 지표, 이 에포크 저장 여부
+            # 아래는 클래스별 평균 손실, 균형 손실, best 판단 지표, 이 에포크 저장 여부입니다.
             'val_rc_lossA', 'val_rc_lossS', 'val_rc_bal',
             'val_real_lossA', 'val_real_lossS', 'val_real_bal',
             'monitor', 'saved_best', 'saved_cand',
-            # ↓ 2026-10-29 추가(train.validate): 첫 창 1개 재현율·정밀도, 구간(접근~충돌 종료 창 중 하나라도)
-            #   재현율·정밀도, 구분력. 학습 방식(pre/span)과 상관없이 같은 정의라 서로 비교된다.
+            # 아래는 첫 묶음 재현율과 정밀도, 구간(접근부터 충돌 끝까지의 묶음 중 하나라도) 재현율과 정밀도, 구분력입니다.
+            # 학습 방식(pre, span)과 상관없이 같은 정의라 서로 비교할 수 있습니다.
             'val_rc_preRecA', 'val_rc_prePrecA', 'val_rc_spanRecA', 'val_rc_spanPrecA', 'val_rc_auc',
             'val_real_preRecA', 'val_real_prePrecA', 'val_real_spanRecA', 'val_real_spanPrecA', 'val_real_auc',
-            'grace',    # 1 = 유예 기간(조기 종료·LR 감소·best 선택 안 함 — suggest 가 추천하지 않음)
+            'grace',    # 1이면 유예 기간입니다(조기 종료, 학습률 감소, best 선택을 하지 않고 suggest도 추천하지 않습니다).
         ])
     print(f"[로그] 학습 곡선 CSV: {log_path}")
 
     def _csv(v):
-        """None(해당 val 셋 없음/분모 0)은 빈칸으로 기록."""
+        """None(해당 검증셋이 없거나 분모가 0)은 빈칸으로 기록합니다."""
         return '' if v is None else f'{v:.6f}'
 
-    # 학습 시에는 Kinetics-400 사전학습 가중치로 초기화 (config.PRETRAINED)
+    # 학습할 때는 Kinetics-400 사전학습 가중치로 초기화합니다(config.PRETRAINED).
     model = HitAndRun3DCNN(
         num_classes=num_classes, pretrained=config.PRETRAINED).to(device)
 
-    # AMP, GradScaler: CUDA/ROCm 공통 지원
-    # channels_last_3d: NVIDIA CUDA 전용 (ROCm 미지원)
+    # AMP와 GradScaler는 CUDA와 ROCm 모두 지원합니다. channels_last_3d는 NVIDIA CUDA 전용입니다(ROCm 미지원).
     amp_enabled = use_amp and cuda_like
     channels_last_enabled = use_channels_last and is_channels_last_3d_supported(
         device)
@@ -842,28 +826,22 @@ def train_model(
     if channels_last_enabled:
         model = model.to(memory_format=torch.channels_last_3d)
 
-    # S 슬라이싱으로 A:S 불균형이 커지면 모델이 S로 치우칠 수 있어, 필요 시
-    # config.TRAIN_CLASS_WEIGHTS로 가중치를 준다(기본 None = 기존과 동일).
-    _cw = class_weights          # 위 '클래스 가중치'에서 정함('auto' 면 계산한 값)
+    # 정상 클립이 많아 모델이 정상 쪽으로 치우치면 config.TRAIN_CLASS_WEIGHTS로 가중치를 줍니다(기본 None).
+    _cw = class_weights          # 위 '클래스 가중치'에서 정한 값('auto'면 계산한 값)
     if _cw:
         criterion = nn.CrossEntropyLoss(
             weight=torch.tensor(_cw, dtype=torch.float32, device=device))
         print(f"[손실] 클래스 가중치 적용: {tuple(_cw)}")
     else:
         criterion = nn.CrossEntropyLoss()
-    # 미세조정 표준 관행: 사전학습된 백본(features)은 낮은 LR(×0.1)로 보수적으로,
-    # 새로 초기화된 분류 헤드(head_conv)는 기본 LR로 학습한다(scratch 면 둘 다 기본 LR).
-    # AdamW = decoupled weight decay. 과적합 억제용 정규화는 여기서 건다.
-    # (Adam + weight_decay 는 L2가 적응적 LR에 왜곡되어 의도대로 동작하지 않는다)
+    # 미세조정의 일반적인 방식대로 사전학습된 백본(features)은 낮은 학습률(0.1배)로 보수적으로,
+    # 새로 초기화한 분류 헤드(head_conv)는 기본 학습률로 학습합니다(scratch면 둘 다 기본 학습률).
+    # 과적합을 막는 정규화는 AdamW(decoupled weight decay)로 겁니다.
     #
-    # 파라미터를 (사전학습/신규) × (decay/no-decay) 4그룹으로 나눈다.
-    #  · 사전학습된 부분은 LR ×0.1 로 보수적으로 (기존 동작 유지, scratch 면 ×1)
-    #  · ⚠️ model.named_parameters() 를 순회해야 한다. features/head_conv 만
-    #    나열하면 그 사이에 있는 모듈(x3d 의 head_pool 0.97M)이 통째로 빠져
-    #    학습되지 않는다.
-    #  · BN scale/bias 와 모든 bias 는 weight decay 제외 — 표준 관행.
-    #    BN 의 γ 가 0 으로 끌려가면 해당 채널 출력이 죽는다. 3D CNN 은 BN 텐서가
-    #    154~220 개라 영향이 크다.
+    # 파라미터를 (사전학습, 신규)와 (decay, no-decay)로 나눠 4그룹으로 만듭니다.
+    #     사전학습된 부분은 학습률 0.1배로 보수적으로 학습합니다(scratch면 1배).
+    #     model.named_parameters()를 모두 돌아야 합니다. features와 head_conv만 나열하면 그 사이의 모듈(head_pool)이 빠져 학습되지 않습니다.
+    #     BN scale, bias와 모든 bias는 weight decay에서 뺍니다. BN의 감마가 0으로 끌려가면 그 채널 출력이 죽기 때문입니다.
     _norm_ids = set()
     for _m in model.modules():
         if isinstance(_m, (nn.BatchNorm3d, nn.BatchNorm2d, nn.BatchNorm1d,
@@ -874,7 +852,7 @@ def train_model(
     for _name, _p in model.named_parameters():
         if not _p.requires_grad:
             continue
-        # 새로 초기화되는 분류 헤드만 기본 LR, 나머지(사전학습분)는 ×0.1
+        # 새로 초기화한 분류 헤드만 기본 학습률, 나머지(사전학습분)는 0.1배입니다.
         _kind = 'new' if _name.startswith('head_conv') else 'pre'
         _decay = 'n' if (id(_p) in _norm_ids or _name.endswith('bias')) else 'd'
         _g[f'{_kind}_{_decay}'].append(_p)
@@ -891,11 +869,11 @@ def train_model(
         {'params': _g['new_d'], 'lr': learning_rate, 'weight_decay': _wd},
     ])
 
-    # ── 안전한 학습 안정화 장치 (모델 구조·손실 불변, 성능 저하 없음) ──
-    # 1) ReduceLROnPlateau: val loss가 정체되면 LR을 절반으로 낮춰 수렴을 돕는다.
+    # 학습 안정화 장치(모델 구조와 손실은 그대로입니다)
+    # 1) ReduceLROnPlateau: 판단 지표가 정체되면 학습률을 절반으로 낮춰 수렴을 돕습니다.
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=3)
-    # 2) gradient clipping: 그래디언트 노름 상한(폭주/진동 억제). 필요 시 조정.
+    # 2) gradient clipping: 기울기 노름의 상한으로 폭주와 진동을 막습니다.
     grad_clip_norm = 1.0
 
     if amp_enabled:
@@ -904,22 +882,20 @@ def train_model(
     early_stopping = EarlyStopping(
         patience=early_stopping_patience, path=work_best)
 
-    # ── best 판단 지표 / 후보 저장 (config 의 TRAIN_MONITOR_* 주석 참고) ──
-    # 판단 지표 = val_real '클래스 균형 손실'의 최근 N에포크 평균. best 저장·LR 감소·
-    # 조기종료가 모두 이 값 하나로 움직인다.
+    # best 판단 지표와 후보 저장(config의 TRAIN_MONITOR_* 주석 참고)
+    # 판단 지표는 val_real 클래스 균형 손실의 최근 N에포크 평균입니다. best 저장, 학습률 감소, 조기 종료가 모두 이 값으로 움직입니다.
     smooth_n = max(1, int(getattr(config, 'TRAIN_MONITOR_SMOOTH', 3)))
     topk = max(1, int(getattr(config, 'TRAIN_TOPK_CANDIDATES', 3)))
     min_gap = max(1, int(getattr(config, 'TRAIN_TOPK_MIN_GAP', 3)))
     bal_hist = []
-    cands = []   # [{'epoch', 'score', 'path'}] — 서로 min_gap 이상 떨어진 상위 topk
-    # 후보도 회차 폴더 안에 둔다(새 폴더라 이전 학습의 파일과 섞일 일이 없다)
+    cands = []   # [{'epoch', 'score', 'path'}]: 서로 min_gap 이상 떨어진 상위 topk
+    # 후보도 회차 폴더 안에 둡니다(새 폴더라 이전 학습의 파일과 섞이지 않습니다).
 
     def _update_candidates(epoch_no, score):
-        """epoch_no 의 가중치를 후보로 둘지 정한다. 저장했으면 True.
+        """epoch_no의 가중치를 후보로 둘지 정합니다. 저장했으면 True를 돌려줍니다.
 
-        그냥 상위 K개를 고르면 33·34·35 처럼 붙은 에포크, 즉 사실상 같은 모델이
-        뽑힌다. 그래서 가까운(min_gap 미만) 후보끼리는 더 좋은 하나만 남긴다.
-        가장 좋은 에포크는 절대 밀려나지 않으므로 1위는 항상 best 와 같다.
+        그냥 상위 K개를 고르면 붙어 있는 에포크, 즉 사실상 같은 모델이 뽑힙니다.
+        그래서 가까운(min_gap 미만) 후보끼리는 더 좋은 하나만 남깁니다. 가장 좋은 에포크는 밀려나지 않으므로 1위는 항상 best와 같습니다.
         """
         near = [c for c in cands if abs(c['epoch'] - epoch_no) < min_gap]
         if near:
@@ -944,12 +920,11 @@ def train_model(
     _cw_t = torch.tensor(_cw, dtype=torch.float32, device=device) if _cw else None
 
     def _span_step(inputs, sizes, labels):
-        """span 학습 한 스텝 → 배치 손실(샘플 평균, 'pre'의 손실과 같은 척도).
+        """span 학습 한 단계를 돌리고 배치 손실(샘플 평균, 'pre'의 손실과 같은 척도)을 돌려줍니다.
 
-        손실 = Σ 샘플 (클래스 가중치 × Σ 창 무게 × 창 CE) / Σ 클래스 가중치
-             — 모든 샘플이 창 1개면 nn.CrossEntropyLoss 와 같다.
-        창이 step_cap 을 넘으면 섞어서 고르게 나눠 역전파하고 기울기를 합쳐 한 번에 갱신한다.
-        (나눠도 손실·기울기는 같고, BN 통계만 조각 단위로 계산된다)
+        손실 = 샘플 합(클래스 가중치 * 묶음 합(묶음 무게 * 묶음 CE)) / 클래스 가중치 합입니다.
+        모든 샘플이 묶음 하나면 nn.CrossEntropyLoss와 같습니다.
+        묶음이 step_cap을 넘으면 섞어서 고르게 나눠 역전파하고 기울기를 합쳐 한 번에 갱신합니다(손실과 기울기는 같고 BN 통계만 나눈 단위로 계산됩니다).
         """
         w, owner = span_weights(sizes, first_w, device)
         cls_w = (_cw_t[labels] if _cw_t is not None
@@ -959,7 +934,7 @@ def train_model(
         if n <= step_cap:
             chunks = [torch.arange(n, device=device)]
         else:
-            # 한 조각에 한 충돌의 창만 몰리지 않게 섞는다(BN 통계가 치우치지 않게)
+            # 한 조각에 한 충돌의 묶음만 몰리지 않게 섞습니다(BN 통계가 치우치지 않게).
             chunks = torch.randperm(n, device=device).chunk(math.ceil(n / step_cap))
         optimizer.zero_grad(set_to_none=True)
         total = 0.0
@@ -977,7 +952,7 @@ def train_model(
                 loss.backward()
             total += loss.item()
         if amp_enabled:
-            scaler.unscale_(optimizer)  # 클리핑 전 스케일 해제 (AMP)
+            scaler.unscale_(optimizer)  # 클리핑 전에 스케일을 풉니다(AMP).
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
             scaler.step(optimizer)
             scaler.update()
@@ -989,7 +964,7 @@ def train_model(
     for epoch in range(num_epochs):
         model.train()
         train_loss = 0.0
-        n_seen = 0      # 이번 에포크에 실제로 쓴 클립 수(묶음 구성이 빈 장면을 솎으면 전체보다 적다)
+        n_seen = 0      # 이번 에포크에 실제로 쓴 클립 수(배치 구성이 빈 장면을 솎으면 전체보다 적습니다)
         for batch in train_loader:
             non_blocking = cuda_like
             if span:
@@ -1013,7 +988,7 @@ def train_model(
                     outputs = model(inputs)
                     loss = criterion(outputs, labels)
                 scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)  # 클리핑 전 스케일 해제 (AMP)
+                scaler.unscale_(optimizer)  # 클리핑 전에 스케일을 풉니다(AMP).
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(), grad_clip_norm)
                 scaler.step(optimizer)
@@ -1031,7 +1006,7 @@ def train_model(
 
         avg_train_loss = train_loss / max(n_seen, 1)
 
-        # rc용/real용 val을 각각 분리해서 성능 측정(validate — 기존 지표 + 구간 재현율·구분력)
+        # rc용과 real용 검증을 따로 잽니다(validate, 기존 지표와 구간 재현율, 구분력).
         def _evaluate(loader):
             return validate(model, loader, device, span=span, criterion=criterion,
                             batch_size=batch_size, class_w=_cw_t, first_w=first_w,
@@ -1043,8 +1018,8 @@ def train_model(
         def _g(d, k):
             return d[k] if d else None
 
-        # ── 판단 지표 ── 실제 영상(val_real)이 목표라 우선. 없으면(rc만 학습) rc.
-        # 한 에포크 값은 흔들리므로(수렴 후 표준편차 0.013) 최근 N에포크 평균을 쓴다.
+        # 판단 지표는 실제 영상(val_real)을 먼저 쓰고, 없으면(rc만 학습) rc를 씁니다.
+        # 한 에포크 값은 흔들리므로 최근 N에포크 평균을 씁니다.
         ref = real if real is not None else rc
         bal_hist.append(ref['bal'] if ref['bal'] is not None else ref['loss'])
         window = bal_hist[-smooth_n:]
@@ -1052,21 +1027,21 @@ def train_model(
         in_grace = epoch + 1 <= grace
         if not in_grace:
             scheduler.step(monitor)
-        current_lr = optimizer.param_groups[-1]['lr']  # 헤드 LR 표시
+        current_lr = optimizer.param_groups[-1]['lr']  # 헤드 학습률을 표시합니다.
 
         def _fmt(d):
             if d is None:
                 return 'N/A'
             def _v(k):
                 return f"{d[k]:.3f}" if d.get(k) is not None else '-'
-            # 구간 = 접근~충돌 종료 창 중 하나라도 A 인 재현율 · 구분 = 구분력(기준 무관)
+            # 구간은 접근부터 충돌 끝까지의 묶음 중 하나라도 A인 재현율, 구분은 구분력(기준 무관)입니다.
             return f"{d['loss']:.4f}/{d['acc']:.4f}/A{_v('rec')} 구간A{_v('spanRec')} 구분{_v('auc')}"
         print(f'Epoch [{epoch+1}/{num_epochs}] Train {avg_train_loss:.4f} | '
               f'val_rc(L/Acc/Arecall) {_fmt(rc)} | '
               f'val_real(L/Acc/Arecall) {_fmt(real)} | '
               f'판단지표 {monitor:.4f} | LR {current_lr:.2e}')
 
-        # best 저장·조기종료 판단 → 후보 저장 (유예 기간엔 하지 않는다)
+        # best 저장과 조기 종료를 판단한 뒤 후보를 저장합니다(유예 기간에는 하지 않습니다).
         if in_grace:
             saved_best = saved_cand = False
             print(f'유예 기간 {epoch + 1}/{grace} — 조기 종료·학습률 감소·best 선택 안 함')
@@ -1076,12 +1051,12 @@ def train_model(
             saved_best = (early_stopping.best_epoch == epoch + 1
                           and prev_best != epoch + 1)
             saved_cand = _update_candidates(epoch + 1, monitor)
-        # 에포크별 가중치 — 끝난 뒤 로그를 보고 몇 개를 평가 영상으로 비교해 고른다
+        # 에포크별 가중치입니다. 끝난 뒤 순위를 매겨 몇 개를 평가 영상으로 비교해 고릅니다.
         if epochs_dir is not None:
             torch.save(model.state_dict(), epochs_dir / f"{epoch_prefix}_ep{epoch + 1:03d}.pth")
 
-        # 에포크별 곡선을 CSV로 남긴다 — 학습이 중간에 끊겨도 남도록 매번 append.
-        # 과적합 판단(train↓ val↑)과 조합 비교에 이 파일이 근거가 된다.
+        # 에포크별 곡선을 CSV로 남깁니다. 학습이 중간에 끊겨도 남도록 매번 덧붙입니다.
+        # 과적합 판단과 조합 비교의 근거가 됩니다.
         with open(log_path, 'a', newline='', encoding='utf-8') as _f:
             csv.writer(_f).writerow([
                 epoch + 1, f'{current_lr:.3e}', f'{avg_train_loss:.6f}',
@@ -1097,7 +1072,7 @@ def train_model(
                 int(in_grace),
             ])
 
-        # 학습 곡선 그래프 갱신 — 실패해도 학습은 계속한다
+        # 학습 곡선 그래프를 갱신합니다. 실패해도 학습은 계속합니다.
         try:
             from trainplot import plot_trainlog
             plot_trainlog(log_path)
@@ -1110,33 +1085,30 @@ def train_model(
             print("조기 종료 조건 충족. 학습을 중단합니다.")
             break
 
-    # ── 최종 가중치 파일명 규칙 적용 ───────────────────────────────
-    # hitandrun_[모델명]_[YYMMDD_HHMM]_[에포크수]ep_[earlyY|earlyN]_[ptY|ptN][_span]_[손실율]
-    #   · 모델명 : config.MODEL_NAME (s3d / x3d / slowfast) — 폴더별 구분용
-    #   · 시각   : 학습 시작 시각 = 회차 폴더 이름의 시각 (예: 2026-07-24 14:05 → 260724_1405)
-    #             ⚠️ 2026-10-11 이전 파일은 '학습 종료일'(YYMMDD)만 붙어 있다.
-    #   · 에포크 : best 가중치가 저장된 에포크 (예: 50 → 50ep)
-    #   · early  : 조기종료로 멈췄으면 earlyY, 아니면 earlyN
-    #   · _span  : A 클립 방식이 span 일 때만 붙는다(--a-mode span)
-    #   · 손실율 : 저장 당시 '판단 지표'(val_real 균형 손실의 이동평균) 값.
-    #             ⚠️ 2026-09-29 이전 파일은 그냥 val_real loss 였으므로 서로 비교 불가.
+    # 최종 가중치 파일 이름 규칙
+    # hitandrun_[모델]_[YYMMDD_HHMM]_[에포크]ep_[earlyY|earlyN]_[조건]_[손실]
+    #     모델: config.MODEL_NAME
+    #     시각: 학습 시작 시각(회차 폴더 이름의 시각, 예: 260724_1405)
+    #     에포크: best 가중치를 저장한 에포크(예: 50ep)
+    #     early: 조기 종료로 멈췄으면 earlyY, 아니면 earlyN
+    #     조건: ptY 또는 ptN과 학습 조건 표시(_span, _bal 등)
+    #     손실: 저장할 때의 판단 지표(val_real 균형 손실의 이동평균) 값
     date_str = run_stamp
     epoch_str = f'{early_stopping.best_epoch}ep'
     early_str = 'earlyY' if early_stopping.early_stop else 'earlyN'
     loss_str = f'{early_stopping.val_loss_min:.4f}'
     final_name = (f'hitandrun_{config.MODEL_NAME}_{date_str}_'
                   f'{epoch_str}_{early_str}_{run_tag}_{loss_str}.pth')
-    # 학습 중엔 회차 폴더의 work_best.pth 로 저장해 두고, 종료 시 규칙 파일명으로 옮긴다
-    # (회차 폴더와 weights 가 다른 디스크여도 되게 shutil.move. 같은 이름이 있으면 _2 를 붙인다)
+    # 학습 중에는 회차 폴더의 work_best.pth로 저장해 두고, 끝날 때 규칙 파일 이름으로 옮깁니다.
+    # 회차 폴더와 weights가 다른 디스크여도 되도록 shutil.move를 쓰고, 같은 이름이 있으면 _2를 붙입니다.
     final_path = _unique_path(weights_dir / final_name)
     shutil.move(str(work_best), str(final_path))
     print(f'\n최종 가중치 저장: {final_path}')
 
-    # ── 후보 정리 ──
-    # 1위는 위 최종 파일과 같은 가중치라 작업용 후보 파일을 지운다. 나머지는
-    # 순위·에포크·지표값을 붙여 남긴다 → 학습 후, 학습에 안 쓴 영상으로 서비스
-    # 경로 평가를 돌려 최종 선택한다(val_real 로 골랐으니 val_real 로 다시 비교하면
-    # 그 51클립에 우연히 맞은 쪽이 또 이긴다).
+    # 후보 정리
+    # 1위는 최종 파일과 같은 가중치라 작업용 후보 파일을 지웁니다. 나머지는 순위, 에포크, 지표값을 붙여 남깁니다.
+    # 학습 뒤 학습에 쓰지 않은 영상으로 서비스 경로 평가를 돌려 최종 선택합니다
+    # (val_real로 골랐으니 val_real로 다시 비교하면 그 클립들에 우연히 맞은 쪽이 또 이깁니다).
     cand_info = []
     for rank, c in enumerate(sorted(cands, key=lambda c: c['score']), 1):
         if c['epoch'] == early_stopping.best_epoch:
@@ -1160,7 +1132,7 @@ def train_model(
     info['best 에포크'] = (f"{early_stopping.best_epoch} "
                           f"({'조기 종료' if early_stopping.early_stop else '끝까지 학습'})")
     info['후보 가중치'] = ', '.join(c['file'] for c in cand_info if c['rank'] > 1) or '없음'
-    # 평가해 볼 에포크 추천(판단 지표·그 에포크 균형손실·F1 상위) — 최종 선택은 평가 영상으로
+    # 평가해 볼 에포크를 추천합니다(판단 지표, 그 에포크 균형 손실, F1 상위). 최종 선택은 순위 매기기와 평가로 합니다.
     from epoch_suggest import suggest
     suggest_eps, suggest_lines = suggest(run_dir)
     print()
@@ -1169,7 +1141,7 @@ def train_model(
     info['평가 추천 에포크'] = ', '.join(map(str, suggest_eps)) or '없음'
     write_run_info(run_dir, list(info.items()))
 
-    # 결과 요약 — 그래프가 best·후보를 표시할 때도 쓴다
+    # 결과 요약입니다. 그래프가 best와 후보를 표시할 때도 씁니다.
     result_path = log_path.with_name(log_path.stem + '.result.json')
     with open(result_path, 'w', encoding='utf-8') as _f:
         json.dump({

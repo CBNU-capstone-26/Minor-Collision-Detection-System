@@ -1,16 +1,15 @@
-"""GPU FP16 추론 확인 (학습 서버용) — FP32 와 비교해 속도와 결과 차이를 잰다.
+"""GPU FP16 추론을 FP32와 비교해 속도와 결과 차이를 잽니다(학습 서버용).
 
-    CUDA_VISIBLE_DEVICES=0 python -u -m model.fp16_check               # 속도 + 실제 창 확률 비교
-    CUDA_VISIBLE_DEVICES=0 python -u -m model.fp16_check --full-eval   # + 평가 세트를 FP32·FP16 으로 각각 평가
+    CUDA_VISIBLE_DEVICES=0 python -u -m model.fp16_check               # 속도와 실제 묶음 확률 비교
+    CUDA_VISIBLE_DEVICES=0 python -u -m model.fp16_check --full-eval   # 평가 세트를 FP32, FP16으로 각각 평가까지
 
-결과는 화면과 outputs/fp16_check/<시각>/report.txt 에 남는다. --full-eval 의 평가 로그는
-평소처럼 outputs/evallogs 에 두 회차로 남는다.
+결과는 화면과 outputs/fp16_check/<시각>/report.txt에 남습니다. --full-eval의 평가 로그는 평소처럼 outputs/evallogs에 두 회차로 남습니다.
 
-FP16 을 켜도 되는 기준 (셋 다):
-  ① 실제 창에서 판정 기준(A_THRESHOLD)·거친 탐색 기준(PREDICT_COARSE_PROB)이 바뀐 창이 없다
-  ② --full-eval 에서 기존 판정·서비스 판정 지표가 FP32 와 같다
-  ③ 속도 이득이 있다
-config.INFER_FP16 은 기본 켬(2026-10-28 RTX 3080 확인). 다른 GPU 에서 결과가 다르면 서비스 환경에 INFER_FP16=0
+FP16을 켜도 되는 기준(셋 다 만족)
+    1) 실제 묶음에서 판정 기준(A_THRESHOLD)과 거친 탐색 기준(PREDICT_COARSE_PROB)을 넘나든 묶음이 없습니다.
+    2) --full-eval에서 기존 판정과 서비스 판정 지표가 FP32와 같습니다.
+    3) 속도 이득이 있습니다.
+config.INFER_FP16은 기본으로 켜져 있습니다. 다른 GPU에서 결과가 다르면 서비스 환경에 INFER_FP16=0을 줍니다.
 """
 import argparse
 import os
@@ -31,7 +30,7 @@ from main import _load_model
 
 
 def _windows_of(video, txt, n, clip_length, resize):
-    """영상 하나에서 고르게 n 개 창(정규화 전 uint8) — 0번 차량 박스 r=1 정사각 크롭(서비스와 같음)."""
+    """영상 하나에서 고르게 n개 묶음(정규화 전 uint8)을 뽑습니다. 0번 차량 박스를 r=1 정사각형으로 자릅니다(서비스와 같음)."""
     box = None
     for line in open(txt, encoding='utf-8', errors='ignore'):
         p = [t.strip() for t in line.split(',')]
@@ -86,7 +85,7 @@ def main():
 
 def _run(args):
     config.INFER_DEVICE_TYPE = 'cuda'
-    config.EVAL_WEIGHTS_PATH = Path(args.weights)   # --full-eval 평가 로그에 이 가중치 이름이 남게
+    config.EVAL_WEIGHTS_PATH = Path(args.weights)   # --full-eval 평가 로그에 이 가중치 이름이 남게 합니다.
     model, device = _load_model(args.weights)
     model.eval()
     cap = torch.cuda.get_device_capability(device)
@@ -96,8 +95,8 @@ def _run(args):
     if cap < (7, 0):
         print('⚠️ 연산능력 7.0 미만(Tensor Core 없음) — FP16 이 빠르지 않을 수 있고 서비스는 이 GPU 에서 FP16 을 켜지 않습니다.')
     cl = is_channels_last_3d_supported(device) and config.USE_CHANNELS_LAST
-    # 서비스·평가처럼 cuDNN 이 가장 빠른 방식을 재서 고르게 한다. 꺼진 채 속도표를 먼저 돌리면 그때 정한
-    # (느릴 수 있는) 방식이 입력 모양마다 기억돼, 뒤의 --full-eval 이 benchmark 를 켜도 그대로 쓰인다.
+    # 서비스와 평가처럼 cuDNN이 가장 빠른 방식을 재서 고르게 합니다. 꺼진 채 속도표를 먼저 돌리면 그때 정한 방식이
+    # 입력 모양마다 기억돼, 뒤의 --full-eval이 benchmark를 켜도 그대로 쓰입니다.
     torch.backends.cudnn.benchmark = True
     print(f'cuDNN benchmark 켬 · channels_last {"켬" if cl else "끔"}')
 
@@ -112,7 +111,7 @@ def _run(args):
 
     shape = (3, config.CLIP_LENGTH, config.RESIZE[1], config.RESIZE[0])
 
-    # ── ① 속도 ──
+    # 1) 속도
     print('\n[속도] 초당 처리 창 수 (서비스 배치 = '
           f'{config.PREDICT_INFER_BATCH_SIZE_GPU}, 평가 배치 = {config.EVAL_INFER_BATCH_SIZE})')
     print(f"{'배치':>4} {'FP32':>9} {'FP16':>9} {'FP16/FP32':>10}")
@@ -133,12 +132,12 @@ def _run(args):
             res[fp16] = n * bs / (time.perf_counter() - t0)
         print(f'{bs:>4} {res[False]:>9.1f} {res[True]:>9.1f} {res[True] / res[False]:>9.2f}x')
 
-    # ── ② 실제 창 결과 비교 ──
+    # 2) 실제 묶음 결과 비교
     mean = torch.tensor(config.NORM_MEAN, device=device).view(1, 3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD, device=device).view(1, 3, 1, 1, 1)
     folder = Path(config.EVAL_FOLDER_PATH)
     vids = sorted(p for p in folder.glob('*.mp4') if p.with_suffix('.txt').exists()
-                  and p.stem not in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ()))   # 10fps 미만 영상은 뺀다
+                  and p.stem not in (getattr(config, 'EXCLUDE_VIDEOS', ()) or ()))   # 10fps 미만 영상은 뺍니다.
     print(f'\n[결과 비교] {folder} 영상 {len(vids)}개 × 최대 {args.per_video}창, FP32 기준')
     all32, all16, allstrict, flips, per_video = [], [], [], [], []
     for v in vids:
@@ -178,7 +177,7 @@ def _run(args):
     for name, s, th, a, b in flips[:20]:
         print(f'    {name} 창 시작 {s}f: 기준 {th}  FP32 {a:.4f} → FP16 {b:.4f}')
 
-    # ── ③ 평가 세트 전체 (선택) ──
+    # 3) 평가 세트 전체(선택)
     same = None
     if args.full_eval:
         keys = [('base_recall', '① 기존 판정 재현율'), ('base_false_alarm', '① 기존 판정 오탐율'),
@@ -199,7 +198,7 @@ def _run(args):
             print(f'{label:<24}{str(a):>10}{str(b):>10}{mark}')
         same = all(got[False].get(k) == got[True].get(k) for k, _ in keys if k != 'speed_proc_fps')
 
-    # ── 판단 ──
+    # 판단
     print('\n[판단]')
     ok1 = not flips
     print(f"  ① 판정이 바뀐 창 없음: {'예' if ok1 else f'아니오({len(flips)}건)'}")

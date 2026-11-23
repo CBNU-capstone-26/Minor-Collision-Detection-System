@@ -1,13 +1,14 @@
-"""한 학습 회차의 여러 에포크 가중치를 평균해 하나로 만든다(가중치 평균 — 추론 계산량은 그대로).
+"""한 학습 회차의 여러 에포크 가중치를 평균해 하나로 만듭니다. 추론 계산량은 그대로입니다.
 
-같은 회차의 가까운 에포크들은 같은 골짜기 근처에 있어, 값을 평균하면 한 에포크의 우연한 치우침이 줄어
-흔들림(압축·야간 등 변형)에 덜 민감해질 수 있다. 다른 회차끼리는 평균하지 않는다(서로 다른 해라 망가진다).
-BN 이동평균·분산도 그대로 평균한다(가까운 에포크라 근사로 충분하다고 보고, 결과는 postproc_check·robust_check 로 확인).
-정수 버퍼(num_batches_tracked)는 가장 큰 값.
+같은 회차의 가까운 에포크들은 비슷한 지점에 있어, 평균하면 한 에포크의 우연한 치우침이 줄어 변형(압축, 야간 등)에
+덜 민감해질 수 있습니다. 다른 회차끼리는 평균하지 않습니다.
+BN 이동평균과 분산도 그대로 평균합니다. 가까운 에포크라 근사로 충분하다고 보며, 결과는 postproc_check와 robust_check로 확인합니다.
+정수 버퍼(num_batches_tracked)는 가장 큰 값을 씁니다.
 
     python -m model.weight_avg --run outputs/trainlogs/<회차> --epochs 25-27,38,39,43
-    → <회차>/avg/hitandrun_<모델>_<시작시각>_avg25-26-27-38-39-43_<조건>.pth
-      (회차 폴더 안이라 postproc_check 가 그 회차의 split.json 검증 영상을 그대로 찾는다)
+
+결과는 <회차>/avg/hitandrun_<모델>_<시작시각>_avg25-26-27-38-39-43_<조건>.pth로 저장합니다.
+회차 폴더 안에 두므로 postproc_check가 그 회차의 split.json 검증 영상을 그대로 찾습니다.
 """
 import argparse
 import hashlib
@@ -19,7 +20,7 @@ import torch
 
 
 def parse_epochs(text):
-    """'25-27,38' → [25, 26, 27, 38] (순서대로, 중복 없이)."""
+    """'25-27,38'을 [25, 26, 27, 38]로 바꿉니다(순서대로, 중복 없이)."""
     out = []
     for part in str(text).replace(' ', '').split(','):
         if not part:
@@ -34,7 +35,7 @@ def parse_epochs(text):
 
 
 def average(files):
-    """state_dict 들의 평균(실수 텐서) · 정수 버퍼는 최댓값."""
+    """state_dict들의 평균(실수 텐서)을 돌려줍니다. 정수 버퍼는 최댓값을 씁니다."""
     sds = [torch.load(str(f), map_location='cpu', weights_only=True) for f in files]
     keys = list(sds[0].keys())
     for f, sd in zip(files[1:], sds[1:]):
@@ -51,8 +52,9 @@ def average(files):
 
 
 def out_name(src, epochs):
-    """에포크 파일 이름 hitandrun_<모델>_<시작시각>[_n]_<조건>_epNNN.pth → …_<시작시각>[_n]_avg<에포크들>_<조건>.pth
-    (조건 표시 _ptY·_bal·_lqw·_top3 등은 그대로 — 평가 폴더 이름·헤드 풀링·입력 크기를 이름으로 맞추기 때문)."""
+    """에포크 파일 이름 hitandrun_<모델>_<시작시각>[_n]_<조건>_epNNN.pth를 ..._<시작시각>[_n]_avg<에포크들>_<조건>.pth로 바꿉니다.
+    조건 표시(_ptY, _bal, _lqw, _top3 등)는 그대로 둡니다. 평가 폴더 이름, 헤드 풀링, 입력 크기를 이름으로 맞추기 때문입니다.
+    """
     base = re.sub(r'_ep\d+$', '', Path(src).stem)
     tag = 'avg' + '-'.join(str(e) for e in epochs)
     m = re.match(r'^(hitandrun_[A-Za-z0-9]+_\d{6}_\d{4}(?:_\d+)?)_(pt[YN].*)$', base)
@@ -84,7 +86,7 @@ def main(argv=None):
     path = out_dir / out_name(files[0], epochs)
     torch.save(avg, str(path))
 
-    # 원래 에포크들과 얼마나 떨어졌는지(실수 텐서 전체의 평균 절대 차이) — 너무 크면 서로 먼 에포크를 섞은 것
+    # 원래 에포크들과 얼마나 떨어졌는지(실수 텐서 전체의 평균 절대 차이)입니다. 너무 크면 서로 먼 에포크를 섞은 것입니다.
     def _gap(sd):
         num = den = 0.0
         for k, v in avg.items():

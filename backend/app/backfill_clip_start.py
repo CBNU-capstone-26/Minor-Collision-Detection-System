@@ -1,14 +1,13 @@
-"""사고 클립이 원본의 몇 초부터인지(crash_events.clip_start_sec)가 비어 있는 구간을 채운다 — 한 번 돌리는 정리용.
+"""사고 클립이 원본의 몇 초부터인지(crash_events.clip_start_sec) 비어 있는 구간을 채우는 일회성 정리 도구입니다.
 
-재생 화면은 이 값으로 빨간 구간에 CAM 클립을 원본 시각에 맞춰 겹친다. 이 값을 저장하기 시작한 2026-10-27 전 분석은
-비어 있는데, 그때 클립 앞뒤 여유가 시기마다 달라(15·30프레임) 구간 시각으로 역산하면 0.5초까지 어긋난다(18번 영상 실측).
-그래서 클립 프레임을 원본 프레임과 직접 맞춰 본다: 클립이 구간을 담는 범위의 시작 위치 후보마다 화면 차이를 재고
-가장 작은 곳을 고른다. 합성 없는 원본 클립(_raw)이 있으면 그것으로 화면 전체를, 없으면 표시 클립에서 박스·히트맵이
-그려진 bbox 부분을 빼고 비교한다(클립 아래 S/A 띠는 늘 뺀다). 2등과 차이가 작으면 확실하지 않아 건너뛴다 —
-움직임이 bbox 안에만 있는 영상은 bbox 를 빼면 위치를 가를 수 없다.
+재생 화면은 이 값으로 빨간 구간에 CAM 클립을 원본 시각에 맞춰 겹칩니다. 이 값을 저장하기 전의 분석은 클립 앞뒤 여유가
+일정하지 않아 구간 시각으로 역산하면 어긋납니다. 그래서 클립 프레임을 원본 프레임과 직접 맞춰 봅니다.
+클립이 구간을 담을 수 있는 시작 위치 후보마다 화면 차이를 재고 가장 작은 곳을 고릅니다.
+합성 없는 원본 클립(_raw)이 있으면 화면 전체로, 없으면 표시 클립에서 박스와 히트맵이 그려진 부분을 빼고 비교합니다.
+클립 아래 S/A 띠는 늘 뺍니다. 2등과 차이가 작으면 확실하지 않으므로 건너뜁니다.
 
-    cd backend && ../venv311/bin/python -m app.backfill_clip_start            # 찾기만(바꾸지 않음)
-    cd backend && ../venv311/bin/python -m app.backfill_clip_start --apply    # 비어 있는 값만 채운다
+    cd backend && ../venv311/bin/python -m app.backfill_clip_start            # 찾기만 합니다(바꾸지 않음)
+    cd backend && ../venv311/bin/python -m app.backfill_clip_start --apply    # 비어 있는 값만 채웁니다
 """
 import sys
 
@@ -20,8 +19,8 @@ from app.db_connection import SessionLocal
 from app.routers.videos import raw_clip_path
 from app.settings import settings
 
-SMALL = (160, 90)      # 비교용 축소 크기
-MIN_RATIO = 1.3        # 2등(3프레임 이상 떨어진 위치) 차이 ÷ 1등 차이 — 이보다 작으면 확실하지 않아 건너뛴다
+SMALL = (160, 90)      # 비교할 때 줄이는 크기
+MIN_RATIO = 1.3        # 2등(3프레임 이상 떨어진 위치) 차이를 1등 차이로 나눈 값이 이보다 작으면 확실하지 않아 건너뜁니다.
 
 
 def _gray(frame, mask):
@@ -30,15 +29,17 @@ def _gray(frame, mask):
 
 
 def find_clip_start(video_path, clip_path, width, height, bbox, first, last, mask_bbox=True):
-    """클립 첫 프레임 = 원본의 몇 번째 프레임인지 → (프레임, 2등÷1등, fps). 못 찾으면 (None, 이유, fps).
-    mask_bbox: bbox 부분을 빼고 비교(박스·히트맵이 그려진 표시 클립). 원본 클립(_raw)은 False."""
+    """클립 첫 프레임이 원본의 몇 번째 프레임인지 찾아 (프레임, 2등/1등 비율, fps)를 돌려줍니다.
+    못 찾으면 (None, 이유, fps)를 돌려줍니다.
+    mask_bbox가 True면 박스 부분을 빼고 비교합니다(박스와 히트맵이 그려진 표시 클립). 원본 클립(_raw)은 False입니다.
+    """
     cap = cv2.VideoCapture(str(clip_path))
     clip = []
     while True:
         ok, f = cap.read()
         if not ok:
             break
-        clip.append(f[:height])                    # 아래 S/A 띠 빼기
+        clip.append(f[:height])                    # 아래 S/A 띠는 뺍니다.
     cap.release()
     cap = cv2.VideoCapture(str(video_path))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0        # 분석(inference.py)과 같은 fps
@@ -47,7 +48,7 @@ def find_clip_start(video_path, clip_path, width, height, bbox, first, last, mas
     if n == 0:
         cap.release()
         return None, '클립을 못 읽음', fps
-    # 클립은 구간(first~last 프레임)을 담는다 → 시작 후보는 last-n+1 ~ first, 영상 안
+    # 클립은 구간(first~last 프레임)을 담으므로 시작 후보는 last-n+1부터 first까지이고, 영상 안이어야 합니다.
     lo, hi = max(0, last - n + 1), min(first, max(0, total - n))
     if lo > hi:
         lo, hi = max(0, min(lo, hi) - 30), max(lo, hi) + 30
@@ -74,8 +75,8 @@ def find_clip_start(video_path, clip_path, width, height, bbox, first, last, mas
     if not errs:
         return None, '원본에서 클립 범위를 못 읽음', fps
     best = min(errs, key=errs.get)
-    # 2등은 3프레임 이상 떨어진 위치에서 — 바로 옆 프레임끼리 비긴 건 같은 프레임이 반복되는 영상이라(37번 영상:
-    # 연속 프레임의 49% 가 같음) 어느 쪽이든 화면이 같다. 멀리까지 비슷하면(정지 화면) 정말 가를 수 없다
+    # 2등은 3프레임 이상 떨어진 위치에서 고릅니다. 같은 프레임이 반복되는 영상은 바로 옆 위치끼리 화면이 같기 때문입니다.
+    # 멀리까지 비슷하면(정지 화면) 정말 가를 수 없습니다.
     far = [e for s, e in errs.items() if abs(s - best) >= 3]
     if not far:
         return best, float('inf'), fps
@@ -100,7 +101,7 @@ def main(apply=False):
                 skipped += 1
                 continue
             raw = raw_clip_path(ev)
-            # 원본 클립이 있으면 그것으로 화면 전체를(충돌 움직임이 있는 bbox 안까지), 없으면 표시 클립에서 bbox 를 빼고
+            # 원본 클립이 있으면 화면 전체로(충돌 움직임이 있는 박스 안까지), 없으면 표시 클립에서 박스를 빼고 비교합니다.
             attempts = ([(raw, False, '원본 클립')] if raw is not None and raw.exists() else []) + [(clip_path, True, '표시 클립')]
             for path, mask_bbox, label in attempts:
                 start, ratio, fps = find_clip_start(

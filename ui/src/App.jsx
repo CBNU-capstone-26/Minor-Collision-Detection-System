@@ -11,7 +11,7 @@ import { api, saveAuth, clearAuth, getToken, getStoredUser } from "./api";
 import "./App.css";
 import "./incident-ui.css";
 import "./premium-ui.css";
-import "./dashboard-dark.css"; // 다크 모드 통일 — 반드시 premium-ui.css 다음
+import "./dashboard-dark.css"; // 다크 모드 통일, 반드시 premium-ui.css 다음에 불러옵니다.
 
 function InterfaceIcon({ name }) {
   const paths = {
@@ -24,8 +24,8 @@ function InterfaceIcon({ name }) {
   return <svg className="interface-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-// 영상 카드의 ··· 메뉴 — '영상 정보 확인'은 화면 쪽 정보 팝업(onShowInfo, 업로드 일시 등 포함)을 열고,
-// '영상 삭제'는 여기서 확인 창을 띄워 지운다
+// 영상 카드의 점 세 개 메뉴입니다. '영상 정보 확인'은 화면 쪽 정보 팝업(onShowInfo, 업로드 일시 등)을 열고,
+// '영상 삭제'는 여기서 확인 창을 띄워 지웁니다.
 function VideoCardActions({ video, title, onShowInfo, onDeleted, onError }) {
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState(null);
@@ -49,7 +49,7 @@ function VideoCardActions({ video, title, onShowInfo, onDeleted, onError }) {
   }, [open, dialog, busy]);
   const close = () => { if (!busy) { setDialog(null); triggerRef.current?.focus(); } };
   return <div className="video-card-actions" ref={containerRef} onClick={(e) => e.stopPropagation()}>
-    {/* 점 세 개는 글자(···) 대신 SVG — 글꼴·OS 마다 점 위치가 달라져 처져 보이지 않게 */}
+    {/* 점 세 개는 글자 대신 SVG로 그립니다. 글꼴과 OS마다 점 위치가 달라 처져 보이지 않게 하려는 것입니다. */}
     <button className="video-more-trigger" ref={triggerRef} aria-label={`${title} 메뉴`} aria-expanded={open} onClick={() => setOpen(!open)}>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
     </button>
@@ -61,7 +61,7 @@ function VideoCardActions({ video, title, onShowInfo, onDeleted, onError }) {
       <div className="confirm-modal video-card-dialog" role="alertdialog" aria-modal="true" aria-label="영상 삭제 확인" onClick={(e) => e.stopPropagation()}>
         <span className="incident-eyebrow" translate="no">DELETE VIDEO</span>
         <h2>해당 영상을 삭제하시겠습니까?</h2>
-        {/* 지울 영상을 카드처럼 — 썸네일 · 제목 · 녹화일자와 길이로 어떤 영상인지 바로 알아보게 */}
+        {/* 지울 영상을 카드처럼 보여 줍니다. 썸네일, 제목, 녹화일과 길이로 어떤 영상인지 바로 알아보게 합니다. */}
         <div className="video-dialog-target">
           <img className="video-dialog-thumb" src={api.thumbnailUrl(video.id)} alt="" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
           <div className="video-dialog-target-text">
@@ -91,8 +91,8 @@ function TeamFooter({ animated = false }) {
   </footer>;
 }
 
-// 선으로 그린 휴지통 아이콘 — 글자색(currentColor)을 따라가서 평소 회색 → 마우스 올리면 빨강.
-// (🗑 이모지는 자체 색이라 hover 색이 안 먹고, 운영체제마다 모양이 달랐다)
+// 선으로 그린 휴지통 아이콘입니다. 글자색(currentColor)을 따라가 평소에는 회색, 마우스를 올리면 빨강이 됩니다.
+// 휴지통 이모지는 자체 색이라 hover 색이 먹지 않고 운영체제마다 모양이 달라 SVG로 그립니다.
 function TrashIcon({ size = 14 }) {
   return (
     <svg
@@ -115,7 +115,7 @@ function TrashIcon({ size = 14 }) {
   );
 }
 
-// 재생 컨트롤 아이콘 — 이모지(▶ ⏸ ⛶)는 OS·글꼴마다 모양과 크기가 달라 SVG 로 그린다
+// 재생 컨트롤 아이콘입니다. 재생, 일시정지, 전체화면 이모지는 OS와 글꼴마다 모양과 크기가 달라 SVG로 그립니다.
 const PLAYER_ICON_PATHS = {
   play: <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />,
   pause: (
@@ -166,7 +166,7 @@ function PlayerIcon({ name, size = 18 }) {
   );
 }
 
-// 그리드의 지금 열 수 — CSS(auto-fill)가 화면 폭·배율에 맞춰 정한 값을 읽는다. el 이 바뀌거나 크기가 바뀌면 다시 읽는다
+// 그리드의 지금 열 수입니다. CSS(auto-fill)가 화면 폭과 배율에 맞춰 정한 값을 읽고, el이나 크기가 바뀌면 다시 읽습니다.
 function useGridColumns(el, fallback = 3) {
   const [cols, setCols] = useState(fallback);
   useEffect(() => {
@@ -183,10 +183,10 @@ function useGridColumns(el, fallback = 3) {
   return cols;
 }
 
-// 재생 위치 t 에 원본 위로 겹쳐 볼 사고 클립 — t 가 빨간 구간 안이면 그 구간, 아니면 lead 초 안에 시작할 구간(미리 불러 둔다).
-// 한 영상을 여러 번 분석해 같은 시각에 클립이 여럿이면 목록·재생바에서 고른 클립(selectedId) → 없으면 가장 최근 분석의 클립.
-// 클립이 원본의 몇 초부터인지(clipStartSec) 저장된 분석만 — 예전 분석은 클립 앞뒤 여유가 시기마다 달라(15·30프레임)
-// 역산하면 0.5초까지 어긋나 원본 시각과 다른 장면이 겹친다(2026-10-27 18번 영상 실측) → 원본을 그대로 보여 준다
+// 재생 위치 t에서 원본 위에 겹쳐 볼 사고 클립을 돌려줍니다. t가 빨간 구간 안이면 그 구간, 아니면 lead초 안에 시작할 구간(미리 불러 둠)입니다.
+// 한 영상을 여러 번 분석해 같은 시각에 클립이 여럿이면 목록이나 재생바에서 고른 클립(selectedId), 없으면 가장 최근 분석의 클립을 씁니다.
+// 클립이 원본의 몇 초부터인지(clipStartSec) 저장된 분석만 씁니다. 예전 분석은 클립 앞뒤 여유가 일정하지 않아
+// 역산하면 원본 시각과 다른 장면이 겹치므로 원본을 그대로 보여 줍니다.
 function clipEventAt(events, t, selectedId) {
   const inSeg = events.filter((e) => e.hasClip && e.clipStartSec != null
     && t >= e.startSec && t <= Math.max(e.startSec, e.endSec ?? e.startSec));
@@ -195,12 +195,12 @@ function clipEventAt(events, t, selectedId) {
       || ((e.analysisNo ?? 0) === (best.analysisNo ?? 0) && e.id > best.id) ? e : best), null);
 }
 
-// 빨간 구간·목록의 클립을 누르면 구간 이만큼 앞부터 재생한다 — 사고 장면부터 바로 틀면 갑작스러워서(사용자 요청 2026-10-27).
-// 그동안 CAM 클립을 미리 불러 맞춰 두어 구간에 들어서는 순간 바로 바뀐다
-const EVENT_PREROLL_SEC = 1;   // 처음 2초였다가 길다는 요청으로 1초(2026-10-27)
+// 빨간 구간이나 목록의 클립을 누르면 구간보다 이만큼 앞부터 재생합니다. 사고 장면부터 바로 틀면 갑작스럽기 때문입니다.
+// 그동안 CAM 클립을 미리 불러 맞춰 두어 구간에 들어서는 순간 바로 바뀝니다.
+const EVENT_PREROLL_SEC = 1;   // 1초
 
-// 재생 위치 t 부터 lead 초 안에 화면에 나올 클립들 — 지금 나올 클립과, 구간 경계에서 바뀌어 나올 클립.
-// 미리 불러 재생 위치를 맞춰 두면 경계에서 바로 바뀐다(그때 불러오면 0.1~0.6초 원본이 비쳤다, 2026-10-27 실측)
+// 재생 위치 t부터 lead초 안에 화면에 나올 클립들입니다. 지금 나올 클립과 구간 경계에서 바뀌어 나올 클립입니다.
+// 미리 불러 재생 위치를 맞춰 두면 경계에서 바로 바뀝니다(그때 불러오면 잠깐 원본이 비칩니다).
 function clipEventsAhead(events, t, selectedId, lead) {
   const times = [t];
   events.forEach((e) => {
@@ -220,7 +220,7 @@ function clipEventsAhead(events, t, selectedId, lead) {
 let toastSeq = 0; // 하단 알림 번호 (showToast)
 let bboxSeq = 0; // 고른 차량 박스 번호
 
-// 화면 너비 조건(CSS 미디어쿼리)이 지금 맞는지 — 창 크기가 바뀌면 다시 그린다
+// 화면 너비 조건(CSS 미디어쿼리)이 지금 맞는지 돌려줍니다. 창 크기가 바뀌면 다시 그립니다.
 function useMediaQuery(query) {
   const subscribe = useCallback(
     (onChange) => {
@@ -233,7 +233,7 @@ function useMediaQuery(query) {
   return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches);
 }
 
-// 검색 아이콘 — 색 없이 선만 있는 돋보기 (이모지 🔍 는 OS 마다 색·모양이 달라서)
+// 검색 아이콘입니다. 돋보기 이모지는 OS마다 색과 모양이 달라 색 없이 선만 있는 돋보기를 그립니다.
 function SearchIcon({ size = 16 }) {
   return (
     <svg
@@ -253,11 +253,11 @@ function SearchIcon({ size = 16 }) {
   );
 }
 
-// 로그인이 만료돼 돌아왔으면(/login?expired=1) 로그인 창을 열고 안내한다
+// 로그인이 만료돼 돌아왔으면(/login?expired=1) 로그인 창을 열고 안내합니다.
 const AUTH_EXPIRED_MSG = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
 const cameFromExpiredLogin = () => new URLSearchParams(window.location.search).has("expired");
 
-// 로그인·회원가입 팝업이 사라지는 효과 시간 — App.css 의 public-overlay-out·public-modal-out 과 같게
+// 로그인, 회원가입 팝업이 사라지는 효과 시간입니다. App.css의 public-overlay-out, public-modal-out과 같게 둡니다.
 const MODAL_EXIT_MS = 200;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
@@ -271,8 +271,8 @@ function LoginPage({ onLogin }) {
   const modalCloseTimerRef = useRef(null);
   const navigate = useNavigate();
 
-  // 팝업은 CSS 효과로 열리고, 닫을 땐 사라지는 효과가 끝난 뒤에 실제로 닫는다
-  // ('동작 줄이기' 설정이면 효과 없이 바로 닫는다 — 그땐 CSS 효과도 꺼져 있다)
+  // 팝업은 CSS 효과로 열리고, 닫을 때는 사라지는 효과가 끝난 뒤에 실제로 닫습니다.
+  // '동작 줄이기' 설정이면 효과 없이 바로 닫습니다(그때는 CSS 효과도 꺼져 있습니다).
   const openLogin = () => {
     clearTimeout(modalCloseTimerRef.current);
     setIsModalClosing(false);
@@ -300,8 +300,6 @@ function LoginPage({ onLogin }) {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             entry.target.classList.add("is-visible");
-            // Optional: unobserve if you only want it to animate once
-            // observer.unobserve(entry.target);
           }
         });
       },
@@ -412,7 +410,7 @@ function LoginPage({ onLogin }) {
 
       <TeamFooter animated />
 
-      {/* 로그인·회원가입이 어두운 배경 하나를 같이 쓴다 — 서로 넘어갈 때 배경이 깜빡이지 않게 */}
+      {/* 로그인과 회원가입이 어두운 배경 하나를 함께 씁니다. 서로 넘어갈 때 배경이 깜빡이지 않게 하려는 것입니다. */}
       {(isLoginOpen || isSignupOpen) && (
         <div className={`login-modal-overlay ${isModalClosing ? "closing" : ""}`} onClick={closeModal}>
           {isLoginOpen ? (
@@ -512,7 +510,7 @@ function SignupModal({ onClose, onBackToLogin }) {
     }
   };
 
-  // 어두운 배경(login-modal-overlay)은 LoginPage 가 로그인 창과 함께 쓴다
+  // 어두운 배경(login-modal-overlay)은 LoginPage가 로그인 창과 함께 씁니다.
   return (
     <div className="login-modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title" onClick={(e) => e.stopPropagation()}>
       <button className="login-modal-close" onClick={onClose} aria-label="회원가입 창 닫기">×</button>
@@ -679,7 +677,7 @@ function formatTime(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-// 분석이 끝나 사고 의심 클립이 만들어진 일시 — ['YYYY-MM-DD', '04시 09분'] (보는 사람 컴퓨터의 시간대)
+// 분석이 끝나 사고 의심 클립이 만들어진 일시를 ['YYYY-MM-DD', '04시 09분']으로 돌려줍니다(보는 사람 컴퓨터의 시간대).
 function formatAnalyzedAt(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -688,7 +686,7 @@ function formatAnalyzedAt(iso) {
   return [`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, `${p(d.getHours())}시 ${p(d.getMinutes())}분`];
 }
 
-// 걸린 시간 — '45초', '3분 12초', '1시간 5분'
+// 걸린 시간을 '45초', '3분 12초', '1시간 5분'처럼 돌려줍니다.
 function formatDuration(sec) {
   if (sec == null || !Number.isFinite(sec) || sec < 0) return "";
   const s = Math.round(sec);
@@ -719,7 +717,7 @@ function AnalysisHistoryPanel({ history, events, progressText, onSelect, activeN
     const left = remain[h.no] || 0;
     if (h.status === "SUCCESS") {
       if (h.eventCount == null) {
-        // 이력 기능 전 분석 — 찾은 수를 몰라 남은 수만 보여 준다
+        // 이력 기능 이전 분석은 찾은 수를 몰라 남은 수만 보여 줍니다.
         return left > 0 ? { text: `사고 의심 클립 ${left}개` } : { text: "남은 클립 없음", cls: "muted" };
       }
       if (h.eventCount === 0) return { text: "사고 의심 구간 없음", cls: "muted" };
@@ -749,7 +747,7 @@ function AnalysisHistoryPanel({ history, events, progressText, onSelect, activeN
                 ? formatDuration((new Date(h.finishedAt) - new Date(h.requestedAt)) / 1000)
                 : "";
             const result = resultOf(h);
-            // 남은 클립이 있는 분석만 눌러서 클립을 볼 수 있다 — 없으면 눌러도 아무 일도 없는 일반 칸
+            // 남은 클립이 있는 분석만 눌러서 클립을 볼 수 있습니다. 없으면 눌러도 아무 일도 없는 일반 칸입니다.
             const hasClips = (remain[h.no] || 0) > 0;
             const body = (
               <>
@@ -850,17 +848,17 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [playbackSpeed, setPlaybackSpeed] = useState("1");
   const [volume, setVolume] = useState(70);
   const [isMuted, setIsMuted] = useState(false);
-  const [mediaDuration, setMediaDuration] = useState(0); // <video> 가 알려준 실제 길이(초, 소수) — 재생바 위치 계산용
+  const [mediaDuration, setMediaDuration] = useState(0); // <video>가 알려 준 실제 길이(초, 소수)로, 재생바 위치 계산에 씁니다.
   const [isSeeking, setIsSeeking] = useState(false); // 재생바를 누른 채 끌어서 탐색 중
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(true); // 오른쪽 패널(진행 단계 + 분석 이력) — 기본은 열림(영상을 열 때마다)
-  const [highlightAnalysisNo, setHighlightAnalysisNo] = useState(null); // 분석 이력에서 고른 분석 — 그 클립을 왼쪽 목록에서 강조
+  const [isHistoryOpen, setIsHistoryOpen] = useState(true); // 오른쪽 패널(진행 단계와 분석 이력)입니다. 영상을 열 때마다 기본은 열림입니다.
+  const [highlightAnalysisNo, setHighlightAnalysisNo] = useState(null); // 분석 이력에서 고른 분석입니다. 그 클립을 왼쪽 목록에서 강조합니다.
   const eventListRef = useRef(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
   const playerContainerRef = useRef(null);
   const seekHoverRef = useRef(null); // 재생바 위 마우스 위치의 시각 말풍선 (마우스 움직임마다 다시 그리지 않게 직접 갱신)
-  const isSeekingRef = useRef(false); // 끄는 중인지 — 이벤트 처리 중엔 다시 그리기 전이라 상태 대신 이걸 본다
+  const isSeekingRef = useRef(false); // 끄는 중인지입니다. 이벤트 처리 중에는 다시 그리기 전이라 상태 대신 이것을 봅니다.
   const detectAbortControllerRef = useRef(null);
   const analyzeAbortControllerRef = useRef(null);
 
@@ -889,15 +887,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const [now, setNow] = useState(() => Date.now()); // 진행률 계산용 현재시각(0.5s마다 갱신)
   const selectedVideoIdRef = useRef(null); // 폴링 중 최신 선택 영상 추적(stale closure 방지)
   const progressSmoothRef = useRef({}); // 작업별 화면 진행률(부드럽게 움직이고 뒤로 가지 않게)
-  const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 간다
+  const aliveRef = useRef(true); // 화면이 떠 있는 동안만 상태 폴링을 이어 갑니다.
   const pollingRef = useRef(new Set()); // 이미 상태를 확인 중인 작업(중복 폴링 방지)
   const [clipEvent, setClipEvent] = useState(null); // 사고 클립 팝업 대상 이벤트
   // 재생 화면의 빨간 구간에서 보일 화면: "cam"(충돌 부위 히트맵이 합성된 사고 클립) | "orig"(원본 그대로)
   const [clipView, setClipView] = useState("cam");
-  const camChipRef = useRef(null); // 컨트롤 줄의 '분석 #N 충돌 표시' — 겹친 클립이 보이는 동안만 보인다(동기화가 직접 바꾼다)
+  const camChipRef = useRef(null); // 컨트롤 줄의 '분석 #N 충돌 표시'입니다. 겹친 클립이 보이는 동안만 보이며, 동기화 코드가 직접 바꿉니다.
   const [pendingDeleteEvent, setPendingDeleteEvent] = useState(null); // 삭제 확인 창 대상 이벤트
   const [pendingClearAll, setPendingClearAll] = useState(false); // 전체 삭제 확인 창
-  const [infoVideo, setInfoVideo] = useState(null); // 영상 목록 카드의 ⋮ → 영상 정보 팝업 대상
+  const [infoVideo, setInfoVideo] = useState(null); // 영상 목록 카드의 점 세 개 메뉴에서 연 영상 정보 팝업 대상
 
   // 업로드 모달
   const [showUpload, setShowUpload] = useState(false);
@@ -937,8 +935,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
-  // 하단 알림. 알림마다 번호를 붙여, 타이머는 자기 알림이 아직 떠 있을 때만 닫는다
-  // (앞 알림의 타이머가 뒤에 뜬 알림 — 예: 7초짜리 분석 결과 — 을 일찍 닫지 않게)
+  // 하단 알림입니다. 알림마다 번호를 붙여, 타이머는 자기 알림이 아직 떠 있을 때만 닫습니다.
+  // 앞 알림의 타이머가 뒤에 뜬 알림(예: 7초짜리 분석 결과)을 일찍 닫지 않게 하려는 것입니다.
   const showToast = (message, type = "warning", durationMs = 2600) => {
     const id = ++toastSeq;
     setToast({ id, message, type });
@@ -1062,13 +1060,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     return videos.filter((video) => video.date >= startDate);
   }, [filterDays, videos]);
 
-  // 기간 + 검색어 필터링 — 영상 목록 페이지용
+  // 기간과 검색어로 거른 목록입니다(영상 목록 페이지용).
   const filteredVideos = useMemo(() => {
     let list = periodVideos;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      // 제목은 카드에 보이는 그대로('2026-10-12 녹화본 #5')로 찾는다
+      // 제목은 카드에 보이는 그대로('2026-10-12 녹화본 #5')로 찾습니다.
       list = list.filter(
         (v) =>
           (v.date || "").toLowerCase().includes(q) ||
@@ -1084,8 +1082,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     });
   }, [periodVideos, searchQuery, videos]);
 
-  // 메인화면 영상 목록 페이지네이션 — 한 페이지 = 지금 열 수 × 줄 수(두 줄 이상, 최소 6개).
-  // 3열 이하(보통 화면)는 예전처럼 6개, 화면이 넓거나 축소해 열이 늘면 줄을 꽉 채운다(예: 6열 → 12개)
+  // 메인 화면 영상 목록 페이지 나누기입니다. 한 페이지는 지금 열 수와 줄 수(두 줄 이상, 최소 6개)를 곱한 개수입니다.
+  // 3열 이하(보통 화면)는 6개, 화면이 넓거나 축소해 열이 늘면 줄을 꽉 채웁니다(예: 6열이면 12개).
   const [videoGridEl, setVideoGridEl] = useState(null);
   const gridCols = useGridColumns(videoGridEl);
   const VIDEOS_PER_PAGE = gridCols * Math.max(2, Math.ceil(6 / gridCols));
@@ -1093,7 +1091,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   const totalPages = Math.max(1, Math.ceil(filteredVideos.length / VIDEOS_PER_PAGE));
 
-  // 한 페이지 개수가 바뀌면(창 크기·배율 변경) 보던 첫 영상이 들어 있는 페이지로 옮긴다
+  // 한 페이지 개수가 바뀌면(창 크기나 배율 변경) 보던 첫 영상이 들어 있는 페이지로 옮깁니다.
   const prevPerPage = useRef(VIDEOS_PER_PAGE);
   useEffect(() => {
     if (prevPerPage.current === VIDEOS_PER_PAGE) return;
@@ -1159,7 +1157,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
-  // 영상을 클릭하여 시청 모드로 진입 → URL 이동
+  // 영상을 누르면 재생 화면으로 들어가고 URL을 옮깁니다.
   const handleWatchVideo = (video) => {
     navigate(`/videos/${video.id}`);
   };
@@ -1169,8 +1167,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     navigate("/videos");
   };
 
-  // 특정 사고 이벤트 1건 삭제
-  // 휴지통 → 바로 지우지 않고 화면 가운데 확인 창을 띄운다(서버가 클립 파일도 지움)
+  // 사고 이벤트 하나를 삭제합니다.
+  // 휴지통을 누르면 바로 지우지 않고 화면 가운데 확인 창을 띄웁니다(서버가 클립 파일도 지웁니다).
   const requestDeleteEvent = (event, e) => {
     if (e) e.stopPropagation();
     setPendingDeleteEvent(event);
@@ -1204,7 +1202,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
-  // 영상의 모든 사고 이벤트 전체 삭제 — 개별 삭제와 같은 확인 창을 거친다
+  // 영상의 모든 사고 이벤트를 삭제합니다. 하나씩 지울 때와 같은 확인 창을 거칩니다.
   const requestClearAllEvents = () => {
     if (!selectedVideo || selectedVideo.events.length === 0) return;
     setPendingClearAll(true);
@@ -1228,7 +1226,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
   // 수동 차량 지정 모드 시작
   const handleStartManualDesignate = () => {
-    // 차량 탐지처럼 영상을 멈춰, 지금 보이는 화면에서 차량을 그리게 한다
+    // 차량 탐지처럼 영상을 멈춰, 지금 보이는 화면에서 차량을 그리게 합니다.
     if (videoElRef.current) {
       videoElRef.current.pause();
       setIsPlaying(false);
@@ -1236,7 +1234,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setSelectionMode("manual");
     setIsBBoxMode(true);
     setHoveredDetectedBox(null);
-    // 안내 문구는 잠깐 뜨는 알림 대신 버튼 위 말풍선으로 모드가 끝날 때까지 띄운다 (.designate-hint)
+    // 안내 문구는 잠깐 뜨는 알림 대신 버튼 위 말풍선(.designate-hint)으로 모드가 끝날 때까지 띄웁니다.
   };
 
   // 탐지/지정 모드 해제
@@ -1259,7 +1257,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     showToast("차량 탐지가 취소되었습니다.", "info");
   };
 
-  // YOLO 차량 탐지 실행 (영상 pause → 백엔드 탐지 → Hover 선택 활성화)
+  // YOLO 차량 탐지를 실행합니다(영상을 멈추고, 백엔드에서 탐지한 뒤, 마우스를 올려 고를 수 있게 합니다).
   const handleAutoDetectVehicles = async () => {
     if (!selectedVideo) return;
     if (videoElRef.current) {
@@ -1267,7 +1265,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       setIsPlaying(false);
     }
     setSelectionMode("auto");
-    setIsDetectingVehicles(true);   // 진행 표시는 영상 위 로딩으로 한다(알림 없음)
+    setIsDetectingVehicles(true);   // 진행 표시는 영상 위 로딩으로 합니다(알림 없음).
 
     const controller = new AbortController();
     detectAbortControllerRef.current = controller;
@@ -1277,7 +1275,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       const list = res.detected_vehicles || [];
       setDetectedBoxes(list);
       setIsBBoxMode(true);
-      // 탐지 성공은 알리지 않는다(영상 위에 차량이 바로 표시됨). 한 대도 없을 때만 다음 행동을 안내한다.
+      // 탐지에 성공하면 알리지 않습니다(영상 위에 차량이 바로 표시됩니다). 한 대도 없을 때만 다음 행동을 안내합니다.
       if (list.length === 0) {
         showToast("탐지된 차량이 없습니다. 직접 차량 지정을 이용해 주세요.", "warning");
       }
@@ -1294,7 +1292,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
 
 
-  // '사고 구간 찾기' 클릭 → 차량 박스가 없으면 경고, 있으면 확인 팝오버
+  // '사고 구간 찾기'를 누르면 차량 박스가 없을 때 경고하고, 있으면 확인 팝오버를 띄웁니다.
   const handleAnalyzeClick = () => {
     if (bboxList.length === 0) {
       showToast("사고를 감지할 차량을 드래그하여 주십시오.", "warning");
@@ -1303,15 +1301,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setShowAnalyzeConfirm(true);
   };
 
-  // 사고감지 분석 작업 취소
-  // 보고 있는 영상의 상세(분석 이력 포함)를 다시 받아 온다 — 그사이 다른 영상으로 옮겼으면 덮어쓰지 않는다
+  // 사고 감지 분석 작업 취소
+  // 보고 있는 영상의 상세(분석 이력 포함)를 다시 받아 옵니다. 그사이 다른 영상으로 옮겼으면 덮어쓰지 않습니다.
   const refreshSelectedVideo = async (videoId) => {
     if (videoId == null || selectedVideoIdRef.current !== videoId) return;
     try {
       const v = await api.getVideo(videoId);
       if (selectedVideoIdRef.current === videoId) setSelectedVideo(v);
     } catch {
-      /* 이력 갱신에 실패해도 다음 갱신 때 맞춰진다 */
+      /* 이력 갱신에 실패해도 다음 갱신 때 맞춰집니다. */
     }
   };
 
@@ -1340,7 +1338,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const removeJob = (taskId) =>
     setAnalyzingJobs((prev) => prev.filter((j) => j.taskId !== taskId));
 
-  // 분석이 끝났을 때: 화면 안 토스트 + 다른 탭·창을 보고 있으면 브라우저 알림
+  // 분석이 끝나면 화면 안 토스트를 띄우고, 다른 탭이나 창을 보고 있으면 브라우저 알림도 띄웁니다.
   const notifyDone = (title, body, type) => {
     showToast(`${title}: ${body}`, type, 7000); // 분석 결과는 놓치지 않게 7초
     try {
@@ -1353,14 +1351,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   };
 
   const pollTask = (taskId, videoId) => {
-    if (pollingRef.current.has(taskId)) return; // 같은 작업을 두 번 폴링하지 않는다
+    if (pollingRef.current.has(taskId)) return; // 같은 작업을 두 번 폴링하지 않습니다.
     pollingRef.current.add(taskId);
     const finish = () => {
       pollingRef.current.delete(taskId);
       removeJob(taskId);
     };
     const poll = async () => {
-      if (!aliveRef.current) return; // 화면이 닫히면 멈춤 — 다시 열리면 복원하면서 새로 시작
+      if (!aliveRef.current) return; // 화면이 닫히면 멈추고, 다시 열리면 복원하면서 새로 시작합니다.
       try {
         const status = await api.getTaskStatus(taskId);
         if (!aliveRef.current) return;
@@ -1390,8 +1388,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           refreshSelectedVideo(videoId);
           return;
         }
-        // 진행도(%)와 서버가 실제로 잰 속도 기준의 남은 시간(초)을 반영한다.
-        // 받은 시각(etaAt)을 같이 저장해 다음 확인 전까지 화면에서 1초씩 줄여 보여 준다.
+        // 진행률(%)과 서버가 실제로 잰 속도로 계산한 남은 시간(초)을 반영합니다.
+        // 받은 시각(etaAt)을 함께 저장해 다음 확인 전까지 화면에서 1초씩 줄여 보여 줍니다.
         const receivedAt = Date.now();
         setAnalyzingJobs((prev) =>
           prev.map((j) => {
@@ -1399,7 +1397,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             const next = { ...j, status: status.status };
             if (typeof status.progress === "number") {
               next.progress = status.progress;
-              next.progressAt = receivedAt;             // 받은 시각 — 진행 속도 계산용
+              next.progressAt = receivedAt;             // 받은 시각(진행 속도 계산용)
             }
             next.etaSec = status.eta_sec ?? null;
             next.etaMin = !!status.eta_is_min;
@@ -1409,7 +1407,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             next.phaseIndex = status.stage_index ?? null;
             return next;
           }));
-        setTimeout(poll, 2000); // PENDING/PROCESSING → 재시도
+        setTimeout(poll, 2000); // PENDING이나 PROCESSING이면 다시 확인합니다.
       } catch (e) {
         finish();
         showToast(`상태 조회 실패: ${e.message}`, "error");
@@ -1418,7 +1416,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     poll();
   };
 
-  // 실패·중단된 마지막 분석을 같은 차량 박스로 다시 실행
+  // 실패하거나 중단된 마지막 분석을 같은 차량 박스로 다시 실행합니다.
   const handleRetryAnalysis = async () => {
     const last = selectedVideo?.lastTask;
     if (!last) return;
@@ -1442,9 +1440,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     }
   };
 
-  // 화면이 열릴 때(새로고침·재접속 포함) 서버에 남아 있는 내 분석을 복원해 이어서 추적한다.
-  // 분석 목록은 브라우저 메모리에만 있어서, 이게 없으면 창을 닫았다 열었을 때 진행 중인
-  // 분석이 사라진 것처럼 보이고 같은 영상을 다시 요청하게 된다.
+  // 화면이 열릴 때(새로고침, 재접속 포함) 서버에 남아 있는 내 분석을 복원해 이어서 추적합니다.
+  // 분석 목록은 브라우저 메모리에만 있어서, 이것이 없으면 브라우저를 닫았다 열었을 때 진행 중인 분석이
+  // 사라진 것처럼 보이고 같은 영상을 다시 요청하게 됩니다.
   useEffect(() => {
     aliveRef.current = true;
     (async () => {
@@ -1471,7 +1469,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           pollTask(t.task_id, t.video_id);
         });
       } catch {
-        /* 복원 실패는 치명적이지 않다 — 새 분석 요청은 그대로 동작 */
+        /* 복원에 실패해도 새 분석 요청은 그대로 동작합니다. */
       }
     })();
     return () => {
@@ -1480,13 +1478,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 확인 팝오버에서 '실행' → bbox 원본해상도 환산 후 분석 요청
+  // 확인 팝오버에서 '실행'을 누르면 박스를 원본 해상도로 바꿔 분석을 요청합니다.
   const runAnalysis = async () => {
     setShowAnalyzeConfirm(false);
     const box = bboxList[0];
     if (!box) return;
 
-    // bboxList 는 원본 영상 해상도 좌표 — 지금 화면 크기와 상관없이 그대로 보낸다
+    // bboxList는 원본 영상 해상도 좌표라 지금 화면 크기와 상관없이 그대로 보냅니다.
     const bbox = {
       bbox_xmin: box.xmin,
       bbox_ymin: box.ymin,
@@ -1494,13 +1492,12 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       bbox_ymax: box.ymax,
     };
 
-    // 분석 시작: 지정 모드를 끄고 해당 영상을 '분석 중'으로 표시
-    // (박스 그리기 판만 끄면 모드 값이 남아 분석 중에도 탐지 버튼이 켜진 상태로 보였다)
+    // 분석 시작: 지정 모드를 끄고 해당 영상을 '분석 중'으로 표시합니다.
+    // 박스 그리기 판만 끄면 모드 값이 남아 분석 중에도 탐지 버튼이 켜진 것처럼 보이기 때문입니다.
     const videoId = selectedVideo.id;
     handleEndDesignateMode();
 
-    // 예상 소요시간(초) 추정: 슬라이딩 윈도우 수(총프레임/stride) 기반 (CPU ~1s/윈도우)
-    // ※ 분모는 백엔드 config.PREDICT_WINDOW_STRIDE(현재 5)와 반드시 일치시킬 것
+    // 예상 소요 시간(초)의 대략값입니다. 화면의 진행률과 남은 시간은 서버가 잰 실제 속도로 계산하므로 참고용입니다.
     const totalFrames = Math.round(
       (selectedVideo.duration || 0) * (selectedVideo.fps || 30));
     const estimatedSec = Math.max(10, Math.round((totalFrames / 5) * 1.1));
@@ -1512,14 +1509,14 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       startedAt: Date.now(),
     };
 
-    // 분석이 끝나면 다른 탭에 있어도 알려 주도록 처음 한 번 알림 권한을 묻는다
+    // 분석이 끝나면 다른 탭에 있어도 알려 주도록 처음 한 번 알림 권한을 묻습니다.
     try {
       if ("Notification" in window && Notification.permission === "default") {
         const r = Notification.requestPermission();
         if (r && r.catch) r.catch(() => {});
       }
     } catch {
-      /* 알림을 지원하지 않는 브라우저 — 토스트만 쓴다 */
+      /* 알림을 지원하지 않는 브라우저는 토스트만 씁니다. */
     }
 
     const controller = new AbortController();
@@ -1530,7 +1527,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       job.taskId = res.task_id;
       job.status = res.status;
       if (res.already_running) {
-        // 같은 영상에 이미 대기·진행 중인 분석이 있으면 서버가 새로 만들지 않고 그 작업을 준다
+        // 같은 영상에 이미 대기 중이거나 진행 중인 분석이 있으면 서버가 새로 만들지 않고 그 작업을 돌려줍니다.
         showToast("이 영상은 이미 분석 중입니다. 진행 상황을 이어서 보여드릴게요.", "info");
       }
       setAnalyzingJobs((prev) => (prev.some((j) => j.taskId === res.task_id) ? prev : [...prev, job]));
@@ -1560,13 +1557,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     } else if (player.webkitRequestFullscreen) {
       player.webkitRequestFullscreen(); // 옛 Safari
     } else {
-      // iPhone Safari 는 영상 영역(div) 전체화면을 허용하지 않는다 → 영상만이라도 기기 전체화면으로
+      // iPhone Safari는 영상 영역(div) 전체화면을 허용하지 않으므로 영상만이라도 기기 전체화면으로 엽니다.
       videoElRef.current?.webkitEnterFullscreen?.();
     }
   };
 
-  // ── 실제 <video> 재생 제어 ──────────────────────────────
-  // 차량 탐지 중엔 재생·이동을 막는다 — 탐지는 요청한 순간의 화면으로 하므로 화면이 바뀌면 박스가 어긋난다
+  // 실제 <video> 재생 제어
+  // 차량 탐지 중에는 재생과 이동을 막습니다. 탐지는 요청한 순간의 화면으로 하므로 화면이 바뀌면 박스가 어긋납니다.
   const togglePlay = () => {
     const v = videoElRef.current;
     if (!v || isDetectingVehicles) return;
@@ -1574,10 +1571,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     else v.pause();
   };
 
-  // 재생바 길이 기준 — 실제 영상 길이(소수)를 쓰고, 영상 정보를 받기 전엔 서버가 준 길이(정수 초)
+  // 재생바 길이 기준입니다. 실제 영상 길이(소수)를 쓰고, 영상 정보를 받기 전에는 서버가 준 길이(정수 초)를 씁니다.
   const playerDuration = mediaDuration || selectedVideo?.duration || 0;
 
-  // 재생바: 누르거나 누른 채 끌어서 탐색하고, 마우스를 올리면 그 위치의 시각을 말풍선으로 보여준다
+  // 재생바: 누르거나 누른 채 끌어서 이동하고, 마우스를 올리면 그 위치의 시각을 말풍선으로 보여 줍니다.
   const seekRatioAt = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
@@ -1594,7 +1591,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const bubble = seekHoverRef.current;
     if (!bubble) return;
     bubble.textContent = formatTime(Math.floor(ratio * playerDuration));
-    // 양 끝에서 말풍선이 재생바 밖으로 잘리지 않게 안쪽으로 붙인다
+    // 양 끝에서 말풍선이 재생바 밖으로 잘리지 않게 안쪽으로 붙입니다.
     const width = e.currentTarget.getBoundingClientRect().width;
     const half = bubble.offsetWidth / 2;
     bubble.style.left = `${Math.min(width - half, Math.max(half, ratio * width))}px`;
@@ -1625,8 +1622,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     setIsSeeking(false);
   };
 
-  // 재생바의 빨간 구간·왼쪽 클립 목록 클릭 → 그 구간 1초 앞(EVENT_PREROLL_SEC)부터 재생. 그 클립을 고른 것으로 두어,
-  // 같은 시각에 여러 분석의 클립이 겹치면 이 클립이 메인 화면에 나온다(clipEventAt)
+  // 재생바의 빨간 구간이나 왼쪽 클립 목록을 누르면 그 구간 1초 앞(EVENT_PREROLL_SEC)부터 재생합니다.
+  // 그 클립을 고른 것으로 두어, 같은 시각에 여러 분석의 클립이 겹치면 이 클립이 메인 화면에 나옵니다(clipEventAt).
   const seekToEvent = (event) => {
     if (isDetectingVehicles) return;
     setCurrentEventId(event.id);
@@ -1662,9 +1659,9 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     if (v) v.muted = isMuted;
   }, [isMuted, selectedVideo]);
 
-  // 영상 칸 크기가 바뀌면(창 크기 · 안내 바 · 실패 안내 · 전체화면) 차량 박스 위치를 다시 계산하도록 다시 그린다.
-  // 영상 칸은 화면 높이에 맞춰 줄어들 수 있어, 렌더 시점의 크기로 그린 박스가 어긋나지 않게 한다.
-  const [overlaySize, setOverlaySize] = useState(null); // { w, h } — 박스 그리기용(렌더 중 ref 를 읽지 않게 상태로 둔다)
+  // 영상 칸 크기가 바뀌면(창 크기, 안내 바, 실패 안내, 전체화면) 차량 박스 위치를 다시 계산하도록 다시 그립니다.
+  // 영상 칸은 화면 높이에 맞춰 줄어들 수 있어, 그릴 때의 크기로 그린 박스가 어긋나지 않게 합니다.
+  const [overlaySize, setOverlaySize] = useState(null); // { w, h }, 박스 그리기용(렌더 중에 ref를 읽지 않도록 상태로 둡니다)
   useEffect(() => {
     const el = bboxOverlayRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -1676,7 +1673,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     return () => ro.disconnect();
   }, [selectedVideo?.id, view]);
 
-  // 분석 이력에서 분석을 고르면, 그 분석의 첫 클립이 보이도록 왼쪽 목록을 스크롤한다
+  // 분석 이력에서 분석을 고르면, 그 분석의 첫 클립이 보이도록 왼쪽 목록을 스크롤합니다.
   useEffect(() => {
     if (highlightAnalysisNo == null) return;
     const el = eventListRef.current?.querySelector(".event-item.analysis-highlight");
@@ -1696,7 +1693,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     selectedVideoIdRef.current = selectedVideo?.id ?? null;
   }, [selectedVideo]);
 
-  // 현재 보고 있는 영상이 분석 중인지 (영상별로 판정 — 다른 영상엔 영향 없음)
+  // 현재 보고 있는 영상이 분석 중인지 영상별로 판정합니다(다른 영상에는 영향 없음).
   const isAnalyzing =
     !!selectedVideo && analyzingJobs.some((j) => j.videoId === selectedVideo.id);
 
@@ -1707,16 +1704,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     return () => clearInterval(id);
   }, [analyzingJobs.length]);
 
-  // 작업별 진행률(%)과 단계 문구.
-  // 백엔드가 디코딩·선별·추론·렌더링 전 단계에서 '실제' 진행도와 지금 단계를 보고하므로
-  // 가짜 시간기반 추정을 만들지 않는다. 남은 시간은 단계가 바뀔 때 숫자가 뛰어 혼란스러워서
-  // 보여 주지 않고, 대신 지금 무엇을 하는지(단계)와 부드럽게 움직이는 진행률을 보여 준다.
+  // 작업별 진행률(%)과 단계 문구입니다.
+  // 백엔드가 모든 단계에서 실제 진행률과 지금 단계를 보고하므로 시간 기반 추정을 만들지 않습니다.
+  // 남은 시간은 단계가 바뀔 때 숫자가 뛰어 혼란스러워 보여 주지 않고, 대신 지금 무엇을 하는지(단계)와 부드럽게 움직이는 진행률을 보여 줍니다.
 
-  // 분석 단계 문구 — 서버(model/inference.py _report, backend prediction_job)의 stage 값.
-  // main 은 '~하는 중'(뒤에 움직이는 점이 붙음), extra 는 그 뒤에 붙는 보조 정보.
+  // 분석 단계 문구입니다. 서버(model/inference.py의 _report, backend prediction_job)의 stage 값에 대응합니다.
+  // main은 '~하는 중'(뒤에 움직이는 점이 붙음), extra는 그 뒤에 붙는 보조 정보입니다.
   const PHASE_TEXT = {
     loading: () => ({ main: "분석 엔진 준비 중" }),
-    decode: () => ({ main: "분석 엔진 준비 중" }),   // 영상 읽기도 준비 과정으로 묶어 따로 알리지 않는다
+    decode: () => ({ main: "분석 엔진 준비 중" }),   // 영상 읽기도 준비 과정으로 묶어 따로 알리지 않습니다.
     motion: () => ({ main: "차량 움직임 계산 중" }),
     coarse: () => ({ main: "영상 전체 훑어보는 중" }),
     refine: (n, i) => ({ main: n > 1 && i ? `의심 구간 ${i}/${n} 자세히 보는 중` : "의심 구간 자세히 보는 중" }),
@@ -1725,8 +1721,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     render: (n, i) => ({ main: n > 1 && i ? `사고 클립 ${i}/${n} 만드는 중` : "사고 클립 만드는 중" }),
   };
 
-  // '~하는 중' 뒤의 점: . → .. → ... → .... 를 0.5초마다 반복한다.
-  // 점 자리는 고정 폭(.phase-dots)이라 점 개수가 바뀌어도 뒤 글자가 흔들리지 않는다.
+  // '~하는 중' 뒤의 점은 1개부터 4개까지 0.5초마다 반복합니다.
+  // 점 자리는 고정 폭(.phase-dots)이라 점 개수가 바뀌어도 뒤 글자가 흔들리지 않습니다.
   const phaseText = (pct, main, extra) => (
     <>
       {pct != null && `${Math.round(pct)}% · `}
@@ -1739,13 +1735,13 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   const jobProgress = (job) => {
     const key = job.taskId ?? job.videoId;
     const hasReal = typeof job.progress === "number" && (job.progress > 0 || !!job.phase);
-    // 단계: 요청(서버 대기열에서 차례를 기다림) → 준비 → 진행(서버가 단계·진행도를 보냄)
-    // 다른 사용자의 작업 정보는 드러내지 않으므로 대기 순번은 보여 주지 않는다.
+    // 단계는 요청(서버 대기열에서 차례를 기다림), 준비, 진행(서버가 단계와 진행률을 보냄) 순입니다.
+    // 다른 사용자의 작업 정보는 드러내지 않으므로 대기 순번은 보여 주지 않습니다.
     const stage = hasReal ? "running" : job.status === "PENDING" ? "queued" : "starting";
 
-    // 진행률(막대·%): 서버 값(2초마다, 소수 첫째 자리) 사이를 최근 진행 속도로 채워 계속 조금씩
-    // 움직이게 한다. 서버 값보다 최대 3%p(약 4초어치)까지만 앞서가고, 뒤로는 가지 않으며,
-    // 서버 값이 크게 뛰어도 0.5초마다 남은 차이의 40%씩 따라가 부드럽게 움직인다.
+    // 진행률(막대, %)은 서버 값(2초마다, 소수 첫째 자리) 사이를 최근 진행 속도로 채워 계속 조금씩 움직이게 합니다.
+    // 서버 값보다 최대 3%p(약 4초어치)까지만 앞서가고, 뒤로는 가지 않으며,
+    // 서버 값이 크게 뛰어도 0.5초마다 남은 차이의 40%씩 따라가 부드럽게 움직입니다.
     const serverP = hasReal ? Math.min(99, job.progress) : 0;
     const sm = progressSmoothRef.current[key]
       || (progressSmoothRef.current[key] = { disp: 0, p: null, at: null, rate: 0, tick: null });
@@ -1768,25 +1764,23 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const pct = hasReal ? sm.disp : 0;
 
     const ph = PHASE_TEXT[job.phase]?.(job.phaseCount, job.phaseIndex) ?? { main: "분석 중" };
-    // 상단 대표 칸: 단계 문구(가운데)와 진행률(맨 오른쪽, pctText)을 따로 보여 준다
+    // 상단 대표 칸에는 단계 문구(가운데)와 진행률(맨 오른쪽, pctText)을 따로 보여 줍니다.
     const statusText =
       stage === "queued" ? phaseText(null, "서버에 분석을 요청하는 중")
         : stage === "starting" ? phaseText(null, "분석 준비 중")
           : phaseText(null, ph.main, ph.extra);
     const pctText = stage === "running" ? `${Math.round(pct)}%` : null;
-    // 서버 병목으로 기다린다는 걸 알리는 게 목적이라, 요청 단계 문구는 줄이지 않는다
+    // 서버 병목으로 기다린다는 것을 알리는 게 목적이라 요청 단계 문구는 줄이지 않습니다.
     const shortText =
       stage === "queued" ? "서버에 분석을 요청하는 중" : stage === "starting" ? "준비 중" : `${Math.round(pct)}%`;
-    // 펼친 목록의 아랫줄 — 윗줄(짧은 칸: %)과 겹치지 않게 단계만
+    // 펼친 목록의 아랫줄은 윗줄(짧은 칸의 %)과 겹치지 않게 단계만 보여 줍니다.
     const detailText =
       stage === "queued" ? "서버의 앞선 분석이 끝나면 자동으로 시작됩니다"
         : stage === "starting" ? phaseText(null, "분석 준비 중") : phaseText(null, ph.main, ph.extra);
     return { pct, preparing: stage !== "running", stage, statusText, pctText, shortText, detailText };
   };
 
-  // 오버레이 div 안에서 실제 영상 콘텐츠가 차지하는 영역(object-fit:contain 레터박스)과
-  // 원본해상도→화면 스케일을 반환. bbox 그리기/클릭 좌표 환산을 이걸로 통일한다.
-  // 화면 좌표(포인터 위치)에 있는 차량 탐지 박스 — 없으면 null
+  // 화면 좌표(포인터 위치)에 있는 차량 탐지 박스를 돌려줍니다. 없으면 null입니다.
   const detectedBoxAt = (e) => {
     const geom = getVideoGeom();
     const el = bboxOverlayRef.current;
@@ -1797,7 +1791,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     return detectedBoxes.find(({ bbox: [x1, y1, x2, y2] }) => realX >= x1 && realX <= x2 && realY >= y1 && realY <= y2) || null;
   };
 
-  // 영상 칸 크기(w, h) → 원본 해상도와의 배율·레터박스 여백. 해상도는 서버가 분석에 쓰는 크기(DB width/height)
+  // 영상 칸 크기(w, h)로 원본 해상도와의 배율과 레터박스 여백을 계산합니다. 해상도는 서버가 분석에 쓰는 크기(DB width, height)입니다.
   const geomFor = (w, h) => {
     const vw = selectedVideo?.width || w;
     const vh = selectedVideo?.height || h;
@@ -1810,20 +1804,20 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
       offsetY: (h - vh * scale) / 2, // 상하 레터박스 여백
     };
   };
-  // 마우스·터치 처리용 — 지금 영상 칸 크기를 직접 잰다
+  // 마우스와 터치 처리용으로, 지금 영상 칸 크기를 직접 잽니다.
   const getVideoGeom = () => {
     const el = bboxOverlayRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return geomFor(rect.width, rect.height);
   };
-  // 그리기용 — ResizeObserver 가 기록한 영상 칸 크기로 계산(크기가 바뀌면 다시 그려진다)
+  // 그리기용으로, ResizeObserver가 기록한 영상 칸 크기로 계산합니다(크기가 바뀌면 다시 그려집니다).
   const renderGeom = overlaySize ? geomFor(overlaySize.w, overlaySize.h) : null;
 
-  // 고른 차량 박스(bboxList)는 원본 영상 해상도 좌표로 저장한다.
-  // 영상 칸 크기가 바뀌어도(창 크기 · 오른쪽 패널 · 영화관 모드 · 전체화면) 그릴 때마다 지금 크기로 바꾸므로
-  // 박스가 영상의 같은 자리에 있고, 분석에 보내는 좌표도 그대로다.
-  // 화면(오버레이) 좌표 → 원본 좌표 (영상 밖 레터박스로 나간 부분은 영상 안으로 자른다)
+  // 고른 차량 박스(bboxList)는 원본 영상 해상도 좌표로 저장합니다.
+  // 영상 칸 크기가 바뀌어도(창 크기, 오른쪽 패널, 영화관 모드, 전체화면) 그릴 때마다 지금 크기로 바꾸므로
+  // 박스가 영상의 같은 자리에 있고, 분석에 보내는 좌표도 그대로입니다.
+  // 화면(오버레이) 좌표를 원본 좌표로 바꿉니다(영상 밖 레터박스로 나간 부분은 영상 안으로 자릅니다).
   const toOrigBox = (x1, y1, x2, y2) => {
     const g = getVideoGeom();
     if (!g) return null;
@@ -1831,7 +1825,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     const oy = (y) => Math.round(Math.min(g.vh, Math.max(0, (y - g.offsetY) / g.scale)));
     return { xmin: ox(x1), ymin: oy(y1), xmax: ox(x2), ymax: oy(y2) };
   };
-  // 원본 좌표 → 지금 영상 칸의 화면 위치
+  // 원본 좌표를 지금 영상 칸의 화면 위치로 바꿉니다.
   const toDispBox = (box) => {
     const g = renderGeom;
     if (!g) return null;
@@ -1843,16 +1837,16 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     };
   };
 
-  // 넓은 화면의 영상 재생 화면에선 버튼 묶음을 왼쪽 칸 맨 위(사고 클립 사이드바 위)에 둔다.
-  // 좁은 화면(1024px 이하)은 한 줄로 쌓여 사이드바가 영상 아래로 가므로 영상 위 헤더에 둔다.
+  // 넓은 화면의 재생 화면에서는 버튼 묶음을 왼쪽 칸 맨 위(사고 클립 사이드바 위)에 둡니다.
+  // 좁은 화면(1024px 이하)은 한 줄로 쌓여 사이드바가 영상 아래로 가므로 영상 위 헤더에 둡니다.
   const isWideScreen = useMediaQuery("(min-width: 1025px)");
   const actionsInSide = isWideScreen && !!selectedVideo;
 
-  // 진행 단계(01 차량 선택 → 02 사고 구간 찾기 → 03 클립 검토).
-  // 넓은 화면(1280px 이상)은 영상 오른쪽 칸 위에 세로로, 그보다 좁으면 작업 헤더 안에 가로로 둔다.
+  // 진행 단계(01 차량 선택, 02 사고 구간 찾기, 03 클립 검토)입니다.
+  // 넓은 화면(1280px 이상)은 영상 오른쪽 칸 위에 세로로, 그보다 좁으면 작업 헤더 안에 가로로 둡니다.
   const isXLScreen = useMediaQuery("(min-width: 1280px)");
-  // 지금 할 단계 하나를 화면 상태로 정한다: 분석 중 → 02, 차량 고르는 중 → 01, 결과 있음 → 03,
-  // 박스만 지정됨 → 02(찾기 차례), 그 외 → 01. 앞 단계는 끝남(✓), 뒤 단계는 아직(흐리게).
+  // 지금 할 단계 하나를 화면 상태로 정합니다. 분석 중이면 02, 차량을 고르는 중이면 01, 결과가 있으면 03,
+  // 박스만 지정됐으면 02(찾기 차례), 그 밖에는 01입니다. 앞 단계는 끝남 표시, 뒤 단계는 흐리게 보여 줍니다.
   const currentStep = !selectedVideo ? 1
     : isAnalyzing ? 2
       : selectionMode !== "none" ? 1
@@ -1860,20 +1854,20 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           : bboxList.length > 0 ? 2
             : 1;
   const selectedVideoJob = selectedVideo ? analyzingJobs.find((j) => j.videoId === selectedVideo.id) : null;
-  // 차량 탐지·직접 지정 중 — 영상 크기·비율이 바뀌면 그리던 박스·탐지 박스 위치가 흔들리므로
-  // 이 동안엔 영상 크기를 바꾸는 기능(영화관 모드·전체화면·오른쪽 패널 열기/닫기)을 쓰지 못하게 한다
+  // 차량 탐지나 직접 지정 중에는 영상 크기와 비율이 바뀌면 그리던 박스와 탐지 박스 위치가 흔들리므로,
+  // 이 동안에는 영상 크기를 바꾸는 기능(영화관 모드, 전체화면, 오른쪽 패널 열고 닫기)을 쓰지 못하게 합니다.
   const isChoosingVehicle = selectionMode !== "none" || isDetectingVehicles;
-  // ── 빨간 구간에서 CAM 클립 겹쳐 보기 ─────────────────────────────
-  // 원본 영상·재생바는 그대로 두고, 재생 위치가 빨간 구간 안이면 그 구간의 CAM 클립을 원본과 같은 시각에 맞춰
-  // 영상 그림 위에 겹친다. 지금 나올 클립과 3초 안에 바뀌어 나올 클립을 미리 불러 같은 시각에 맞춰 둔다.
-  // 차량을 고르는 동안엔 원본 화면에서 골라야 하므로 겹치지 않는다
+  // 빨간 구간에서 CAM 클립 겹쳐 보기
+  // 원본 영상과 재생바는 그대로 두고, 재생 위치가 빨간 구간 안이면 그 구간의 CAM 클립을 원본과 같은 시각에 맞춰
+  // 영상 그림 위에 겹칩니다. 지금 나올 클립과 3초 안에 바뀌어 나올 클립을 미리 불러 같은 시각에 맞춰 둡니다.
+  // 차량을 고르는 동안에는 원본 화면에서 골라야 하므로 겹치지 않습니다.
   const camEnabled = clipView === "cam" && !isChoosingVehicle;
   const camShown = camEnabled && selectedVideo
     ? clipEventsAhead(selectedVideo.events, currentTime, currentEventId, 3) : [];
   const camKey = camShown.map((e) => e.id).join(",");
 
-  // 원본 재생에 맞춰 CAM 클립들의 위치·재생/멈춤·속도를 맞추고, 지금 나올 클립 하나만 보이게 한다.
-  // 재생 중엔 화면을 그릴 때마다 확인해 구간 경계에서 바로 바뀐다(timeupdate 는 약 0.25초 간격이라 늦다)
+  // 원본 재생에 맞춰 CAM 클립들의 위치, 재생과 멈춤, 속도를 맞추고 지금 나올 클립 하나만 보이게 합니다.
+  // 재생 중에는 화면을 그릴 때마다 확인해 구간 경계에서 바로 바뀝니다(timeupdate는 약 0.25초 간격이라 늦습니다).
   useEffect(() => {
     const main = videoElRef.current;
     const overlay = bboxOverlayRef.current;
@@ -1894,7 +1888,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         const local = main.currentTime - ev.clipStartSec;   // 클립 안 재생 위치
         const inClip = local >= 0 && local < (cam.duration || 0);
         if (inClip) {
-          // 재생 중엔 조금(0.12초) 어긋날 때만 맞춘다 — 자꾸 맞추면 오히려 끊긴다. 멈춰 있으면 정확히
+          // 재생 중에는 조금(0.12초) 이상 어긋날 때만 맞춥니다. 자주 맞추면 오히려 끊깁니다. 멈춰 있으면 정확히 맞춥니다.
           if (Math.abs(cam.currentTime - local) > (main.paused ? 0.01 : 0.12)) cam.currentTime = local;
           if (cam.playbackRate !== main.playbackRate) cam.playbackRate = main.playbackRate;
           if (!main.paused && cam.paused) cam.play().catch(() => {});
@@ -1903,10 +1897,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           cam.pause();
         }
         const show = now?.id === ev.id && inClip && cam.readyState >= 2;
-        layer.classList.toggle("shown", show);   // 0.25초 동안 서서히 나타나고 사라진다(App.css)
+        layer.classList.toggle("shown", show);   // 0.25초 동안 서서히 나타나고 사라집니다(App.css).
         if (show) shown = ev;
       });
-      // 어느 분석의 클립이 보이는지는 영상 밖(컨트롤 줄)에 — 영상 위에 쓰면 CCTV 날짜·시각 글자를 가린다
+      // 어느 분석의 클립이 보이는지는 영상 밖(컨트롤 줄)에 씁니다. 영상 위에 쓰면 CCTV 날짜와 시각 글자를 가리기 때문입니다.
       if (chip) {
         chip.hidden = !shown;
         if (shown) chip.textContent = shown.analysisNo != null ? `분석 #${shown.analysisNo} 충돌 표시` : "충돌 표시";
@@ -1942,8 +1936,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
   // 분석 이력에서 고른 분석의 클립이 아직 남아 있으면 '강조 중' (클립을 다 지우면 저절로 풀림)
   const isHighlighting = !!selectedVideo && highlightAnalysisNo != null
     && selectedVideo.events.some((e) => e.analysisNo === highlightAnalysisNo);
-  // 왼쪽 클립 목록 순서: 최근 분석이 위, 같은 분석 안에서는 영상 시각 순(사용자 요청 2026-10-27).
-  // 재생바의 빨간 구간은 서버 순서 그대로 둔다 — 겹친 구간은 나중에 그린 최근 분석이 위에 와서 눌린다
+  // 왼쪽 클립 목록 순서는 최근 분석이 위, 같은 분석 안에서는 영상 시각 순입니다.
+  // 재생바의 빨간 구간은 서버 순서 그대로 둡니다. 겹친 구간은 나중에 그린 최근 분석이 위에 와서 눌립니다.
   const listedEvents = selectedVideo
     ? [...selectedVideo.events].sort((a, b) => (b.analysisNo ?? 0) - (a.analysisNo ?? 0) || a.startSec - b.startSec)
     : [];
@@ -1976,9 +1970,8 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
     </ol>
   ) : null;
 
-  // 영상 재생 화면의 차량 탐지 · 직접 차량 지정 · 사고감지 실행 버튼 묶음.
-  // 차량 탐지 버튼은 상태에 따라 세 가지로 바뀐다:
-  // 탐지 전 '차량 탐지' → 탐지 중 '탐지 취소' → 탐지 후 차량을 고르는 동안 '차량 선택 종료'
+  // 재생 화면의 차량 탐지, 직접 차량 지정, 사고 감지 실행 버튼 묶음입니다.
+  // 차량 탐지 버튼은 상태에 따라 '차량 탐지', 탐지 중 '탐지 취소', 탐지 뒤 차량을 고르는 동안 '차량 선택 종료'로 바뀝니다.
   const watchActionButtons = selectedVideo ? (
     <div className="watch-header-actions">
       <button
@@ -1993,15 +1986,15 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         {isDetectingVehicles ? "🛑 탐지 취소" : selectionMode === "auto" ? "차량 선택 종료" : "차량 탐지"}
       </button>
 
-      {/* 직접 차량 지정 + 지정 모드 안내 말풍선(버튼 위로 떠서 상단 바의 빈 곳에 겹쳐 뜬다 — 아무것도 밀어내지 않음) */}
+      {/* 직접 차량 지정 버튼과 지정 모드 안내 말풍선입니다(버튼 위로 떠서 상단 바의 빈 곳에 겹쳐 뜨며 아무것도 밀어내지 않습니다). */}
       <div className="designate-btn-wrapper">
         <button
           className={`bbox-designate-btn ${selectionMode === "manual" ? "active" : ""}`}
-          disabled={isAnalyzing || isDetectingVehicles} /* 분석 중 · 차량 자동 탐지 중엔 누를 수 없다 */
+          disabled={isAnalyzing || isDetectingVehicles} /* 분석 중이거나 차량 자동 탐지 중에는 누를 수 없습니다. */
           onClick={() => {
             if (selectionMode === "manual") {
-              // '직접 지정 종료'는 모드만 끝낸다 — 그린 박스는 남는다(차량 탐지로 고른 박스와 같게).
-              // 지우려면 박스에 마우스를 올려 ✕
+              // '직접 지정 종료'는 모드만 끝내고 그린 박스는 남깁니다(차량 탐지로 고른 박스와 같게).
+              // 지우려면 박스에 마우스를 올려 X 버튼을 누릅니다.
               handleEndDesignateMode();
             } else {
               handleStartManualDesignate();
@@ -2141,7 +2134,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                             <div className="analysis-job-top">
                               <span className="analysis-job-name">
                                 {(() => {
-                                  // 같은 날짜 영상이 여럿이면 '녹화본 #N' 으로 구분해 보여준다
+                                  // 같은 날짜 영상이 여럿이면 '녹화본 #N'으로 구분해 보여 줍니다.
                                   const v = videos.find((x) => x.id === job.videoId);
                                   return v ? getVideoDisplayTitle(v, videos) : job.dateLabel;
                                 })()}
@@ -2344,7 +2337,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           </div>
 
 
-          {/* 영상 썸네일 그리드 — 열 수는 CSS 가 화면 폭에 맞춰 정하고, 한 페이지 개수가 그 열 수를 따른다 */}
+          {/* 영상 썸네일 그리드입니다. 열 수는 CSS가 화면 폭에 맞춰 정하고, 한 페이지 개수가 그 열 수를 따릅니다. */}
           <div className="video-grid" ref={setVideoGridEl}>
             {filteredVideos.length === 0 ? (
               <div className="empty-state">선택한 기간에 해당하는 영상이 없습니다.</div>
@@ -2368,7 +2361,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         loading="lazy"
                         onError={(e) => { e.currentTarget.style.display = "none"; }}
                       />
-                      {/* 왼쪽 아래 녹화일자(제목을 따로 넣으면 언제 찍었는지 모르니) · 오른쪽 아래 의심 구간 수 */}
+                      {/* 왼쪽 아래는 녹화일(제목을 따로 넣으면 언제 찍었는지 모르므로), 오른쪽 아래는 의심 구간 수입니다. */}
                       {video.date && <span className="recording-date-badge">{video.date}</span>}
                       <span className="event-count-badge">의심 구간 {video.events.length}건</span>
                       {deleteMode && (
@@ -2381,7 +2374,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       <div className="video-info-text">
                         <h3>{getVideoDisplayTitle(video, videos)}</h3>
                         <p>영상 길이: {formatTime(video.duration)}</p>
-                        {/* 보관 기간 — 지나면 영상과 분석 클립이 함께 지워진다. 7일 이하는 강조 */}
+                        {/* 보관 기간입니다. 지나면 영상과 분석 클립이 함께 지워지며, 7일 이하는 강조합니다. */}
                         {video.expiresInDays != null && (
                           <p
                             className={`video-expiry ${video.expiresInDays <= 7 ? "soon" : ""}`}
@@ -2391,7 +2384,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                           </p>
                         )}
                       </div>
-                      {/* ··· 메뉴: 영상 정보 확인(giwon 정보 팝업 — 업로드 일시 등 포함) / 영상 삭제 */}
+                      {/* 점 세 개 메뉴: 영상 정보 확인(업로드 일시 등이 담긴 정보 팝업), 영상 삭제 */}
                       {!deleteMode && <VideoCardActions video={video} title={getVideoDisplayTitle(video, videos)} onShowInfo={() => setInfoVideo(video)} onDeleted={(id) => {
                         setVideos((previous) => previous.filter((video) => video.id !== id));
                         setSelectedForDelete((previous) => previous.filter((videoId) => videoId !== id));
@@ -2407,7 +2400,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
           {/* 페이지네이션 (영상 개수가 6개를 초과할 때 노출) */}
           {filteredVideos.length > VIDEOS_PER_PAGE && (
             <div className="pagination-bar">
-              {/* 버튼 묶음은 화면 가운데, 페이지 정보는 그 오른쪽 — 정보 글자 때문에 버튼이 왼쪽으로 밀리지 않게 */}
+              {/* 버튼 묶음은 화면 가운데, 페이지 정보는 그 오른쪽에 둡니다. 정보 글자 때문에 버튼이 왼쪽으로 밀리지 않게 하려는 것입니다. */}
               <div className="pagination-controls">
                 <button
                   className="pagination-btn pagination-nav"
@@ -2466,8 +2459,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         <main className={`watch-view ${isTheaterMode ? "theater-view" : ""}`}>
           {!isTheaterMode && <section className="incident-workspace-header">
             <div className="incident-workspace-top"><div><button className="incident-back" onClick={handleBackToHome}>← 영상 보관함</button><h1>{getVideoDisplayTitle(selectedVideo, videos)}</h1></div>
-              {/* 오른쪽 패널(진행 단계·분석 이력) 열기·닫기 — 닫으면 그 칸이 빠지고 영상이 넓어진다(넓은 화면만).
-                  영상 크기가 바뀌므로 차량을 고르는 중엔 막는다 */}
+              {/*
+                 오른쪽 패널(진행 단계, 분석 이력) 열기와 닫기입니다. 닫으면 그 칸이 빠지고 영상이 넓어집니다(넓은 화면만).
+                 영상 크기가 바뀌므로 차량을 고르는 중에는 막습니다.
+              */}
               {isXLScreen && (
                 <button
                   className="panel-toggle-btn"
@@ -2477,7 +2472,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                   title={isChoosingVehicle ? "차량을 고르는 중에는 쓸 수 없습니다"
                     : isHistoryOpen ? "진행 단계·분석 이력 패널을 닫고 영상을 넓게 봅니다" : "진행 단계·분석 이력 패널을 엽니다"}
                 >
-                  {/* 오른쪽 패널 모양 아이콘 — 열려 있으면 오른쪽 칸이 칠해지고, 닫혀 있으면 빈 칸 */}
+                  {/* 오른쪽 패널 모양 아이콘입니다. 열려 있으면 오른쪽 칸이 칠해지고, 닫혀 있으면 빈 칸입니다. */}
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
                     <rect x="3" y="4.5" width="18" height="15" rx="1.5" />
                     <path d="M15 4.5v15" />
@@ -2490,8 +2485,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             {!isXLScreen && workflowSteps}
           </section>}
 
-          {/* 좁은 화면(1024px 이하): 영상 위 헤더에 버튼 묶음.
-              넓은 화면은 헤더 줄 없이 영상을 맨 위로 — 버튼은 왼쪽 칸 맨 위에 둔다 */}
+          {/*
+             좁은 화면(1024px 이하)은 영상 위 헤더에 버튼 묶음을 둡니다.
+             넓은 화면은 헤더 줄 없이 영상을 맨 위에 두고 버튼은 왼쪽 칸 맨 위에 둡니다.
+          */}
           {!actionsInSide && (
             <div className="watch-header">
               <div className="watch-header-right">
@@ -2505,10 +2502,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
             <div className="watch-side">
               {actionsInSide && watchActionButtons}
               <aside className={`event-sidebar ${isHighlighting ? "highlighting" : ""}`}>
-                {/* 머리말: 윗줄 제목 + 버튼(가운데 맞춤), 아랫줄 건수 안내(가로 전체 — 버튼 때문에 줄바꿈되지 않게) */}
+                {/* 머리말: 윗줄은 제목과 버튼(가운데 맞춤), 아랫줄은 건수 안내(버튼 때문에 줄이 바뀌지 않게 가로 전체)입니다. */}
                 <div className="event-sidebar-header">
                   <h3>사고 의심 구간</h3>
-                  {/* 전체 삭제 (목록 닫기(×)는 사용자 요청으로 뺐다, 2026-10-27) */}
+                  {/* 전체 삭제 */}
                   <div className="event-header-actions">
                     {selectedVideo.events.length > 0 && (
                       <button
@@ -2535,7 +2532,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                             ? ""
                             : event.analysisNo === highlightAnalysisNo ? "analysis-highlight" : "analysis-dim"
                         }`}
-                        /* 누르면 그 구간으로 이동해 재생 — 같은 시각에 여러 분석의 클립이 겹치면 이 클립이 메인 화면에 나온다 */
+                        /* 누르면 그 구간으로 이동해 재생합니다. 같은 시각에 여러 분석의 클립이 겹치면 이 클립이 메인 화면에 나옵니다. */
                         onClick={() => seekToEvent(event)}
                       >
                         <div className="event-item-top">
@@ -2558,7 +2555,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                               aria-label={`${formatTime(event.timestamp)} 사고구간 클립 재생`}
                               title="사고 구간 클립을 봅니다"
                             >
-                              {/* 글자 ▶ 는 글꼴마다 모양이 다르고 macOS·iOS 에선 이모지(▶️)로 바뀌어 SVG 로 그린다 */}
+                              {/* 재생 삼각형 글자는 글꼴마다 모양이 다르고 macOS, iOS에서는 이모지로 바뀌어 SVG로 그립니다. */}
                               <PlayerIcon name="play" size={14} />
                             </button>
                             <button
@@ -2653,7 +2650,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
             {/* 우측/중앙: 메인 비디오 플레이어 */}
             <section className="player-section">
-              {/* 마지막 분석이 실패·중단됐으면 같은 차량 박스로 다시 실행하도록 안내 */}
+              {/* 마지막 분석이 실패하거나 중단됐으면 같은 차량 박스로 다시 실행하도록 안내합니다. */}
               {!isAnalyzing && selectedVideo?.lastTask?.status === "FAILURE" && (
                 <div
                   className="analysis-failed-banner"
@@ -2682,11 +2679,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                       ? `${selectedVideo.width} / ${selectedVideo.height}`
                       : "16 / 9",
                   }}
-                  /* 박스 그리기·차량 고르기는 pointer 이벤트 — 마우스·터치(폰·태블릿)·펜 모두 같은 코드로 동작 */
+                  /* 박스 그리기와 차량 고르기는 pointer 이벤트로 처리해 마우스, 터치(폰, 태블릿), 펜 모두 같은 코드로 동작합니다. */
                   onPointerDown={(e) => {
                     if (!isBBoxMode) return;
-                    if (e.target.closest("button")) return; // 박스 ✕ 등 버튼을 누를 땐 그리기를 시작하지 않는다
-                    // 터치에는 hover 가 없으니 누른 위치의 박스를 바로 찾는다
+                    if (e.target.closest("button")) return; // 박스의 X 버튼 등을 누를 때는 그리기를 시작하지 않습니다.
+                    // 터치에는 hover가 없으니 누른 위치의 박스를 바로 찾습니다.
                     const picked = selectionMode === "auto" ? hoveredDetectedBox || detectedBoxAt(e) : null;
                     if (selectionMode === "auto" && picked) {
                       const [x1, y1, x2, y2] = picked.bbox; // 탐지 결과는 이미 원본 해상도 좌표
@@ -2696,7 +2693,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     }
                     if (selectionMode === "manual") {
                       e.preventDefault();
-                      // 손가락·마우스가 영상 밖으로 나가도 끝까지 따라가게 포인터를 붙잡는다
+                      // 손가락이나 마우스가 영상 밖으로 나가도 끝까지 따라가도록 포인터를 붙잡습니다.
                       e.currentTarget.setPointerCapture?.(e.pointerId);
                       const rect = bboxOverlayRef.current.getBoundingClientRect();
                       const x = Math.round(e.clientX - rect.left);
@@ -2718,7 +2715,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
                     if (selectionMode === "auto" && detectedBoxes.length > 0 && getVideoGeom()) {
                       const { scale, offsetX, offsetY } = getVideoGeom();
-                      // 화면(오버레이) 좌표 → 레터박스 여백 제거 → 원본 해상도 좌표
+                      // 화면(오버레이) 좌표에서 레터박스 여백을 빼고 원본 해상도 좌표로 바꿉니다.
                       const realX = (e.clientX - rect.left - offsetX) / scale;
                       const realY = (e.clientY - rect.top - offsetY) / scale;
 
@@ -2751,7 +2748,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     }
                   }}
                   onPointerCancel={() => {
-                    // 시스템 제스처 등으로 끊기면 그리던 박스는 버린다
+                    // 시스템 제스처 등으로 끊기면 그리던 박스는 버립니다.
                     setCurrentDraw(null);
                     setIsDrawing(false);
                   }}
@@ -2781,17 +2778,17 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     controls={false}
 
                     onPlay={(e) => {
-                      // 키보드 미디어 키·브라우저/OS 미디어 조작으로 재생돼도 탐지 중이면 바로 멈춘다
+                      // 키보드 미디어 키나 브라우저, OS 미디어 조작으로 재생돼도 탐지 중이면 바로 멈춥니다.
                       if (isDetectingVehicles) {
                         e.currentTarget.pause();
                         return;
                       }
-                      // 탐지 박스는 탐지한 순간의 화면 기준이라 재생하면 어긋난다 → 자동 탐지 모드를 끝낸다(고른 박스는 남는다)
+                      // 탐지 박스는 탐지한 순간의 화면 기준이라 재생하면 어긋나므로 자동 탐지 모드를 끝냅니다(고른 박스는 남습니다).
                       if (selectionMode === "auto") handleEndDesignateMode();
                       setIsPlaying(true);
                     }}
                     onSeeking={() => {
-                      // 다른 장면으로 옮겨도(재생바·사고 의심 구간) 마찬가지
+                      // 다른 장면으로 옮겨도(재생바, 사고 의심 구간) 마찬가지입니다.
                       if (selectionMode === "auto" && !isDetectingVehicles) handleEndDesignateMode();
                     }}
                     onPause={() => setIsPlaying(false)}
@@ -2814,8 +2811,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     }}
                   />
 
-                  {/* 빨간 구간의 CAM 클립 — 영상 그림 영역에 딱 맞춰 겹친다(보이기는 위 동기화가 재생 시각마다 정한다).
-                      클립 아래의 S/A 상태 띠는 칸 밖으로 넘쳐 가려지고, 상태는 박스 색(사고 빨강·정상 초록)으로 보인다 */}
+                  {/*
+                     빨간 구간의 CAM 클립을 영상 그림 영역에 딱 맞춰 겹칩니다(보일지는 위 동기화 코드가 재생 시각마다 정합니다).
+                     클립 아래의 S/A 상태 띠는 칸 밖으로 넘쳐 가려지고, 상태는 박스 색(사고 빨강, 정상 초록)으로 보입니다.
+                  */}
                   {camShown.map((ev) => (
                     <div
                       key={ev.id}
@@ -2843,15 +2842,17 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
 
                   {/* 저장된 바운딩 박스 렌더링 (단일 박스) */}
                   {bboxList.map((box) => {
-                    const d = toDispBox(box); // 원본 좌표 → 지금 영상 칸 위치(크기가 바뀌면 다시 그려 따라간다)
+                    const d = toDispBox(box); // 원본 좌표를 지금 영상 칸 위치로 바꿉니다(크기가 바뀌면 다시 그려 따라갑니다).
                     return d && (
                     <div
                       key={box.id}
                       className={`bbox-drawn ${isBBoxMode ? "editing" : ""}`}
                       style={{ left: d.left, top: d.top, width: d.width, height: d.height }}
                     >
-                      {/* 삭제(✕): 직접 지정 중엔 늘 보이고, 그 밖엔(차량 탐지로 고른 뒤 모드를 끝내도) 박스에 마우스를 올리면 보인다.
-                          분석 중엔 숨긴다 — 분석은 시작할 때의 박스로 돌기 때문 */}
+                      {/*
+                         삭제(X) 버튼은 직접 지정 중에는 늘 보이고, 그 밖에는(차량 탐지로 고른 뒤 모드를 끝내도) 박스에 마우스를 올리면 보입니다.
+                         분석은 시작할 때의 박스로 돌기 때문에 분석 중에는 숨깁니다.
+                      */}
                       {!isAnalyzing && (
                         <button
                           className="bbox-delete-btn"
@@ -2886,7 +2887,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     );
                   })()}
 
-                  {/* YOLO 자동 탐지 모드: 탐지된 모든 bbox를 항상 표시 (진단용 #번호·클래스·신뢰도) */}
+                  {/* YOLO 자동 탐지 모드에서는 탐지된 박스를 모두 표시합니다(번호, 클래스, 신뢰도). */}
                   {selectionMode === "auto" && detectedBoxes.length > 0 && renderGeom && (() => {
                     const { scale, offsetX, offsetY } = renderGeom;
                     return detectedBoxes.map((box) => {
@@ -2960,7 +2961,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         style={{ width: `${playerDuration ? Math.min(100, (currentTime / playerDuration) * 100) : 0}%` }}
                       />
 
-                      {/* 사고 의심 구간 (빨간 구간) — 누르면 그 시점부터 재생 */}
+                      {/* 사고 의심 구간(빨간 구간)입니다. 누르면 그 시점부터 재생합니다. */}
                       {playerDuration > 0 &&
                         selectedVideo.events.map((event) => {
                           const start = event.startSec ?? event.timestamp;
@@ -3037,8 +3038,10 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                     <span className="cam-now-chip" ref={camChipRef} hidden />
 
                     <div className="right-controls">
-                      {/* 빨간 구간에서 보일 화면 — 원본 / 충돌 표시(CAM 클립: AI 가 충돌로 본 부위를 색으로 칠함).
-                          일반 사용자에게 '히트맵'·'CAM' 은 와닿지 않아 화면에는 '충돌 표시'라고 쓴다 */}
+                      {/*
+                         빨간 구간에서 보일 화면을 원본과 충돌 표시(CAM 클립: AI가 충돌로 본 부위를 색으로 칠함) 중에서 고릅니다.
+                         일반 사용자에게 '히트맵', 'CAM'은 와닿지 않아 화면에는 '충돌 표시'라고 씁니다.
+                      */}
                       {selectedVideo.events.some((e) => e.hasClip && e.clipStartSec != null) && (
                         <div className="clip-view-toggle" role="group" aria-label="사고 구간 화면">
                           <button
@@ -3074,7 +3077,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
                         <option value="1.5">1.5x</option>
                         <option value="2">2x</option>
                       </select>
-                      {/* 전체화면에선 영화관 모드가 의미 없어 숨긴다 */}
+                      {/* 전체화면에서는 영화관 모드가 의미 없어 숨깁니다. */}
                       {!isFullscreen && (
                         <button
                           className={`control-btn ${isTheaterMode ? "active" : ""}`}
@@ -3103,9 +3106,11 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
               </div>
             </section>
 
-            {/* 오른쪽 패널: (1280px 이상) 진행 단계 + 이 영상의 분석 이력. 넓은 화면에서 닫으면(헤더의 '패널 닫기') 칸 폭이
-                0.3초 동안 0 으로 줄며 사라진다(App.css) — 그동안 보이도록 닫혀도 화면에서 빼지 않고, 대신 inert 로
-                보이지 않는 버튼에 Tab·클릭이 가지 않게 한다. 좁은 화면에선 영상 아래에 늘 보인다(영상 크기와 상관없음) */}
+            {/*
+               오른쪽 패널: (1280px 이상) 진행 단계와 이 영상의 분석 이력입니다. 넓은 화면에서 닫으면 칸 폭이 0.3초 동안 0으로 줄며 사라집니다(App.css).
+               그동안 보이도록 닫혀도 화면에서 빼지 않고, 대신 inert로 보이지 않는 버튼에 Tab과 클릭이 가지 않게 합니다.
+               좁은 화면에서는 영상 아래에 늘 보입니다(영상 크기와 상관없음).
+            */}
             <div className="watch-right" inert={isXLScreen && !isHistoryOpen} aria-hidden={isXLScreen && !isHistoryOpen ? true : undefined}>
               {isXLScreen && workflowSteps}
               <AnalysisHistoryPanel
@@ -3306,7 +3311,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         <div className={`app-toast app-toast-${toast.type}`}>{toast.message}</div>
       )}
 
-      {/* 영상 정보 팝업 (영상 목록 카드의 ⋮) — 화면 가운데, Esc·바깥 클릭·닫기로 닫힘 */}
+      {/* 영상 정보 팝업(영상 목록 카드의 점 세 개 메뉴)입니다. 화면 가운데에 뜨고 Esc, 바깥 클릭, 닫기로 닫힙니다. */}
       {infoVideo && (() => {
         const v = infoVideo;
         const up = formatAnalyzedAt(v.uploadedAt);
@@ -3353,7 +3358,7 @@ function Dashboard({ onLogout, view, currentUser, onUpdateUser }) {
         );
       })()}
 
-      {/* 사고 클립 삭제 확인 (1건 · 전체) — 화면 가운데. 기본 초점은 '취소'(Enter 실수로 지우지 않게), Esc·바깥 클릭으로 닫힘 */}
+      {/* 사고 클립 삭제 확인(하나, 전체)입니다. 화면 가운데에 뜨며, 기본 초점은 '취소'라 Enter 실수로 지우지 않습니다. Esc와 바깥 클릭으로 닫힙니다. */}
       {(pendingDeleteEvent || pendingClearAll) && (() => {
         const isAll = pendingClearAll;
         const closeConfirm = () => {
@@ -3521,7 +3526,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
       id: `${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
       file,
       recordingDate: todayStr,
-      title: "", // 선택 — 비우면 '녹화일 녹화본 #N'
+      title: "", // 선택 항목입니다. 비우면 '녹화일 녹화본 #N'으로 보입니다.
     }));
     setFilesList((prev) => [...prev, ...items]);
   };
@@ -3641,7 +3646,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
           <div className="upload-file-list-container">
             <div className="upload-file-list-toolbar">
               <span className="file-count-badge">선택된 영상: <strong>{filesList.length}개</strong></span>
-              {/* 파일 추가는 목록 아래 끌어다 놓기 칸(클릭해도 선택)으로 한다 */}
+              {/* 파일 추가는 목록 아래 끌어다 놓기 칸(눌러도 선택)으로 합니다. */}
               <div className="file-toolbar-actions">
                 <button
                   type="button"
@@ -3699,7 +3704,7 @@ function UploadModal({ onClose, onUploaded, onError }) {
                     ✕
                   </button>
 
-                  {/* 제목(선택) — 파일 이름·녹화일자 줄 아래 한 줄 */}
+                  {/* 제목(선택)은 파일 이름과 녹화일 줄 아래 한 줄에 둡니다. */}
                   <div className="file-item-title-group">
                     <label htmlFor={`upload-title-${item.id}`}>제목:</label>
                     <input
@@ -3819,8 +3824,8 @@ function RequireAuth({ children }) {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
   const [user, setUser] = useState(() => !!getToken());
-  // 로그인돼 있으면 화면을 그리기 전에 세션부터 연다 — 영상·썸네일·클립은 이때 받는
-  // 쿠키로 열리므로(헤더를 못 싣는 <video>·<img>), 먼저 그리면 첫 썸네일이 막힌다
+  // 로그인돼 있으면 화면을 그리기 전에 세션부터 엽니다. 영상, 썸네일, 클립은 이때 받는 쿠키로 열리므로
+  // (헤더를 실을 수 없는 <video>, <img>) 먼저 그리면 첫 썸네일이 막힙니다.
   const [sessionReady, setSessionReady] = useState(() => !getToken());
 
   useEffect(() => {
@@ -3828,7 +3833,7 @@ export default function App() {
     api.startSession().then((u) => {
       setCurrentUser(u);
       saveAuth(getToken(), u);
-    }).catch(() => { })   // 만료(401)면 api.js 가 로그인 화면으로 보낸다
+    }).catch(() => { })   // 만료(401)면 api.js가 로그인 화면으로 보냅니다.
       .finally(() => setSessionReady(true));
   }, []);
 
@@ -3838,7 +3843,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    api.logout().catch(() => { });   // 영상 쿠키도 지운다
+    api.logout().catch(() => { });   // 영상 쿠키도 지웁니다.
     clearAuth();
     setCurrentUser(null);
     setUser(false);
