@@ -61,7 +61,7 @@ class LocalObjectStorage:
 
 
 class S3ObjectStorage:
-    # Replace the pool before idle network connections become unusable.
+    # 오래 쉬어 네트워크 연결이 끊기기 전에 연결 풀을 교체합니다.
     CLIENT_MAX_IDLE_SECONDS = 120
 
     def __init__(
@@ -110,7 +110,7 @@ class S3ObjectStorage:
                 old_client = self.client
                 self.client = self._new_client()
                 self._last_network_use = now
-                # No operation can still be using this pool, including transfers.
+                # 전송을 포함해 이 풀을 사용하는 작업이 모두 끝났을 때만 닫습니다.
                 old_client.close()
             client = self.client
             self._active_operations += 1

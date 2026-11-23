@@ -27,7 +27,7 @@ from app.settings import settings, auth_secret_key
 # ── 비밀번호 ───────────────────────────────────────────────────────────
 # PBKDF2-SHA256, 사용자마다 다른 소금(16바이트), 60만 회(OWASP 2023 권장).
 # 저장 형식: pbkdf2_sha256$회수$소금hex$해시hex
-# 예전 형식(소금 없는 SHA-256 hex)도 확인은 해 주고, 로그인에 성공하면 새 형식으로 바꿔 둔다.
+# 소금 없는 SHA-256 형식도 확인해 주고, 로그인에 성공하면 새 형식으로 바꿔 둡니다.
 _PBKDF2_PREFIX = "pbkdf2_sha256"
 _PBKDF2_ITERATIONS = 600_000
 
@@ -67,7 +67,7 @@ def burn_password_check(password: str) -> None:
     verify_password(password, _dummy_hash())
 
 
-# ── 로그인 토큰 ─────────────────────────────────────────────────────────
+# 로그인 토큰
 _JWT_ALG = "HS256"
 _MEDIA_SCOPE = "media"
 MEDIA_COOKIE = "siot_media"
@@ -96,7 +96,7 @@ def _unauthorized(detail: str) -> HTTPException:
 
 def _decode(token: str) -> dict:
     try:
-        # 알고리즘을 고정해 'alg' 바꿔치기 공격을 막고, 만료·대상 필드를 필수로 요구한다
+        # 알고리즘을 고정해 'alg' 바꿔치기 공격을 막고, 만료와 대상 필드를 필수로 요구합니다.
         payload = jwt.decode(token, auth_secret_key(), algorithms=[_JWT_ALG],
                              options={"require": ["exp", "sub"]})
         int(payload["sub"])

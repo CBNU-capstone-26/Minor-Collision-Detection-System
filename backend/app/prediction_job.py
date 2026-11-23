@@ -14,7 +14,7 @@ from app import db_models
 from app.object_storage import get_storage, materialize
 from app.file_cleanup import queue_cleanup, try_pending_cleanup
 
-# 워커 프로세스당 모델 1회 로드 후 재사용
+# 워커 프로세스마다 모델을 한 번 불러와 재사용합니다.
 _model = None
 
 

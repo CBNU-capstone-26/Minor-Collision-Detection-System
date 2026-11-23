@@ -79,7 +79,7 @@ body.dark-mode .dashboard-layout .sidebar-calendar-container .calendar-day.selec
 body.dark-mode .dashboard-layout .analysis-status-box:not(.analysis-status-idle) { box-shadow: none; }
 body.dark-mode .dashboard-layout .analysis-jobs-dropdown { border-color: var(--incident-line); background: var(--incident-surface); }
 
-/* 클립 항목 왼쪽 주황 강조선 — 위 'border' 재적용이 왼쪽 선까지 덮지 않게 다크에서도 유지 */
+/* 클립 항목 왼쪽 주황 강조선입니다. 위 border 재적용이 왼쪽 선까지 덮지 않도록 다크 모드에서도 유지합니다. */
 body.dark-mode .dashboard-layout .event-item { border-left: 3px solid #db9a58; }
 
 /* Mobile video review: keep titles, controls and review steps readable at narrow widths. */

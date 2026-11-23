@@ -338,7 +338,7 @@ def purge_video(video: db_models.Video, db: Session) -> None:
     for ev in events:
         db.delete(ev)
 
-    # 2) analysis_tasks 행 삭제
+    # 2) analysis_tasks 행을 지웁니다.
     for task in db.query(db_models.AnalysisTask).filter(
             db_models.AnalysisTask.video_id == video.id).all():
         db.delete(task)
@@ -362,7 +362,7 @@ def purge_video(video: db_models.Video, db: Session) -> None:
     queue_cleanup(db, thumbnail_key(video.video_path), video.video_path, 'video')
     queue_cleanup(db, video.video_path, video.video_path, 'video', cleanup_kind='cache')
 
-    # 4) 영상 행 삭제
+    # 4) 영상 행을 지웁니다.
     db.delete(video)
 
 
@@ -471,7 +471,7 @@ def detect_vehicles_in_video(
     if not storage.exists(video.video_path):
         raise HTTPException(status_code=404, detail="영상 파일이 없습니다.")
 
-    # 차량 탐지 모듈은 지연 임포트 — ultralytics/torch를 웹 프로세스 시작 시 로드하지 않도록.
+    # 차량 탐지 모듈은 필요할 때 불러와, 웹 프로세스가 시작할 때 ultralytics와 torch를 올리지 않게 합니다.
     try:
         from app.vehicle_detector import get_detector, read_source_frame
     except Exception as err:

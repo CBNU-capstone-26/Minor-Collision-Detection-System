@@ -52,12 +52,12 @@ class BalancedBatchSampler(Sampler):
         self.seed = int(seed)
         self.epoch = 0
         empty = np.asarray(s_empty_pos, dtype=np.int64)
-        # 빈 장면은 한 번 정한 순서에서 에포크마다 다음 구간을 잘라 쓴다(끝에 닿으면 처음으로)
+        # 빈 장면은 한 번 정한 순서에서 에포크마다 다음 구간을 잘라 씁니다(끝에 닿으면 처음으로 돌아갑니다).
         self.empty_order = np.random.RandomState(seed).permutation(empty)
         self.k_empty = (len(empty) if empty_keep >= 1
                         else int(round(len(empty) * max(0.0, float(empty_keep)))))
 
-    # 에포크당 개수 — 에포크마다 같다
+    # 에포크당 개수(에포크마다 같습니다)
     def counts(self):
         n_s = len(self.s_move) + self.k_empty
         n = len(self.a) + n_s

@@ -185,7 +185,7 @@ button {
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
   display: grid;
-  /* 가운데(분석 진행 칸)를 넓게 — 왼쪽은 로고, 오른쪽은 프로필 버튼뿐이라 좌우를 같게 둬 가운데 칸이 화면 중앙에 온다 */
+  /* 가운데(분석 진행 칸)를 넓게 둡니다. 왼쪽은 로고, 오른쪽은 프로필 버튼뿐이라 좌우를 같게 두어 가운데 칸이 화면 중앙에 옵니다. */
   grid-template-columns: minmax(120px, 0.6fr) minmax(0, 1.8fr) minmax(120px, 0.6fr);
   align-items: center;
   padding: 0 24px;
@@ -231,7 +231,7 @@ button {
   box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
 }
 
-/* 영상 목록 페이지 검색창 (기간 필터 오른쪽) — 높이·테두리를 기간 필터 버튼에 맞춘다 */
+/* 영상 목록 페이지 검색창(기간 필터 오른쪽)입니다. 높이와 테두리를 기간 필터 버튼에 맞춥니다. */
 .list-search-bar {
   display: flex;
   align-items: center;
@@ -744,7 +744,7 @@ body.dark-mode .list-search-bar:focus-within .search-icon {
 }
 
 /* 메인화면 페이지네이션 */
-/* 가운데 칸에 버튼 묶음, 오른쪽 칸에 페이지 정보 — 좌우 칸 폭이 같아 버튼이 정확히 가운데 온다 */
+/* 가운데 칸에 버튼 묶음, 오른쪽 칸에 페이지 정보를 둡니다. 좌우 칸 폭이 같아 버튼이 정확히 가운데에 옵니다. */
 .pagination-bar {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -881,7 +881,7 @@ body.dark-mode .list-search-bar:focus-within .search-icon {
   font-weight: 700;
 }
 
-/* 녹화일자 — 썸네일 왼쪽 아래 (사고의심 배지와 같은 모양) */
+/* 녹화일: 썸네일 왼쪽 아래(사고 의심 배지와 같은 모양) */
 .recording-date-badge {
   position: absolute;
   bottom: 8px;
@@ -895,7 +895,7 @@ body.dark-mode .list-search-bar:focus-within .search-icon {
   font-variant-numeric: tabular-nums;
 }
 
-/* 카드 아래: 제목·길이 + 오른쪽 ⋮(영상 정보) */
+/* 카드 아래: 제목과 길이, 오른쪽에 영상 정보 메뉴 */
 .video-info {
   display: flex;
   align-items: flex-start;
@@ -1015,9 +1015,9 @@ body.dark-mode .video-info-list dt {
      영상 칸 폭은 --player-max-w 까지라, 넓은 화면은 아래 fit-content 로 세 칸을 가운데에 모은다 */
   max-width: none;
   margin: 0 auto;
-  /* 영상 화면이 쓸 수 있는 높이 = 화면 높이 - 상단 바(55px) - 위아래 여백(10px × 2) */
+  /* 영상 화면이 쓸 수 있는 높이는 화면 높이에서 상단 바(55px)와 위아래 여백(10px씩)을 뺀 값입니다. */
   --watch-avail-h: calc(100vh - 75px);
-  /* 영상 칸 폭 상한 — 16:9 영상이 그 높이에 꽉 찰 때까지만(양옆 검은 여백 없음) */
+  /* 영상 칸 폭 상한입니다. 16:9 영상이 그 높이에 꽉 찰 때까지만 넓힙니다(양옆 검은 여백 없음). */
   --player-max-w: calc((var(--watch-avail-h) - var(--player-controls-h)) * 16 / 9);
   /* 왼쪽(클립·달력)·오른쪽(진행 단계·분석 이력) 칸 높이 상한 — 세로로 긴 화면에서 칸이 끝없이 늘지 않게.
      1080p 100%(칸 높이 약 928px)보다 커서 보통 화면은 그대로다 */
@@ -1057,7 +1057,7 @@ body.dark-mode .video-info-list dt {
   box-shadow: none;
 }
 
-/* 영화관 모드: 영상이 화면 높이에 맞춰 가운데에 온다 */
+/* 영화관 모드: 영상이 화면 높이에 맞춰 가운데에 옵니다. */
 .watch-view.theater-view .player-section {
   justify-self: center;
 }
@@ -1107,7 +1107,7 @@ body.dark-mode .video-info-list dt {
   }
 }
 
-/* 좁은 화면(1024px 이하)에서만 쓰는 영상 위 헤더 — 버튼 묶음 */
+/* 좁은 화면(1024px 이하)에서만 쓰는 영상 위 헤더(버튼 묶음) */
 .watch-header {
   margin-bottom: 8px;
 }
@@ -1132,7 +1132,7 @@ body.dark-mode .video-info-list dt {
   max-width: none;
 }
 
-/* 넓은 화면(1280px 이상): 왼쪽 사고 클립 · 가운데 영상 · 오른쪽 분석 이력 세 칸 */
+/* 넓은 화면(1280px 이상): 왼쪽 사고 클립, 가운데 영상, 오른쪽 분석 이력의 세 칸 */
 @media (min-width: 1280px) {
   /* 오른쪽 패널 열기·닫기를 부드럽게: 칸 수는 그대로 두고 오른쪽 칸 폭만 270 → 0 으로 줄인다
      (칸 수가 바뀌면 애니메이션이 걸리지 않는다). 그래서 칸 사이 10px 는 grid gap 대신 각 칸의 바깥 여백으로 둔다 —
@@ -1156,7 +1156,7 @@ body.dark-mode .video-info-list dt {
     transition: margin-left 0.3s ease, opacity 0.2s ease;
   }
 
-  /* 줄어드는 동안 속 내용은 폭을 그대로 두고 잘리게 — 글자가 좁은 폭에 맞춰 다시 접히며 흔들리지 않게 */
+  /* 줄어드는 동안 속 내용은 폭을 그대로 두고 잘리게 합니다. 글자가 좁은 폭에 맞춰 다시 접히며 흔들리지 않게 하려는 것입니다. */
   .watch-right > * {
     min-width: 260px;
   }
@@ -1205,7 +1205,7 @@ body.dark-mode .video-info-list dt {
     gap: 12px;
   }
 
-  /* 세로로 쌓일 땐 칸·글씨를 키워 한눈에 */
+  /* 세로로 쌓일 때는 칸과 글씨를 키워 한눈에 보이게 합니다. */
   .watch-right > .incident-workflow .step-num {
     width: 32px;
     height: 32px;
@@ -1234,7 +1234,7 @@ body.dark-mode .video-info-list dt {
     box-shadow: inset 3px 0 var(--incident-accent);
   }
 
-  /* 진행 단계가 오른쪽으로 빠져 작업 헤더는 한 줄만 남는다 (incident-ui.css 보다 우선) */
+  /* 진행 단계가 오른쪽으로 빠져 작업 헤더는 한 줄만 남습니다(incident-ui.css보다 우선). */
   .dashboard-layout .incident-workspace-top {
     margin-bottom: 0;
   }
@@ -1256,7 +1256,7 @@ body.dark-mode .video-info-list dt {
   min-width: 0;
 }
 
-/* 오른쪽 패널 열기·닫기 — 작업 헤더 윗줄 오른쪽 끝(오른쪽 패널 바로 위) */
+/* 오른쪽 패널 열기와 닫기 버튼(작업 헤더 윗줄 오른쪽 끝, 오른쪽 패널 바로 위) */
 .panel-toggle-btn {
   display: inline-flex;
   align-items: center;
@@ -1465,7 +1465,7 @@ body.dark-mode .ahi-status.failure { background: rgba(239, 68, 68, 0.15); color:
 body.dark-mode .ahi-status.cancelled { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
 body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color: #60a5fa; }
 
-/* 왼쪽 칸: 버튼 묶음(넓은 화면) + 사고 클립 사이드바 — 화면 아래 끝까지 */
+/* 왼쪽 칸: 버튼 묶음(넓은 화면)과 사고 클립 사이드바, 화면 아래 끝까지 */
 .watch-side {
   display: flex;
   flex-direction: column;
@@ -1474,7 +1474,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   min-width: 0;
 }
 
-/* 버튼 묶음은 280px 폭에 맞춰 두 줄로: 윗줄 차량 탐지 · 직접 차량 지정, 아랫줄 사고감지 실행(가로 전체) */
+/* 버튼 묶음은 280px 폭에 맞춰 두 줄로 둡니다. 윗줄은 차량 탐지와 직접 차량 지정, 아랫줄은 사고 감지 실행(가로 전체)입니다. */
 .watch-side > .watch-header-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1533,7 +1533,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   margin-bottom: 8px;
 }
 
-/* (아래 .event-sidebar h3 의 아래 여백보다 우선 — 제목과 버튼을 같은 줄 가운데에 맞춘다) */
+/* 아래 .event-sidebar h3의 아래 여백보다 우선해, 제목과 버튼을 같은 줄 가운데에 맞춥니다. */
 .event-sidebar .event-sidebar-header h3 {
   margin: 0;
 }
@@ -1608,7 +1608,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   flex: 1 1 auto;
   min-height: 140px;
   overflow-y: auto;
-  /* 호버 시 살짝 뜨는 효과·선택 그림자가 스크롤 영역 가장자리에서 잘리지 않게 */
+  /* 마우스를 올리면 살짝 뜨는 효과와 선택 그림자가 스크롤 영역 가장자리에서 잘리지 않게 합니다. */
   padding: 2px 4px 4px 2px;
   scrollbar-width: thin;
 }
@@ -1739,7 +1739,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   outline-offset: 2px;
 }
 
-/* 손가락으로 누르는 기기(폰·태블릿)에선 조금 더 크게 */
+/* 손가락으로 누르는 기기(폰, 태블릿)에서는 조금 더 크게 합니다. */
 @media (pointer: coarse) {
   .event-play-icon-btn,
   .event-delete-item-btn {
@@ -2001,7 +2001,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
 }
 .progress-track.click-seeking .progress-hover-time { opacity: 1; }
 
-/* 차량 탐지 중: 이동할 수 없음을 보여 준다(흐리게, 손잡이·시각 말풍선 숨김) */
+/* 차량 탐지 중에는 이동할 수 없음을 보여 줍니다(흐리게, 손잡이와 시각 말풍선 숨김). */
 .progress-track.locked,
 .progress-track.locked .event-range {
   cursor: not-allowed;
@@ -2036,7 +2036,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   transition: background 0.15s, box-shadow 0.15s;
 }
 
-/* 줄이 얇아도 누르기 쉽게 누를 수 있는 영역만 넓힌다 */
+/* 줄이 얇아도 누르기 쉽게 누를 수 있는 영역만 넓힙니다. */
 .event-range::before {
   content: "";
   position: absolute;
@@ -2126,7 +2126,7 @@ body.dark-mode .ahi-status.active { background: rgba(59, 130, 246, 0.18); color:
   gap: 2px;
 }
 
-/* 음량 막대 — 채워진 만큼 색칠 (--fill 은 JSX 에서 넣는다) */
+/* 음량 막대입니다. 채워진 만큼 색칠합니다(--fill은 JSX에서 넣습니다). */
 .volume-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -4121,7 +4121,7 @@ body.dark-mode .auto-detect-btn.active:not(.detecting):hover {
   border-top-color: #1e3a8a;
 }
 
-/* 폰(640px 이하): '직접 차량 지정'이 오른쪽 칸에 있어 왼쪽 기준이면 화면 오른쪽 밖으로 넘친다 → 버튼 오른쪽 끝 기준으로 펼친다 */
+/* 폰(640px 이하)에서는 '직접 차량 지정'이 오른쪽 칸에 있어 왼쪽 기준이면 화면 오른쪽 밖으로 넘치므로, 버튼 오른쪽 끝 기준으로 펼칩니다. */
 @media (max-width: 640px) {
   .designate-hint {
     left: auto;
@@ -4226,7 +4226,7 @@ body.dark-mode .designate-hint::after {
   transform: scale(1.2);
 }
 
-/* 터치 화면(마우스 올리기가 없음)에선 박스 삭제 ✕ 를 늘 보인다 */
+/* 터치 화면(마우스 올리기가 없음)에서는 박스 삭제 X 버튼을 늘 보입니다. */
 @media (hover: none) {
   .bbox-drawn:not(.editing) .bbox-delete-btn {
     opacity: 1 !important;
@@ -4598,7 +4598,7 @@ body.dark-mode .home-toolbar-actions .delete-confirm-btn:hover {
   gap: 10px;
 }
 
-/* 사고감지 실행 버튼 래퍼 (확인 팝오버 위치 기준) — 버튼 색상은 공통 규칙 참조 */
+/* 사고감지 실행 버튼 래퍼(확인 팝오버 위치 기준)입니다. 버튼 색상은 공통 규칙을 따릅니다. */
 .detect-btn-wrapper {
   position: relative;
   display: inline-flex;
@@ -4713,7 +4713,7 @@ body.dark-mode .analyze-popover-run:hover {
   background: #16a34a;
 }
 
-/* 안내(info) — 배경이 없어 흰 글자가 투명하게 떠 잘 안 보였다 */
+/* 안내(info) 알림입니다. 배경이 없으면 흰 글자가 잘 보이지 않아 배경을 둡니다. */
 .app-toast-info {
   background: #1e293b;
   border: 1px solid #334155;
@@ -4897,7 +4897,7 @@ body.dark-mode .upload-cancel-btn:disabled {
   min-width: 420px; /* '45% · 의심 구간 2/3 자세히 보는 중...' 같은 단계 문구가 잘리지 않게 */
 }
 
-/* 분석 단계 문구 뒤의 움직이는 점 — 고정 폭이라 점 개수가 바뀌어도 뒤 글자가 흔들리지 않는다 */
+/* 분석 단계 문구 뒤의 움직이는 점입니다. 고정 폭이라 점 개수가 바뀌어도 뒤 글자가 흔들리지 않습니다. */
 .phase-dots {
   display: inline-block;
   width: 1.6em; /* 점 4개 자리 */
@@ -4926,7 +4926,7 @@ body.dark-mode .upload-cancel-btn:disabled {
   white-space: nowrap;
 }
 
-/* 진행률 — 맨 오른쪽. 숫자 폭을 고정해 % 가 바뀌어도 단계 문구가 흔들리지 않게 */
+/* 진행률은 맨 오른쪽에 둡니다. 숫자 폭을 고정해 %가 바뀌어도 단계 문구가 흔들리지 않게 합니다. */
 .analysis-status-pct {
   flex-shrink: 0;
   min-width: 3.2em;
@@ -5257,7 +5257,7 @@ body.dark-mode .upload-dropzone.drag-active {
   border-color: #42d7c3;
 }
 
-/* 파일 목록 아래의 작은 추가 칸 — 끌어다 놓기·클릭으로 파일 추가 */
+/* 파일 목록 아래의 작은 추가 칸입니다(끌어다 놓거나 눌러서 파일 추가). */
 .upload-dropzone-compact {
   display: flex;
   align-items: center;
@@ -5517,7 +5517,7 @@ body.dark-mode .file-item-date-group input[type="date"] {
   color: #f8fafc;
 }
 
-/* 제목(선택) — 파일 이름·녹화일자 줄 아래 가로 전체 */
+/* 제목(선택)은 파일 이름과 녹화일 줄 아래 가로 전체에 둡니다. */
 .file-item-title-group {
   flex: 1 1 100%;
   display: flex;
@@ -6096,7 +6096,7 @@ body.dark-mode .date-video-card-item:hover .date-video-play-btn {
 }
 
 @media (max-width: 480px) {
-  /* 폰에선 음량 막대를 숨기고 음소거 버튼만 남긴다 — 재생 컨트롤이 두 줄로 꺾이지 않게 */
+  /* 폰에서는 음량 막대를 숨기고 음소거 버튼만 남겨 재생 컨트롤이 두 줄로 꺾이지 않게 합니다. */
   .volume-slider {
     display: none;
   }
@@ -6457,14 +6457,14 @@ body.dark-mode .public-scan-road {
 /* --- 차량 개별 애니메이션 --- */
 .car-one { left: 31%; top: 14%; --base-rot: 8deg; transform: rotate(var(--base-rot)); animation: carIdleOne 2.3s ease-in-out infinite alternate; }
 
-/* car-two: 파란차 — 충돌 받고 살짝 밀리는 반응 (4s 주기) */
+/* car-two: 파란 차가 충돌을 받고 살짝 밀리는 반응(4초 주기) */
 .car-two {
   right: 26%; top: 36%;
   background: var(--public-green);
   animation: carTwoHit 4s ease-in-out infinite;
 }
 
-/* car-three: 가운데 회색차 — 파란차를 향해 살짝 올라갔다 빠지는 충돌 */
+/* car-three: 가운데 회색 차가 파란 차를 향해 살짝 올라갔다 빠지는 충돌 */
 .car-three {
   left: 47%; bottom: 9%;
   background: #cbd5e1;
@@ -6476,7 +6476,7 @@ body.dark-mode .public-scan-road {
   100% { transform: rotate(8deg) translateY(4px); }
 }
 
-/* car-three: 평소 주행 → 충돌 돌진 → 원위치 */
+/* car-three: 평소 주행, 충돌 돌진, 원위치 */
 @keyframes carThreeCollide {
   0%   { transform: rotate(3deg) translate(0, 0); }
   35%  { transform: rotate(3deg) translate(0, 0); }       /* 대기 */
@@ -6718,7 +6718,7 @@ body.dark-mode .public-scan-road {
   padding: 24px;
   background: rgba(15, 23, 42, 0.74);
   backdrop-filter: blur(8px);
-  /* 배경은 서서히 어두워지고, 닫을 땐(.closing) 서서히 걷힌다 */
+  /* 배경은 서서히 어두워지고, 닫을 때(.closing)는 서서히 걷힙니다. */
   animation: public-overlay-in 0.3s ease-out both;
 }
 
@@ -6734,7 +6734,7 @@ body.dark-mode .public-scan-road {
   border: 1px solid rgba(var(--public-accent-rgb), 0.4);
   background: var(--public-paper);
   box-shadow: 14px 14px 0 var(--public-green);
-  /* 배경이 어두워지기 시작한 뒤 살짝 아래에서 떠오르며 커진다 */
+  /* 배경이 어두워지기 시작한 뒤 살짝 아래에서 떠오르며 커집니다. */
   animation: public-modal-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
 }
 
@@ -6763,7 +6763,7 @@ body.dark-mode .public-scan-road {
   to { opacity: 0; transform: translateY(12px) scale(0.98); }
 }
 
-/* 좁은 화면에선 아래에 붙는 시트라 아래에서 올라오고 아래로 내려간다 */
+/* 좁은 화면에서는 아래에 붙는 시트라 아래에서 올라오고 아래로 내려갑니다. */
 @keyframes public-sheet-in {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
@@ -7173,7 +7173,7 @@ body.dark-mode .public-footer {
   color: var(--public-green);
 }
 
-/* 마지막 분석 실패·중단 안내 + 다시 실행 */
+/* 마지막 분석 실패, 중단 안내와 다시 실행 */
 .analysis-failed-banner {
   display: inline-flex;
   align-items: center;
@@ -7428,7 +7428,7 @@ body.dark-mode .confirm-danger-btn {
   border-color: #22c55e;
 }
 
-/* 원본 다운로드 — 어두운 카드 위 옅은 버튼(다크모드는 앱 강조색 초록) */
+/* 원본 내려받기 버튼은 어두운 카드 위 옅은 버튼입니다(다크 모드는 앱 강조색 초록). */
 .clip-download-btn {
   display: inline-flex;
   align-items: center;
@@ -7491,12 +7491,12 @@ body.dark-mode .clip-download-btn {
   box-shadow: 0 0 16px rgba(66, 215, 195, 0.35);
 }
 
-/* 클립 창 바깥 배경은 다른 창보다 더 어둡게 — 영상 주변 밝기를 낮춘다 */
+/* 클립 창 바깥 배경은 다른 창보다 더 어둡게 해 영상 주변 밝기를 낮춥니다. */
 .clip-viewer-overlay {
   background: rgba(2, 6, 23, 0.72);
 }
 
-/* 차량 자동 탐지 중 — 영상 화면 위 로딩 표시 */
+/* 차량 자동 탐지 중 영상 화면 위 로딩 표시 */
 .vehicle-detect-loading {
   position: absolute;
   inset: 0;

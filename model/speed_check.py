@@ -99,7 +99,7 @@ def _free_gpu(dev):
         torch.cuda.empty_cache()
 
 
-# ───────────────────────── ① GPU 계산 ─────────────────────────
+# 1번 GPU 계산
 def _step_times(model, x, y, channels_last, dev, amp, steps, warmup, train):
     if channels_last:
         x = x.contiguous(memory_format=torch.channels_last_3d)
@@ -184,7 +184,7 @@ def part_gpu(args, dev, amp, state, x, y):
     return {cl: float(v[0].mean()) for cl, v in res.items()}
 
 
-# ───────────────────────── ⑤ gradient checkpointing 범위 ─────────────────────────
+# 5번 gradient checkpointing 범위
 def part_ckpt(args, dev, amp, state, x, y):
     """⑤ 다시 계산하는 앞쪽 블록 수별 학습 한 단계 시간·최대 메모리 → {블록 수: 결과}, 기본 블록 수."""
     if not hitandrun_model.GRAD_CHECKPOINT:
@@ -243,7 +243,7 @@ def _ckpt_name(k, default):
     return f'{k}개: {name}' + (' ← 지금' if k == default else '')
 
 
-# ───────────────────────── ⑥ torch.compile ─────────────────────────
+# 6번 torch.compile
 def part_compile(args, dev, amp, state, x, y):
     """⑥ 컴파일 전후 학습·검증 한 단계 시간과 P(A) 차이 → 결과 dict, 실패하면 {'error': ...}."""
     cl = _cur_cl(dev)
@@ -265,7 +265,7 @@ def part_compile(args, dev, amp, state, x, y):
         _step_times(cmodel, x, y, cl, dev, amp, 1, 0, train=True)
         c_train = time.perf_counter() - t0
         print('  재는 중…', flush=True)
-        # 같은 모델의 컴파일 전(model)·후(cmodel)를 번갈아 잰다 — 학습 단계가 가중치를 바꿔도 시간과는 무관
+        # 같은 모델의 컴파일 전(model)과 후(cmodel)를 번갈아 잽니다. 학습 단계가 가중치를 바꿔도 시간과는 무관합니다.
         e_val = _step_times(model, x, y, cl, dev, amp, args.steps, args.warmup, train=False)
         k_val = _step_times(cmodel, x, y, cl, dev, amp, args.steps, args.warmup, train=False)
         e_tr = _step_times(model, x, y, cl, dev, amp, args.steps, args.warmup, train=True)
@@ -289,7 +289,7 @@ def part_compile(args, dev, amp, state, x, y):
             'k_val': float(k_val.mean()), 'c_sec': c_train + c_val, 'diff': diff}
 
 
-# ───────────────────────── ② 클립 하나 만들기 단계별 ─────────────────────────
+# 2번 클립 하나 만들기 단계별
 def part_clip(ds, idxs):
     """② 학습 데이터셋과 같은 순서로 클립을 만들며 단계별 시간을 잰다 → 클립 하나 평균 시간(초)."""
     keys = ['열기', '이동', '풀기', '자르기·줄이기', '색 변환(자른 뒤)', '증강', '텐서 변환']
@@ -344,7 +344,7 @@ def part_clip(ds, idxs):
     return {'total': total, 'per': per}
 
 
-# ───────────────────────── ③ 데이터 로더 처리량 ─────────────────────────
+# 3번 데이터 로더 처리량
 def _loader(ds, idxs, batch, workers, pin, threads=None, shuffle=True):
     """학습과 같은 설정의 로더. threads = 작업자마다 OpenCV 스레드 수(None = 기본, train.py _make_loader 와 같은 방식)."""
     ds.cv2_threads = threads                     # 영상 풀기 스레드(작업자에 데이터셋이 복사될 때 함께 간다)
@@ -386,7 +386,7 @@ def part_loader(ds, pool, batch, workers_list, pin):
     for w in workers_list:
         n = max(24, 4 * w)                 # 작업자 수의 4배 묶음 — 첫 묶음들이 동시에 나오는 효과를 묻힌다
         idxs = pool[:batch * n]
-        # 1스레드를 먼저 잰다 — 같은 영상을 두 번째로 읽을 때 디스크 캐시 이득이 지금 설정(기본) 쪽에 가도록(보수적)
+        # 1스레드를 먼저 잽니다. 같은 영상을 두 번째로 읽을 때의 디스크 캐시 이득이 지금 설정(기본) 쪽에 가도록 하려는 것입니다.
         for threads in (1, None):
             dl = _loader(ds, idxs, batch, w, pin, threads)
             sec, got = _time_batches(dl, n)
@@ -403,7 +403,7 @@ def _restore_threads(ds):
     cv2.setNumThreads(CV2_DEFAULT_THREADS)
 
 
-# ───────────────────────── ⑦ 검증 클립 저장본 ─────────────────────────
+# 7번 검증 클립 저장본
 def part_val_cache(ds, pool, batch, workers, pin, n_batches):
     """⑦ 검증처럼(증강 없음·순서대로) 묶음 하나 시간: 저장본 없이 / 처음(만들며 저장) / 다음부터(읽기)."""
     idxs = pool[:batch * n_batches]
@@ -421,7 +421,7 @@ def part_val_cache(ds, pool, batch, workers, pin, n_batches):
         return None
     tmp = Path(tempfile.mkdtemp(prefix='speed_check_', dir=root))
     try:
-        # 학습 데이터셋(증강 켬)을 복사해 검증처럼 바꾼다 — 클립 목록을 다시 만들지 않으려고
+        # 학습 데이터셋(증강 켬)을 복사해 검증처럼 바꿉니다. 클립 목록을 다시 만들지 않으려는 것입니다.
         plain = copy.copy(ds)
         plain.augment, plain.cache_dir, plain._cache_off = False, None, False
         cached = copy.copy(plain)
@@ -444,7 +444,7 @@ def part_val_cache(ds, pool, batch, workers, pin, n_batches):
     return res
 
 
-# ───────────────────────── ④ 실제 학습 단계 ─────────────────────────
+# 4번 실제 학습 단계
 def _shm_used_gb():
     """공유 메모리(/dev/shm) 사용량(GB) — 로더 작업자가 만든 묶음이 여기 쌓인다. 리눅스에서만, 못 읽으면 None."""
     try:
@@ -587,7 +587,7 @@ def _main(args):
         if args.no_compile:
             print('\n⑥ torch.compile — 건너뜀(--no-compile)')
         else:
-            # 점검용(CPU)은 작은 입력으로 코드 경로만 확인한다 — 원래 크기는 CPU 컴파일·메모리가 너무 크다
+            # 점검용(CPU)은 작은 입력으로 코드 경로만 확인합니다. 원래 크기는 CPU에서 컴파일과 메모리 부담이 너무 큽니다.
             xc = torch.randn(1, 3, 8, 64, 64, device=dev) if args.smoke else x
             comp = part_compile(args, dev, amp, state, xc, y[:xc.shape[0]])
         del x, y
@@ -596,7 +596,7 @@ def _main(args):
         _verdict(args, gpu, None, None, None, {}, ckpt, comp, None)
         return 0
 
-    # ②③④⑦ — 학습과 같은 데이터셋(증강 켬)에서 무작위로 고른 클립
+    # 2, 3, 4, 7번은 학습과 같은 데이터셋(증강 켬)에서 무작위로 고른 클립을 씁니다.
     from dataset import HitAndRunDataset
     print(f'\n[데이터] {args.data_dir} 의 학습 클립 목록을 만드는 중…', flush=True)
     ds = HitAndRunDataset(data_dir=args.data_dir, augment=True)
@@ -614,7 +614,7 @@ def _main(args):
         workers_list = sorted({int(w) for w in args.workers.split(',') if w.strip()})
     else:
         workers_list = sorted({train_w, n_cpu})
-    # 작업자 하나가 묶음 하나(약 0.55GB, 묶음 15)를 들고 있으므로 남은 메모리로 상한을 둔다
+    # 작업자 하나가 배치 하나(배치 15에서 약 0.55GB)를 들고 있으므로 남은 메모리로 상한을 둡니다.
     mem = _mem_available_gb()
     per_w = 0.55 * args.batch / 15
     if mem is not None:
@@ -685,7 +685,7 @@ def _verdict(args, gpu, clip, loader, train_w, e2e, ckpt, comp, val):
                 print(f'   → 병목은 GPU 계산(데이터 기다림 {data_bound * 100:.0f}%) — 데이터 쪽을 고쳐도 빨라지지 않습니다.')
             print(f'   학습 클립 1,000개당 약 {(w + c) * 1000 / args.batch / 60:.1f}분(검증 제외)')
 
-    # 2) 로더 작업자 수 × 작업자당 OpenCV 스레드
+    # 2) 로더 작업자 수와 작업자당 OpenCV 스레드
     if loader:
         no += 1
         print(f'{no}) 로더 작업자 수 × 작업자당 OpenCV 스레드 (지금: 작업자 {train_w}개 · {_tname(cur_t)})')
@@ -736,7 +736,7 @@ def _verdict(args, gpu, clip, loader, train_w, e2e, ckpt, comp, val):
         if not base or base['oom']:
             print('   지금 범위도 메모리가 모자랍니다 — 묶음 크기를 확인하세요.')
         else:
-            # 학습 중 다른 것(검증 로더·조각난 메모리)도 있으니 GPU 전체의 80% 안만 안전하다고 본다
+            # 학습 중에는 다른 것(검증 로더, 조각난 메모리)도 있으니 GPU 전체의 80% 안만 안전하다고 봅니다.
             limit = total * 0.8 if total == total else float('inf')
             ok = {k: r for k, r in res.items() if not r['oom'] and (r['resv'] != r['resv'] or r['resv'] <= limit)}
             ok[d] = base                                   # 지금 범위는 이미 쓰고 있으니 후보에 둔다

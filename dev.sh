@@ -92,7 +92,7 @@ start() {
     exec tmux attach -t "$SESSION"
   fi
 
-  # 준비물 확인
+  # 준비물을 확인합니다.
   [[ -x "$PY/python" ]] || { err "venv311 이 없습니다. CLAUDE.md 의 '실행 방법 0)' 으로 먼저 만드세요."; exit 1; }
   for p in "$BACKEND_PORT" "$UI_PORT"; do
     if port_in_use "$p"; then
@@ -159,7 +159,7 @@ stop() {
     return 0
   fi
   log "서비스 종료 중…"
-  # 각 칸에 Ctrl+C 를 보내 정상 종료를 시도하고, 끝나길 잠깐 기다린 뒤 세션을 닫는다
+  # 각 칸에 Ctrl+C를 보내 정상 종료를 시도하고, 끝나기를 잠깐 기다린 뒤 세션을 닫습니다.
   for pane in $(tmux list-panes -t "$SESSION" -F '#{pane_id}'); do
     tmux send-keys -t "$pane" C-c 2>/dev/null || true
   done

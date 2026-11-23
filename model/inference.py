@@ -14,7 +14,7 @@ import config
 from device_utils import is_cuda_like, is_channels_last_3d_supported, predict_batch_size
 from infer_runtime import get_runner, is_accident
 
-# 시스템 ffmpeg(H.264/libx264) 경로 — 있으면 클립을 어디서든 재생 가능한 mp4로 만든다.
+# 시스템 ffmpeg(H.264, libx264) 경로입니다. 있으면 클립을 어디서든 재생되는 mp4로 만듭니다.
 _FFMPEG = shutil.which("ffmpeg")
 # 시스템 ffmpeg가 없으면(macOS·Windows 기본 상태) imageio-ffmpeg에 들어 있는 ffmpeg를 쓴다.
 # 클립 변환에 ffmpeg가 없으면 분석 전체가 실패하므로 requirements에 넣어 둔다.
@@ -43,7 +43,7 @@ PROG_INFER_END = 0.90
 # 클립 렌더링 속도를 재기 전 쓰는 추정값: 프레임당 시간 ≈ 디코딩·크롭 시간의 이 배수
 # (원본 해상도 디코딩 + 히트맵 합성 + 인코딩 + H.264 변환; TA_0002 CPU 실측 약 8배)
 RENDER_COST_PER_DECODE = 8.0
-# 0.95~1.0 = 사고구간 CAM 클립 렌더링
+# 사고 구간 CAM 클립 렌더링
 
 
 def _open_clip_writer(dest_stem, fps, size):
@@ -89,7 +89,7 @@ def make_activation_hook(name):
 
 
 def _frames_to_video_tensor(frames):
-    # 정규화 통계는 학습과 동일해야 함 — config에서 일괄 관리(Kinetics-400)
+    # 정규화 통계는 학습과 같아야 하므로 config에서 함께 관리합니다(Kinetics-400).
     mean = torch.tensor(config.NORM_MEAN,
                         dtype=torch.float32).view(3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD,
@@ -153,7 +153,7 @@ def _add_state_bar(frame, state):
     font = cv2.FONT_HERSHEY_SIMPLEX
     pad = max(4, bar_h // 6)
     thick = max(1, bar_h // 20)
-    # 왼쪽: 색 배지 + 흰 글자(A/S)
+    # 왼쪽: 색 배지와 흰 글자(A/S)
     side = bar_h - 2 * pad
     x0 = 2 * pad
     cv2.rectangle(bar, (x0, pad), (x0 + side, pad + side), color, -1)
@@ -186,7 +186,7 @@ def _draw_collision_cam(frame, cam, square, box, min_rel=config.PREDICT_CLIP_CAM
     if bx2 <= bx1 or by2 <= by1:
         return
     big = cv2.resize(np.asarray(cam, dtype=np.float32), (sx2 - sx1, sy2 - sy1), interpolation=cv2.INTER_CUBIC)
-    # bbox 부분만 — 반올림으로 정사각보다 1px 넘칠 수 있어 자른 뒤 bbox 크기에 맞춘다
+    # 박스 부분만 씁니다. 반올림으로 정사각형보다 1px 넘칠 수 있어 자른 뒤 박스 크기에 맞춥니다.
     part = big[max(0, by1 - sy1):max(0, by2 - sy1), max(0, bx1 - sx1):max(0, bx2 - sx1)]
     if part.size == 0:
         return
@@ -242,7 +242,7 @@ def predict_full_video(
     write_queue = None
     writer_thread = None
 
-    # 다중 이벤트 추적용 상태 변수
+    # 이벤트 여러 개를 추적하는 상태 변수
     events = []          # [{'start_frame': int, 'end_frame': int}, ...]
     display_state = 0    # 현재 표시 상태: 0=S(정상), 1=A(충돌)
     prev_state = 0       # 직전 윈도우 예측 (S→A 전환 감지용)
@@ -356,18 +356,18 @@ def predict_full_video(
                 feat_maps = activation['cam_layer']
 
                 for offset, window_idx in enumerate(batch_window_starts):
-                    # 이벤트 경계는 창 끝(frame_idx) 기준, 판정·CAM 표시는 disp_idx 에 그린다
+                    # 이벤트 경계는 묶음 끝(frame_idx) 기준이고, 판정과 CAM 표시는 disp_idx에 그립니다.
                     frame_idx = window_idx + clip_length - 1
                     disp_idx = window_idx + display_offset
                     pred_class = int(pred_classes[offset].item())
                     conf = probs[offset, pred_class].item() * 100
 
-                    # ── 이벤트 상태 전환 감지 ──────────────────────────────
+                    # 이벤트 상태 전환 감지
                     if prev_state == 0 and pred_class == 1:
-                        # S → A: 새 충돌 이벤트 시작
+                        # S에서 A: 새 충돌 이벤트 시작
                         event_start = window_idx
                     elif prev_state == 1 and pred_class == 0:
-                        # A → S: 충돌 이벤트 종료
+                        # A에서 S: 충돌 이벤트 종료
                         if event_start is not None:
                             events.append({
                                 'start_frame': event_start,
@@ -378,7 +378,7 @@ def predict_full_video(
                     display_state = pred_class
                     # ────────────────────────────────────────────────────────
 
-                    # ⑤ CAM 연산 GPU 유지
+                    # CAM 계산은 장치(GPU)에서 그대로 합니다.
                     feat_map = feat_maps[offset]
                     weight = model.head_conv.weight[pred_class]
                     cam = F.relu(torch.sum(weight * feat_map, dim=0))
@@ -394,7 +394,7 @@ def predict_full_video(
                         v_nx1 - rx1:(v_nx1 - rx1) + (v_nx2 - v_nx1),
                     ]
 
-                    # 스킵된 프레임: 직전 display_state 그대로 표시
+                    # 건너뛴 프레임은 직전 display_state를 그대로 표시합니다.
                     for skipped_idx in range(next_frame_to_write, disp_idx):
                         sf = cv2.cvtColor(
                             original_full_frames[skipped_idx], cv2.COLOR_RGB2BGR)
@@ -408,7 +408,7 @@ def predict_full_video(
                     roi = final_frame[v_ny1:v_ny2, v_nx1:v_nx2]
 
                     if pred_class == 1:
-                        # 반올림 1px 차이를 흡수하도록 히트맵을 bbox 영역 크기에 맞춤
+                        # 반올림으로 생긴 1px 차이를 흡수하도록 히트맵을 박스 영역 크기에 맞춥니다.
                         hm = cv2.resize(heatmap_valid, (roi.shape[1], roi.shape[0]))
                         final_frame[v_ny1:v_ny2, v_nx1:v_nx2] = cv2.addWeighted(
                             roi, 0.6, hm, 0.4, 0)
@@ -420,22 +420,22 @@ def predict_full_video(
 
                     cv2.rectangle(final_frame, (v_nx1, v_ny1),
                                   (v_nx2, v_ny2), bbox_color, 3)
-                    # 신뢰도는 bbox 상단에 작게 표시
+                    # 신뢰도는 박스 위쪽에 작게 표시합니다.
                     cv2.putText(final_frame, conf_text,
                                 (v_nx1, max(v_ny1 - 10, 20)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, bbox_color, 2)
-                    # 클래스 상태(S / A)는 영상 아래 띠에 표시
+                    # 클래스 상태(S/A)는 영상 아래 띠에 표시합니다.
                     write_queue.put(_add_state_bar(final_frame, pred_class))
                     next_frame_to_write = disp_idx + 1
 
-        # 마지막 예측 이후 남은 프레임: 마지막 display_state 유지
+        # 마지막 예측 이후 남은 프레임은 마지막 display_state를 유지합니다.
         for skipped_idx in range(next_frame_to_write, len(original_full_frames)):
             sf = cv2.cvtColor(
                 original_full_frames[skipped_idx], cv2.COLOR_RGB2BGR)
             cv2.rectangle(sf, (v_nx1, v_ny1), (v_nx2, v_ny2), (0, 255, 0), 2)
             write_queue.put(_add_state_bar(sf, display_state))
 
-        # 영상 마지막 시점까지 A 상태가 유지된 경우 이벤트 닫기
+        # 영상 마지막까지 A 상태가 이어진 경우 이벤트를 닫습니다.
         if prev_state == 1 and event_start is not None:
             events.append({
                 'start_frame': event_start,
@@ -446,7 +446,7 @@ def predict_full_video(
         writer_thread.join()
         out_video.release()
         out_video = None
-        # 브라우저 호환 최종본(H.264/mp4)으로 변환
+        # 브라우저 호환 최종본(H.264 mp4)으로 변환합니다.
         out_path = _finalize_clip(out_rendered, out_stem)
 
         # 결과 출력
@@ -631,9 +631,9 @@ def predict_events_and_clips(
         progress_callback(min(0.99, frac or 0.0), eta, eta_min, stage, count, index)
 
     events = []          # [{'start_frame','end_frame'}, ...]
-    # 표시 프레임(창 시작 + display_offset) → (칸별 'A − S' 로짓 7×7 또는 None, prob) (사고로 예측된 창만)
+    # 표시 프레임(묶음 시작 + display_offset)에서 (칸별 'A - S' 로짓 7x7 또는 None, prob)로 가는 사전입니다(사고로 예측한 묶음만).
     accident_overlays = {}
-    # window_idx → pred_class / P(A) (3D-CNN을 실제로 실행한 윈도우만)
+    # window_idx에서 pred_class와 P(A)로 가는 사전입니다(3D-CNN을 실제로 돌린 묶음만).
     window_pred = {}
     window_prob_a = {}
 
@@ -762,7 +762,7 @@ def predict_events_and_clips(
             refine_done.extend(ws)
             refine_held.clear()
 
-    # 충격 시점용 광학흐름 — 읽는 대로 같은 간격(flow_step)으로 계산하고 숫자만 남긴다
+    # 충격 시점용 광학흐름입니다. 읽는 대로 같은 간격(flow_step)으로 계산하고 숫자만 남깁니다.
     flow_step = max(1, int(config.PREDICT_FLOW_SAMPLE_STEP))
     flow_mag_l, flow_roi_l = [], []
     flow_ok = True
@@ -817,7 +817,7 @@ def predict_events_and_clips(
                 flow_ok = False   # 실패하면 충격 시점은 이벤트 시작으로 대신한다
         flow_sec += time.time() - t0
 
-        # 프레임이 다 들어온 거친 창을 대기열에 넣고, 묶음이 차면 판정
+        # 프레임이 다 들어온 거친 묶음을 대기열에 넣고, 배치가 차면 판정합니다.
         while next_grid + clip_length - 1 <= i:
             coarse_q.append(next_grid)
             next_grid += grid
@@ -867,7 +867,7 @@ def predict_events_and_clips(
     num_windows = n_total - (clip_length - 1)
     window_starts = list(range(0, max(0, num_windows), window_stride))
     last_start = window_starts[-1]
-    # 영상 끝 창이 거친 격자에 없으면 거친 창으로 맨 뒤에 붙인다(예전과 동일)
+    # 영상 끝 묶음이 거친 격자에 없으면 거친 묶음으로 맨 뒤에 붙입니다.
     if last_start % grid != 0:
         refine_pending.discard(last_start)
         coarse_q.append(last_start)
@@ -906,7 +906,7 @@ def predict_events_and_clips(
                 event_start = None
         prev_state = pred_class
 
-    # 영상 끝까지 A 상태가 유지된 경우 이벤트 닫기
+    # 영상 끝까지 A 상태가 이어진 경우 이벤트를 닫습니다.
     if prev_state == 1 and event_start is not None:
         events.append({'start_frame': event_start,
                        'end_frame': real_frame_count - 1})
@@ -915,7 +915,7 @@ def predict_events_and_clips(
     # 순서가 중요하다: 먼저 병합해야 '한 충돌의 조각들'이 하나로 합쳐져 길이를
     # 회복하고, 그 뒤 남은 고립된 단발 깜빡임만 길이필터로 제거된다.
     _n_raw = len(events)
-    # 병합 간격은 초 단위 설정을 이 영상의 fps로 환산한다(fps 10~60 이 섞여 있음)
+    # 병합 간격은 초 단위 설정을 이 영상의 fps로 프레임으로 바꿉니다.
     merge_gap_frames = int(round(fps * config.PREDICT_EVENT_MERGE_GAP_SEC))
     if events:
         events.sort(key=lambda e: e['start_frame'])
@@ -939,7 +939,7 @@ def predict_events_and_clips(
     base_name = clip_name or os.path.splitext(os.path.basename(video_path))[0]
     render_cap = (cv2.VideoCapture(video_path)
                   if (events and render_clips) else None)
-    # 클립 렌더링 남은 시간 = 남은 프레임 × 프레임당 시간(재기 전엔 디코딩 기준 추정)
+    # 클립 렌더링 남은 시간은 남은 프레임 수와 프레임당 시간으로 계산합니다(재기 전에는 디코딩 기준 추정).
     render_total = sum(
         min(real_frame_count - 1, e['end_frame'] + clip_pad_frames)
         - max(0, e['start_frame'] - clip_pad_frames) + 1
@@ -967,7 +967,7 @@ def predict_events_and_clips(
             clip_start = max(0, start_f - clip_pad_frames)
             clip_end = min(real_frame_count - 1, end_f + clip_pad_frames)
 
-            # 구간 대표 확률 = 구간 내 사고 프레임 확률의 최댓값
+            # 구간 대표 확률은 구간 안 사고 프레임 확률의 최댓값입니다.
             probs_in_event = [p for f, (_, p) in accident_overlays.items()
                               if start_f <= f <= end_f]
             crash_prob = max(probs_in_event) if probs_in_event else None
@@ -1014,7 +1014,7 @@ def predict_events_and_clips(
                     in_event = a_first is not None and a_first <= f <= a_last
                     if in_event:
                         if last_cam is not None:
-                            # 충돌 부위에만 히트맵 — 박스 테두리(사고 빨강·정상 초록)는 그 위에 그린다
+                            # 충돌 부위에만 히트맵을 칠하고, 박스 테두리(사고 빨강, 정상 초록)는 그 위에 그립니다.
                             _draw_collision_cam(frame, last_cam, (rx1, ry1, rx2, ry2), (bx1, by1, bx2, by2))
                         cv2.rectangle(frame, (bx1, by1),
                                       (bx2, by2), (0, 0, 255), box_thick, cv2.LINE_AA)
@@ -1023,14 +1023,14 @@ def predict_events_and_clips(
                         cv2.rectangle(frame, (bx1, by1),
                                       (bx2, by2), (0, 255, 0), box_thick, cv2.LINE_AA)
                         state = 0
-                    # S/A 는 영상 밖(아래 띠)에 표시 — 차량을 가리지 않게
+                    # S/A는 차량을 가리지 않도록 영상 밖(아래 띠)에 표시합니다.
                     writer.write(_add_state_bar(frame, state))
                     render_done[0] += 1
                     if render_done[0] % 15 == 0:
                         _report_render()
                 writer.release()
                 raw_writer.release()
-                # 브라우저 호환 최종본(H.264/mp4)으로 변환
+                # 브라우저 호환 최종본(H.264 mp4)으로 변환합니다.
                 clip_path = _finalize_clip(rendered_path, clip_stem)
                 raw_clip_path = _finalize_clip(raw_rendered, raw_stem)
 
@@ -1051,12 +1051,12 @@ def predict_events_and_clips(
                     impact_f = start_f + int(np.argmax(seg))
 
             results.append({
-                # start_* = 사고 발생(충격) 시점 — UI 타임라인/DB 기록용
+                # start_*는 사고 발생(충격) 시점이며 화면 타임라인과 DB 기록에 씁니다.
                 'start_frame': impact_f,
                 'start_sec': impact_f / fps,
                 'end_frame': end_f,
                 'end_sec': end_f / fps,
-                # 참고용: 모델이 A로 판정한 구간 전체(클립 렌더 범위 기준)
+                # 참고용: 모델이 A로 판정한 구간 전체(클립 렌더링 범위 기준)
                 'event_start_frame': start_f,
                 'event_end_frame': end_f,
                 'crash_prob': crash_prob,

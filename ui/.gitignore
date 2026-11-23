@@ -12,7 +12,7 @@ dist
 dist-ssr
 *.local
 
-# Editor directories and files
+# 편집기 폴더와 파일
 .vscode/*
 !.vscode/extensions.json
 .idea

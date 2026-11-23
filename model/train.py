@@ -31,7 +31,7 @@ class EarlyStopping:
         self.best_score = None
         self.early_stop = False
         self.val_loss_min = float('inf')
-        # 최종 파일명 규칙에 쓸 값 — best 가중치가 저장된 에포크(1-index)
+        # 최종 파일 이름에 쓸 값으로, best 가중치를 저장한 에포크(1부터)입니다.
         self.best_epoch = None
 
     def __call__(self, val_loss, model, epoch):
@@ -210,7 +210,7 @@ def validate(model, loader, device, *, span, criterion, batch_size, class_w=None
         'loss': vloss / n, 'acc': correct / n,
         'rec': rec, 'prec': prec,
         'lossA': loss_a, 'lossS': loss_s,
-        # 검증셋에 한 클래스가 없으면 균형 손실을 못 구한다
+        # 검증셋에 한 클래스가 없으면 균형 손실을 구할 수 없습니다.
         'bal': (loss_a + loss_s) / 2 if (n_a and n_s) else None,
         'preRec': pre_rec, 'prePrec': pre_prec, 'spanRec': span_rec, 'spanPrec': span_prec,
         'auc': _auc(score_a, score_s),
@@ -231,14 +231,14 @@ def _make_loader(dataset, batch_size, shuffle, device, collate_fn=None, batch_sa
         'pin_memory': is_cuda_like(device),
     }
     if batch_sampler is not None:
-        # 묶음 구성(train_balance)이 에포크마다 묶음을 직접 짠다 — batch_size·shuffle 대신
+        # 배치 구성(train_balance)을 쓰면 batch_size와 shuffle 대신 에포크마다 배치를 직접 짭니다.
         kwargs['batch_sampler'] = batch_sampler
     else:
         kwargs.update({'batch_size': batch_size, 'shuffle': shuffle})
     if collate_fn is not None:
         kwargs['collate_fn'] = collate_fn
     if num_workers > 0:
-        # ② prefetch — GPU 연산 중 다음 배치를 미리 준비(작업자 8개면 4, 전체 약 32묶음 — loader_prefetch)
+        # GPU 연산 중 다음 배치를 미리 준비합니다(작업자 8개면 4, 전체 약 32개, loader_prefetch).
         kwargs.update({'persistent_workers': True, 'prefetch_factor': loader_prefetch(num_workers)})
         # ③ 작업자마다 OpenCV 스레드 수(config.TRAIN_CV2_THREADS, 기본 None = OpenCV 기본).
         #    부모에서 먼저 정해 작업자가 물려받게 한다(작업자 안에서 처음 바꾸면 멈춤 — dataset.py 주석).
@@ -290,7 +290,7 @@ def train_model(
     val_dir = getattr(config, 'VAL_DATA_DIR', None)
     val_dir = Path(val_dir) if val_dir else None
     use_val_dir = val_dir is not None and val_dir.exists() and any(val_dir.rglob('*.mp4'))
-    # 검증 클립은 매 에포크 같으므로 처음 만든 것을 저장해 두고 읽는다(config.TRAIN_VAL_CACHE, 결과 같음)
+    # 검증 클립은 매 에포크 같으므로 처음 만든 것을 저장해 두고 읽습니다(config.TRAIN_VAL_CACHE, 결과는 같습니다).
     val_dataset = HitAndRunDataset(
         data_dir=val_dir if use_val_dir else data_dir, clip_length=clip_length, r_value=r_value,
         resize=resize, augment=False,
@@ -306,7 +306,7 @@ def train_model(
         return 'real' if 'realdata' in parts else 'rc'
 
     def _direction(file_name):
-        # 파일명 예: 220510_LA_0001 → 두 번째 토큰의 첫 글자가 방향(N/L/R/S)
+        # 파일 이름 예: 220510_LA_0001. 두 번째 토큰의 첫 글자가 방향(N, L, R, S)입니다.
         seg = file_name.split('_')
         return seg[1][0] if len(seg) > 1 and seg[1] else '?'
 
@@ -342,7 +342,7 @@ def train_model(
         with open(lock_path, encoding='utf-8') as _f:
             lock_val = {v.replace('\\', '/') for v in json.load(_f)['val']}
     if use_val_dir:
-        # 검증 = 검증 폴더 전부. 고정 목록의 검증 영상이 학습 폴더에 남아 있으면(덜 옮김) 학습에 섞이지 않게 뺀다.
+        # 검증은 검증 폴더 전부입니다. 고정 목록의 검증 영상이 학습 폴더에 남아 있으면(덜 옮김) 학습에 섞이지 않게 뺍니다.
         left = []
         for (dom, direction, scen), vid_map in sorted(groups.items()):
             for vk in sorted(vid_map):
@@ -411,7 +411,7 @@ def train_model(
     force = {str(n) for n in (getattr(config, 'TRAIN_FORCE_TRAIN_VIDEOS', ()) or ())}
     forced = []
     if use_val_dir:
-        # 폴더로 나눈 뒤엔 파일 위치가 곧 분할이다 — 검증 폴더에 들어 있으면 알리기만 한다
+        # 폴더로 나눈 뒤에는 파일 위치가 곧 분할이므로, 검증 폴더에 들어 있으면 알리기만 합니다.
         in_val = sorted(os.path.splitext(os.path.basename(v))[0] for v in split_videos['val']
                         if os.path.splitext(os.path.basename(v))[0] in force)
         if in_val:
@@ -444,7 +444,7 @@ def train_model(
             return os.path.splitext(os.path.basename(v))[0]
         drop = {i for i, s in enumerate(train_dataset.samples)
                 if _stem(s.get('video_key', s['mp4_path'])) in excl}
-        # 검증 번호는 검증 폴더를 쓰면 val_dataset 기준, 아니면 학습 데이터셋과 같은 번호
+        # 검증 번호는 검증 폴더를 쓰면 val_dataset 기준, 아니면 학습 데이터셋과 같은 번호입니다.
         drop_val = ({i for i, s in enumerate(val_dataset.samples) if _stem(s.get('video_key', s['mp4_path'])) in excl}
                     if use_val_dir else drop)
         if drop or drop_val:
@@ -532,7 +532,7 @@ def train_model(
               f"판정 기준 P(A) {config.A_THRESHOLD:g}")
     else:
         print("[검증 지표] A 슬라이싱(TRAIN_A_SLICE_ENABLED)이 켜져 있어 구간 재현율 = 첫 창 재현율")
-    # 실제 영상 S 의 1번 차량 클립 (config.TRAIN_S_REAL_USE_CAR1)
+    # 실제 영상 정상의 1번 차량 클립(config.TRAIN_S_REAL_USE_CAR1)
     car1 = [s for s in train_dataset.samples if s.get('car_id') == 1 and s['label'] == 0]
     if getattr(config, 'TRAIN_S_RC_USE_CAR1', False):
         tr1 = [train_dataset.samples[i] for i in train_idx
@@ -546,7 +546,7 @@ def train_model(
         s_car_info = (f"0번 + 실제 영상 S 는 1번도 (1번 클립 {len(car1)}개, "
                       f"영상 {len({s['video_key'] for s in car1})}개)" if car1 else "0번만")
     print(f"[S 클립 차량] {s_car_info}")
-    # 사고 영상의 충돌 전·후를 정상으로 (config.TRAIN_A_CONTEXT_NEG, 기본 끔) — 켜면 이름에 _ctx · _ctxall
+    # 사고 영상의 충돌 전후를 정상으로 학습합니다(config.TRAIN_A_CONTEXT_NEG, 기본 끔). 켜면 이름에 _ctx나 _ctxall이 붙습니다.
     ctx_mode = getattr(config, 'TRAIN_A_CONTEXT_NEG', None)
     ctx_info = '끔'
     if ctx_mode:
@@ -562,7 +562,7 @@ def train_model(
                     f"(충돌 전 {n_pre} · 후 {n_post}, 실제 {n_dom['real']} · RC {n_dom['rc']}) · 사고 영상 {n_vid}개 · 매 에포크 전부")
         run_tag = f"{run_tag}_ctx{'' if ctx_mode == 'real' else 'all'}{'' if abs(margin - 0.5) < 1e-9 else f'{margin:g}'}"
         print(f"[충돌 전·후 정상] {ctx_info}")
-    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV, 기본 끔) — 켜면 이름에 _hn(반복 k≠1 이면 _hn<k>)
+    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV, 기본 끔)입니다. 켜면 이름에 _hn(반복이 1이 아니면 _hn<k>)이 붙습니다.
     hn_csv = getattr(config, 'TRAIN_HARDNEG_CSV', None)
     hn_info = '끔'
     if hn_csv:
@@ -613,7 +613,7 @@ def train_model(
         print(f"[r 증강] 켬 — 학습 클립의 {r_aug_p:.0%} 를 r {'·'.join(f'{v:g}' for v in r_aug_vals)} 중 하나로 넓게 자름"
               f"(검증·서비스는 r=1)")
 
-    # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
+    # 저화질(압축) 증강(config.TRAIN_LQ_AUG_PROB, 기본 끔)입니다. 켜면 이름에 _lq를 붙여 다른 학습과 구분합니다.
     lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
     lq_default = (abs(float(config.TRAIN_LQ_SIZE_PROB) - 0.5) < 1e-9 and tuple(config.TRAIN_LQ_CRF_RANGE) == (28, 42))
     lq_small = bool(getattr(config, 'TRAIN_LQ_SMALL', False))
@@ -638,26 +638,26 @@ def train_model(
     elif lq_small:
         print("⚠️ TRAIN_LQ_SMALL 은 저화질 증강(TRAIN_LQ_AUG_PROB)이 켜져 있어야 씁니다 — 이번 학습엔 적용 안 됨")
 
-    # ── 불빛 증강 (config.TRAIN_LIGHT_AUG_PROB, 기본 끔) ── 켜면 이름에 _light
+    # 불빛 증강(config.TRAIN_LIGHT_AUG_PROB, 기본 끔)입니다. 켜면 이름에 _light가 붙습니다.
     light_p = float(getattr(config, 'TRAIN_LIGHT_AUG_PROB', 0) or 0)
     if light_p > 0:
         run_tag = f"{run_tag}_light"
         print(f"[불빛 증강] 켬 — 확률 {light_p:g} · 사고·정상 같은 확률 · 훑기 60%/비추기 40% · "
               f"{config.TRAIN_LIGHT_DARK_PROB:.0%}는 먼저 어둡게(0.25~0.6)")
 
-    # ── 입력 크기 (config.INPUT_SIZE, 기본 224) ── 다르면 이름에 _s<크기> — 가중치를 읽을 때 이 표시로 크기를 맞춘다
+    # 입력 크기(config.INPUT_SIZE, 기본 224)가 다르면 이름에 _s<크기>를 붙입니다. 가중치를 읽을 때 이 표시로 크기를 맞춥니다.
     if config.RESIZE[0] != 224:
         run_tag = f"{run_tag}_s{config.RESIZE[0]}"
         print(f"[입력 크기] {config.RESIZE[0]}×{config.RESIZE[1]} (기본 224) — 평가·서비스도 INPUT_SIZE={config.RESIZE[0]} 로")
 
-    # ── 헤드 시간 풀링 (config.HEAD_TEMPORAL_POOL, 기본 avg) ── 다르면 이름에 _top3·_avgtop3 — 가중치를 읽을 때 이 표시로 맞춘다
+    # 헤드 시간 풀링(config.HEAD_TEMPORAL_POOL, 기본 avg)이 다르면 이름에 _top3나 _avgtop3를 붙입니다. 가중치를 읽을 때 이 표시로 맞춥니다.
     pool = getattr(config, 'HEAD_TEMPORAL_POOL', 'avg')
     if pool != 'avg':
         run_tag = f"{run_tag}_{pool}"
         print(f"[헤드 시간 풀링] {pool}(채널·칸마다 시간 축 상위 {config.HEAD_TEMPORAL_TOPK}개"
               f"{' 평균' if pool == 'top3' else ' 평균과 30시점 평균의 평균'}) — 평가·서비스도 HEAD_TEMPORAL_POOL={pool} 로")
 
-    # ── fps 증강 (config.TRAIN_FPS_AUG_PROB, 기본 끔) ── 켜면 이름에 _fps 를 붙여 기존 학습과 구분한다
+    # fps 증강(config.TRAIN_FPS_AUG_PROB, 기본 끔)입니다. 켜면 이름에 _fps를 붙여 다른 학습과 구분합니다.
     fps_p = float(getattr(config, 'TRAIN_FPS_AUG_PROB', 0) or 0)
     fps_ks = tuple(getattr(config, 'TRAIN_FPS_AUG_STRIDES', (2, 3)))
     if fps_p > 0:
@@ -721,7 +721,7 @@ def train_model(
     weights_dir = Path(save_path).parent
     weights_dir.mkdir(parents=True, exist_ok=True)
     work_best = run_dir / 'work_best.pth'
-    # 에포크별 가중치(config.TRAIN_SAVE_ALL_EPOCHS) — 회차 폴더 안이라 학습끼리 섞이지 않는다
+    # 에포크별 가중치(config.TRAIN_SAVE_ALL_EPOCHS)입니다. 회차 폴더 안이라 학습끼리 섞이지 않습니다.
     epochs_dir = run_dir / 'epochs' if getattr(config, 'TRAIN_SAVE_ALL_EPOCHS', False) else None
     if epochs_dir is not None:
         epochs_dir.mkdir(exist_ok=True)
@@ -730,9 +730,9 @@ def train_model(
     #   같은 분에 같은 조건으로 시작해 회차 폴더에 _2 가 붙은 경우 그 번호도 넣는다(이름이 겹치지 않게).
     run_dup = run_dir.name[len(f"{run_stamp}_{config.MODEL_NAME}_{run_tag}"):]
     epoch_prefix = f"hitandrun_{config.MODEL_NAME}_{run_stamp}{run_dup}_{run_tag}"
-    # 그때의 설정을 그대로 남긴다 — 나중에 config.py 가 바뀌어도 이 회차 조건을 알 수 있다
+    # 그때의 설정을 그대로 남깁니다. 나중에 config.py가 바뀌어도 이 회차 조건을 알 수 있습니다.
     shutil.copy2(config.__file__, run_dir / 'config_snapshot.py')
-    # 학습/검증에 쓴 영상 목록 — 평가 영상과 겹치지 않았는지 나중에 확인할 수 있다
+    # 학습과 검증에 쓴 영상 목록입니다. 평가 영상과 겹치지 않았는지 나중에 확인할 수 있습니다.
     with open(run_dir / 'split.json', 'w', encoding='utf-8') as _f:
         root = Path(data_dir)
         json.dump({
@@ -770,7 +770,7 @@ def train_model(
         ('최종 가중치', '(학습이 끝나면 기록됨)'),
         ('작업 중 best 가중치', f'{work_best} (학습이 끝나면 최종 가중치로 옮겨짐)'),
         ('에포크별 가중치', f'{epochs_dir} (매 에포크)' if epochs_dir is not None else '저장 안 함'),
-        # 에포크 시간은 이 설정이 같은 학습끼리만 비교한다(끔이 RTX 3080 에서 약 2.3배 빠름, 결과는 같음)
+        # 에포크 시간은 이 설정이 같은 학습끼리만 비교합니다(결과는 같습니다).
         ('GPU 메모리 배치 channels_last',
          '켬' if (use_channels_last and is_channels_last_3d_supported(device)) else '끔'),
         ('데이터 폴더', str(data_dir)),
@@ -806,7 +806,7 @@ def train_model(
             'epoch', 'lr', 'train_loss',
             'val_rc_loss', 'val_rc_acc', 'val_rc_recallA', 'val_rc_precA',
             'val_real_loss', 'val_real_acc', 'val_real_recallA', 'val_real_precA',
-            # ↓ 클래스별 평균 손실과 균형 손실, best 판단 지표, 이 에포크 저장 여부
+            # 아래는 클래스별 평균 손실, 균형 손실, best 판단 지표, 이 에포크 저장 여부입니다.
             'val_rc_lossA', 'val_rc_lossS', 'val_rc_bal',
             'val_real_lossA', 'val_real_lossS', 'val_real_bal',
             'monitor', 'saved_best', 'saved_cand',
@@ -820,7 +820,7 @@ def train_model(
         """None(해당 val 셋 없음/분모 0)은 빈칸으로 기록."""
         return '' if v is None else f'{v:.6f}'
 
-    # 학습 시에는 Kinetics-400 사전학습 가중치로 초기화 (config.PRETRAINED)
+    # 학습할 때는 Kinetics-400 사전학습 가중치로 초기화합니다(config.PRETRAINED).
     model = HitAndRun3DCNN(
         num_classes=num_classes, pretrained=config.PRETRAINED).to(device)
 
@@ -865,7 +865,7 @@ def train_model(
     for _name, _p in model.named_parameters():
         if not _p.requires_grad:
             continue
-        # 새로 초기화되는 분류 헤드만 기본 LR, 나머지(사전학습분)는 ×0.1
+        # 새로 초기화한 분류 헤드만 기본 학습률, 나머지(사전학습분)는 0.1배입니다.
         _kind = 'new' if _name.startswith('head_conv') else 'pre'
         _decay = 'n' if (id(_p) in _norm_ids or _name.endswith('bias')) else 'd'
         _g[f'{_kind}_{_decay}'].append(_p)
@@ -886,7 +886,7 @@ def train_model(
     # 1) ReduceLROnPlateau: val loss가 정체되면 LR을 절반으로 낮춰 수렴을 돕는다.
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=3)
-    # 2) gradient clipping: 그래디언트 노름 상한(폭주/진동 억제). 필요 시 조정.
+    # 2) gradient clipping: 기울기 노름의 상한으로 폭주와 진동을 막습니다.
     grad_clip_norm = 1.0
 
     if amp_enabled:
@@ -962,7 +962,7 @@ def train_model(
         if n <= step_cap:
             chunks = [torch.arange(n, device=device)]
         else:
-            # 한 조각에 한 충돌의 창만 몰리지 않게 섞는다(BN 통계가 치우치지 않게)
+            # 한 조각에 한 충돌의 묶음만 몰리지 않게 섞습니다(BN 통계가 치우치지 않게).
             chunks = torch.randperm(n, device=device).chunk(math.ceil(n / step_cap))
         optimizer.zero_grad(set_to_none=True)
         total = 0.0
@@ -1100,7 +1100,7 @@ def train_model(
             saved_best = (early_stopping.best_epoch == epoch + 1
                           and prev_best != epoch + 1)
             saved_cand = _update_candidates(epoch + 1, monitor)
-        # 에포크별 가중치 — 끝난 뒤 로그를 보고 몇 개를 평가 영상으로 비교해 고른다
+        # 에포크별 가중치입니다. 끝난 뒤 순위를 매겨 몇 개를 평가 영상으로 비교해 고릅니다.
         if epochs_dir is not None:
             torch.save(model.state_dict(), epochs_dir / f"{epoch_prefix}_ep{epoch + 1:03d}.pth")
 
@@ -1121,7 +1121,7 @@ def train_model(
                 int(in_grace),
             ])
 
-        # 학습 곡선 그래프 갱신 — 실패해도 학습은 계속한다
+        # 학습 곡선 그래프를 갱신합니다. 실패해도 학습은 계속합니다.
         try:
             from trainplot import plot_trainlog
             plot_trainlog(log_path)
@@ -1184,7 +1184,7 @@ def train_model(
     info['best 에포크'] = (f"{early_stopping.best_epoch} "
                           f"({'조기 종료' if early_stopping.early_stop else '끝까지 학습'})")
     info['후보 가중치'] = ', '.join(c['file'] for c in cand_info if c['rank'] > 1) or '없음'
-    # 평가해 볼 에포크 추천(판단 지표·그 에포크 균형손실·F1 상위) — 최종 선택은 평가 영상으로
+    # 평가해 볼 에포크를 추천합니다(판단 지표, 그 에포크 균형 손실, F1 상위). 최종 선택은 순위 매기기와 평가로 합니다.
     from epoch_suggest import suggest
     suggest_eps, suggest_lines = suggest(run_dir)
     print()
@@ -1193,7 +1193,7 @@ def train_model(
     info['평가 추천 에포크'] = ', '.join(map(str, suggest_eps)) or '없음'
     write_run_info(run_dir, list(info.items()))
 
-    # 결과 요약 — 그래프가 best·후보를 표시할 때도 쓴다
+    # 결과 요약입니다. 그래프가 best와 후보를 표시할 때도 씁니다.
     result_path = log_path.with_name(log_path.stem + '.result.json')
     with open(result_path, 'w', encoding='utf-8') as _f:
         json.dump({

@@ -112,7 +112,7 @@ def _run(args):
 
     shape = (3, config.CLIP_LENGTH, config.RESIZE[1], config.RESIZE[0])
 
-    # ── ① 속도 ──
+    # 1) 속도
     print('\n[속도] 초당 처리 창 수 (서비스 배치 = '
           f'{config.PREDICT_INFER_BATCH_SIZE_GPU}, 평가 배치 = {config.EVAL_INFER_BATCH_SIZE})')
     print(f"{'배치':>4} {'FP32':>9} {'FP16':>9} {'FP16/FP32':>10}")
@@ -133,7 +133,7 @@ def _run(args):
             res[fp16] = n * bs / (time.perf_counter() - t0)
         print(f'{bs:>4} {res[False]:>9.1f} {res[True]:>9.1f} {res[True] / res[False]:>9.2f}x')
 
-    # ── ② 실제 창 결과 비교 ──
+    # 2) 실제 묶음 결과 비교
     mean = torch.tensor(config.NORM_MEAN, device=device).view(1, 3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD, device=device).view(1, 3, 1, 1, 1)
     folder = Path(config.EVAL_FOLDER_PATH)
@@ -178,7 +178,7 @@ def _run(args):
     for name, s, th, a, b in flips[:20]:
         print(f'    {name} 창 시작 {s}f: 기준 {th}  FP32 {a:.4f} → FP16 {b:.4f}')
 
-    # ── ③ 평가 세트 전체 (선택) ──
+    # 3) 평가 세트 전체(선택)
     same = None
     if args.full_eval:
         keys = [('base_recall', '① 기존 판정 재현율'), ('base_false_alarm', '① 기존 판정 오탐율'),
@@ -199,7 +199,7 @@ def _run(args):
             print(f'{label:<24}{str(a):>10}{str(b):>10}{mark}')
         same = all(got[False].get(k) == got[True].get(k) for k, _ in keys if k != 'speed_proc_fps')
 
-    # ── 판단 ──
+    # 판단
     print('\n[판단]')
     ok1 = not flips
     print(f"  ① 판정이 바뀐 창 없음: {'예' if ok1 else f'아니오({len(flips)}건)'}")

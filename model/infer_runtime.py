@@ -66,7 +66,7 @@ class Runner:
         return f'Runner({self.name}{", " + self.detail if self.detail else ""})'
 
 
-# ── 충돌 판정 (학습 검증·평가·서비스 공통) ──────────────────────────────
+# 충돌 판정(학습 검증, 평가, 서비스 공통)
 
 def a_logit_margin(threshold=None):
     """P(A) 기준(config.A_THRESHOLD)을 로짓 차이(logit_A − logit_S) 기준으로 바꾼 값. 0.5 → 0."""
@@ -84,7 +84,7 @@ def is_accident(logits, threshold=None):
     return (logits[:, 1].float() - logits[:, 0].float()) > a_logit_margin(threshold)
 
 
-# ── 공통 ────────────────────────────────────────────────────────────
+# 공통
 
 def _log(msg):
     print(f'[추론 실행기] {msg}', flush=True)
@@ -177,7 +177,7 @@ def _time_per_clip(runner, x, reps=2):
     return (time.perf_counter() - t0) / (reps * x.shape[0])
 
 
-# ── 방식별 실행기 ───────────────────────────────────────────────────
+# 방식별 실행기
 
 def _torch_runner(model, fp16=False):
     dev = next(model.parameters()).device
@@ -263,7 +263,7 @@ def _openvino_runner(model, state_hash, clip_shape):
             warnings.simplefilter('ignore')
             om = ov.convert_model(_export_copy(model), example_input=torch.zeros((1, *clip_shape)))
     om.reshape({om.inputs[0]: ov.PartialShape([-1, *clip_shape])})
-    # FP32 고정 — AMX 등이 있는 CPU 에서 OpenVINO 기본값은 BF16 이라 결과가 달라질 수 있다
+    # FP32로 고정합니다. AMX 등이 있는 CPU에서는 OpenVINO 기본값이 BF16이라 결과가 달라질 수 있습니다.
     cm = core.compile_model(om, 'CPU', {'PERFORMANCE_HINT': 'LATENCY',
                                         'INFERENCE_PRECISION_HINT': 'f32'})
     req = cm.create_infer_request()
@@ -271,7 +271,7 @@ def _openvino_runner(model, state_hash, clip_shape):
 
     def run_cam(x):
         r = req.infer({0: x.detach().cpu().float().contiguous().numpy()})
-        # 결과 버퍼는 다음 호출에서 덮어쓰이니 복사
+        # 결과 버퍼는 다음 호출에서 덮어쓰이므로 복사합니다.
         return torch.from_numpy(np.array(r[out])), torch.from_numpy(np.array(r[out_cam]))
 
     def run(x):
@@ -305,7 +305,7 @@ def _cpu_candidates():
     return ['onnxruntime', 'openvino']
 
 
-# ── 검사 결과 저장 ──────────────────────────────────────────────────
+# 검사 결과 저장
 
 def _cache_file():
     return Path(config.INFER_CACHE_DIR) / 'backend_choice.json'
@@ -343,7 +343,7 @@ def _fingerprint(state_hash, clip_shape, batch):
     }
 
 
-# ── 고르기 ──────────────────────────────────────────────────────────
+# 고르기
 
 def _fp16_supported(dev):
     """Tensor Core 가 있는 NVIDIA GPU(연산능력 7.0 이상)만 FP16 이 빠르다. AMD(ROCm)는 제외."""
@@ -410,7 +410,7 @@ def _select_cpu(model, clip_shape, batch, force=False):
         except Exception as exc:  # noqa: BLE001
             _log(f'저장된 방식 {name} 이(가) 지금은 맞지 않아 다시 검사합니다: {exc}')
 
-    # ② 자가 검사: PyTorch 결과를 기준으로 후보마다 결과 비교 + 속도
+    # 2) 자가 검사: PyTorch 결과를 기준으로 후보마다 결과를 비교하고 속도를 잽니다.
     _log(f'이 컴퓨터에서 처음 쓰는 조합이라 자가 검사를 합니다(한 번만) — CPU: {cpu_brand()}')
     x = _check_input(clip_shape, batch)
     ref_runner = _torch_runner(model)

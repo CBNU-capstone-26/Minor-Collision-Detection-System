@@ -59,21 +59,21 @@ class _Tee:
         self.f.close()
 
 
-# ───────────────────────── 변형 ─────────────────────────
+# 변형
 def _pil(fn):
     """PIL 변환을 클립의 모든 프레임에 같은 값으로 — dataset._apply_augmentation 과 같은 연산."""
     return lambda frames, seed: [np.array(fn(Image.fromarray(f))) for f in frames]
 
 
 def _noise(frames, seed):
-    # 예전 학습 노이즈 — 프레임마다 새로 뽑는다(창마다 시드 고정 → 다시 돌려도 같다). 11-05 부터 학습엔 없음(참고용)
+    # 프레임마다 새로 뽑는 노이즈입니다(묶음마다 시드를 고정해 다시 돌려도 같습니다). 학습에는 쓰지 않는 참고용입니다.
     rng = np.random.default_rng(seed)
     return [np.clip(f.astype(np.float32) + rng.normal(0.0, NOISE_SIGMA, f.shape), 0, 255).astype(np.uint8)
             for f in frames]
 
 
 def _grain(frames, seed):
-    # 지금 학습 노이즈(dataset._apply_augmentation) — 클립 내내 같은 잔무늬(창마다 시드 고정)
+    # 학습 노이즈(dataset._apply_augmentation)와 같은, 클립 내내 같은 잔무늬입니다(묶음마다 시드 고정).
     rng = np.random.default_rng(seed)
     g = rng.normal(0.0, NOISE_SIGMA, frames[0].shape).astype(np.float32)
     return [np.clip(f.astype(np.float32) + g, 0, 255).astype(np.uint8) for f in frames]
@@ -148,7 +148,7 @@ except ImportError:
     KEYFRAME_NOTE = 'PyAV(av) 가 없어 H.264 키프레임 변형은 건너뜀 — pip install av'
 
 
-# 불빛(2026-11-05): 같은 '밤(×0.4)'에 불빛만 더한 것과 비교해 불빛 때문에 P(A)가 오르는지(정상 창) · 떨어지는지(사고 창)
+# 불빛: 같은 '밤'(0.4배)에 불빛만 더한 것과 비교해, 불빛 때문에 정상 묶음 P(A)가 오르는지, 사고 묶음 P(A)가 떨어지는지 봅니다.
 CONDITIONS += [
     ('night', '밤처럼 어둡게 ×0.4', LIGHT, _light(kind='none', dark=0.4)),
     ('lsweep', '+ 흰 빛 훑기', LIGHT, _light(kind='sweep', dark=0.4, peak=160, radius=0.35, t0=8, dur=14,
@@ -160,7 +160,7 @@ CONDITIONS += [
 ]
 
 
-# ───────────────────────── 창 고르기·읽기 ─────────────────────────
+# 묶음 고르기와 읽기
 def _windows(total, gt_sf, n_s):
     L = config.CLIP_LENGTH
     last = max(0, total - L)
@@ -196,7 +196,7 @@ def _read_clips(path, bbox, starts):
     return clips
 
 
-# ───────────────────────── 추론 ─────────────────────────
+# 추론
 def _infer(model, device, clips, batch, cl):
     mean = torch.tensor(config.NORM_MEAN, dtype=torch.float32, device=device).view(1, 3, 1, 1, 1)
     std = torch.tensor(config.NORM_STD, dtype=torch.float32, device=device).view(1, 3, 1, 1, 1)
@@ -219,7 +219,7 @@ def _auc(pos, neg):
     return float((p > n).mean() + 0.5 * (p == n).mean())
 
 
-# ───────────────────────── 실행 ─────────────────────────
+# 실행
 def main():
     ap = argparse.ArgumentParser(description='변형 견딤 시험')
     ap.add_argument('--weights', default=str(config.EVAL_WEIGHTS_PATH), help='시험할 가중치(기본 평가 가중치)')
@@ -241,7 +241,7 @@ def main():
     finally:
         sys.stdout = tee.stdout
         tee.close()
-        # 오류로 멈췄을 때 [저장] 을 찍으면 끝난 줄 알고 다음 단계를 시작하는 대기 명령이 속는다(11-22)
+        # 오류로 멈췄을 때 [저장]을 찍으면 이어서 기다리던 명령이 끝난 줄 알고 다음 단계를 시작하므로 [중단]을 찍습니다.
         print(f'\n[저장] {out_dir / "report.txt"}' if done else f'\n[중단] 오류로 멈춤 — 일부만 남음: {out_dir}')
 
 

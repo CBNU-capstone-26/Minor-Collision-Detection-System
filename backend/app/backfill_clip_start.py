@@ -47,7 +47,7 @@ def find_clip_start(video_path, clip_path, width, height, bbox, first, last, mas
     if n == 0:
         cap.release()
         return None, '클립을 못 읽음', fps
-    # 클립은 구간(first~last 프레임)을 담는다 → 시작 후보는 last-n+1 ~ first, 영상 안
+    # 클립은 구간(first~last 프레임)을 담으므로 시작 후보는 last-n+1부터 first까지이고, 영상 안이어야 합니다.
     lo, hi = max(0, last - n + 1), min(first, max(0, total - n))
     if lo > hi:
         lo, hi = max(0, min(lo, hi) - 30), max(lo, hi) + 30

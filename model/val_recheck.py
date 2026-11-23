@@ -35,7 +35,7 @@ from evaluate import _Tee
 from hitandrun_model import HitAndRun3DCNN, check_weights
 from train import _make_loader, validate
 
-# 검증 클립 구성에 영향을 주는 설정 — 학습 당시(config_snapshot.py)와 다르면 검산이 맞지 않을 수 있다
+# 검증 클립 구성에 영향을 주는 설정입니다. 학습 당시(config_snapshot.py)와 다르면 검산이 맞지 않을 수 있습니다.
 _SAMPLE_KEYS = ('CLIP_LENGTH', 'RESIZE', 'R_VALUE', 'NORM_MEAN', 'NORM_STD', 'TRAIN_A_PRE_FRAMES',
                 'TRAIN_A_SLICE_ENABLED', 'TRAIN_A_SLICE_STRIDE', 'TRAIN_S_SLICE_ENABLED', 'TRAIN_S_SLICE_STRIDE',
                 'TRAIN_S_MAX_CLIPS_PER_VIDEO', 'TRAIN_S_REAL_USE_CAR1', 'TRAIN_SPAN_WINDOW_STRIDE',
@@ -210,7 +210,7 @@ def _run(args, run_dir, th, out_base):
                          channels_last=channels_last, threshold=th) if loaders[d] else None
             for key in _METRICS:
                 row[f'{d}_{key}'] = None if m is None else m[key]
-            # 검산: 학습 CSV 의 균형 손실·재현율과 같은가(기준이 0.5 가 아니면 재현율은 빼고)
+            # 검산: 학습 CSV의 균형 손실, 재현율과 같은지 봅니다(기준이 0.5가 아니면 재현율은 뺍니다).
             if m is not None and old.get(f'val_{d}_bal'):
                 ok = abs(float(old[f'val_{d}_bal']) - m['bal']) < 2e-3
                 if abs(th - 0.5) < 1e-9 and old.get(f'val_{d}_recallA') and m['rec'] is not None:

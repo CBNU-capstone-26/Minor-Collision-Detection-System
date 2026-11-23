@@ -72,13 +72,13 @@ def suggest(run_dir, k=None, gap=None):
         rows = [r for r in csv.DictReader(fh) if r.get('epoch') and r.get('grace') != '1']
     if not rows:
         return [], ["학습 곡선이 아직 비어 있습니다"]
-    # 실제 영상 검증이 있으면 그쪽, 없으면 RC 검증
+    # 실제 영상 검증이 있으면 그것을, 없으면 RC 검증을 씁니다.
     dom = 'real' if any(_f(r, 'val_real_bal') is not None for r in rows) else 'rc'
     bal = f'val_{dom}_bal'
     picks = {
         '판단지표': _top(rows, lambda r: _f(r, 'monitor'), k, gap),
         '균형손실': _top(rows, lambda r: _f(r, bal), k, gap),
-        # F1 이 같으면 균형손실이 낮은 쪽
+        # F1이 같으면 균형 손실이 낮은 쪽
         'F1': _top(rows, lambda r: (-_f1(r, dom), _f(r, bal) if _f(r, bal) is not None else 9.0), k, gap),
     }
     pick = sorted({e for v in picks.values() for e in v})

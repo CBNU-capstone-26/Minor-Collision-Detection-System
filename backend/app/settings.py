@@ -12,9 +12,8 @@ from urllib.parse import quote, urlencode
 from dotenv import load_dotenv
 
 
-# backend/.env keeps precedence for local development credentials. The root
-# .env is also loaded as a fallback so dev.sh uses the same provider settings
-# as Docker Compose and the systemd deployment.
+# 로컬 개발 설정은 backend/.env를 우선합니다. 프로젝트 루트의 .env도 읽어
+# dev.sh, Docker Compose와 systemd가 같은 서비스 설정을 사용할 수 있게 합니다.
 _BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(_BASE_DIR / "backend" / ".env")
 load_dotenv(_BASE_DIR / ".env")
@@ -162,7 +161,7 @@ class Settings:
             f"MODEL_VARIANT='{MODEL_VARIANT}' 는 지원하지 않습니다. "
             f"가능한 값: {', '.join(MODEL_VARIANT_DIRS)}")
     MODEL_DIR: Path = BASE_DIR / MODEL_VARIANT_DIRS[MODEL_VARIANT]
-    # 배포 가중치 경로는 각 폴더의 config.py 의 SERVICE_WEIGHTS_PATH 에서 관리한다.
+    # 서비스 가중치 경로는 모델 폴더의 config.py(SERVICE_WEIGHTS_PATH)에서 관리합니다.
 
     STORAGE_DIR: Path = _storage_dir()
     UPLOAD_DIR: Path = STORAGE_DIR / "uploads"
@@ -172,8 +171,8 @@ class Settings:
     DATABASE_URL: str = _database_url()
     REDIS_URL: str = _redis_url()
 
-    # Existing DB rows store object keys (for example uploads/<uuid>.mp4).
-    # Keep the former R2/S3 configuration so those videos remain playable.
+    # DB에 저장된 객체 키(예: uploads/<uuid>.mp4)로 기존 영상을 열 수 있도록
+    # R2/S3 설정을 유지합니다.
     STORAGE_BACKEND: str = _env("STORAGE_BACKEND", "local").lower()
     S3_ENDPOINT_URL: str | None = _env_first(
         "S3_ENDPOINT_URL", "R2_ENDPOINT_URL",
@@ -236,7 +235,7 @@ def auth_secret_key() -> str:
 
 settings = Settings()
 
-# 저장소 폴더 보장
+# 저장소 폴더를 만들어 둡니다.
 settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 settings.CLIP_DIR.mkdir(parents=True, exist_ok=True)
 settings.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)

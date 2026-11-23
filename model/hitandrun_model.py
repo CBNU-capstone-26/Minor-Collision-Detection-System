@@ -100,9 +100,9 @@ class TemporalPool(nn.Module):
         return 0.5 * (x.mean(dim=2, keepdim=True) + top)
 
 
-# X3D-M의 마지막 res 스테이지 출력 채널 수(구조 확인으로 검증한 값).
+# X3D-M 마지막 res 스테이지의 출력 채널 수입니다.
 X3D_M_FEATURE_CHANNELS = 192
-# 헤드 확장부(post_conv)를 거친 뒤의 채널 수 — 분류/CAM은 이 차원에서 이뤄진다.
+# 헤드 확장부(post_conv)를 거친 뒤의 채널 수입니다. 분류와 CAM은 이 차원에서 계산합니다.
 X3D_HEAD_CHANNELS = 2048
 
 
@@ -171,7 +171,7 @@ class HitAndRun3DCNN(nn.Module):
     def __init__(self, num_classes=2, pretrained=False, dropout_p=DROPOUT_P, temporal_pool=None):
         super(HitAndRun3DCNN, self).__init__()
         base = x3d_m(pretrained=pretrained)
-        # 헤드 시간 풀링(config.HEAD_TEMPORAL_POOL) — avg 는 원래 연산, top3·avgtop3 는 TemporalPool. 가중치 키는 같다.
+        # 헤드 시간 풀링(config.HEAD_TEMPORAL_POOL)입니다. avg는 원래 연산이고 top3, avgtop3는 TemporalPool이며, 가중치 키는 같습니다.
         if temporal_pool is None:
             import config
             temporal_pool = getattr(config, 'HEAD_TEMPORAL_POOL', 'avg')
@@ -179,7 +179,7 @@ class HitAndRun3DCNN(nn.Module):
             raise ValueError(f"HEAD_TEMPORAL_POOL 은 {'·'.join(HEAD_POOL_MODES)} 중 하나여야 합니다: {temporal_pool!r}")
         self.temporal_pool = temporal_pool
 
-        # blocks[-1]은 헤드. stem+res 스테이지와 분리한다.
+        # blocks[-1]은 헤드이므로 줄기와 res 스테이지만 떼어 냅니다.
         self.features = nn.Sequential(*list(base.blocks)[:-1])
 
         # 헤드의 확장부(pre_conv 192→432 → BN → ReLU → pool → post_conv 432→2048
@@ -234,12 +234,12 @@ class HitAndRun3DCNN(nn.Module):
 
     def forward(self, x):
         if self.training and GRAD_CHECKPOINT and GRAD_CHECKPOINT_BLOCKS is not None:
-            # 앞쪽 GRAD_CHECKPOINT_BLOCKS 개만 블록마다 체크포인팅(checkpoint_sequential 과 같은 계산)
+            # 앞쪽 GRAD_CHECKPOINT_BLOCKS개만 블록마다 체크포인팅합니다(checkpoint_sequential과 같은 계산).
             for i, block in enumerate(self.features):
                 x = (checkpoint(block, x, use_reentrant=False)
                      if i < GRAD_CHECKPOINT_BLOCKS else block(x))
         elif self.training and GRAD_CHECKPOINT:
-            # 백본만 체크포인팅. head_pool 은 CAM hook 대상이라 밖에 둔다.
+            # 백본만 체크포인팅합니다. head_pool은 CAM hook 대상이라 밖에 둡니다.
             x = checkpoint_sequential(
                 self.features, GRAD_CHECKPOINT_SEGMENTS, x, use_reentrant=False)
         else:

@@ -7,7 +7,7 @@ from pathlib import Path
 # 실행 환경에 맞게 이 파일의 값만 수정하세요.
 # ==========================================
 
-# 프로젝트 루트 기준 경로 (model/ 의 상위 폴더)
+# 프로젝트 루트 기준 경로(model/의 상위 폴더)
 _ROOT = Path(__file__).resolve().parent.parent
 
 # ---------- 디바이스 설정 ----------
@@ -26,7 +26,7 @@ INFER_DEVICE_TYPE = "cuda"    # 예측·평가(추론) 전용 디바이스
 # ---------- 공통 설정 ----------
 DATA_DIR = _ROOT / "data" / "train"
 VAL_DATA_DIR = _ROOT / "data" / "val"
-# 이 폴더가 학습/추론하는 백본 이름. 가중치 파일명에 붙어 모델을 구분한다.
+# 이 폴더의 백본 이름입니다. 가중치 파일 이름에 붙어 모델을 구분합니다.
 MODEL_NAME = "x3d"
 MODEL_NUM_CLASSES = 2
 CLIP_LENGTH = 30
@@ -111,12 +111,12 @@ TRAIN_LIGHT_DARK_PROB = 0.7          # 불빛을 넣을 때 먼저 밤처럼 어
 # 낮 영상(검은 테두리, ReA_0022)·흐린 낮(ReA_0051)을 야간으로, 화면 UI 가 밝은 야간(ReA_0021)을 낮으로 틀려서 목록으로 둔다.
 # 새 야간 영상을 넣으면 여기에 이름(확장자 없이)을 더한다.
 NIGHT_VIDEOS = frozenset({
-    # 학습: 사고 3 · 정상 3
+    # 학습: 사고 3, 정상 3
     '260827_ReA_0021', '260827_ReA_0032', '260827_ReA_0044', '260909_ReS_0019', '260909_ReS_0035',
     '260909_ReS_0039',
-    # 검증: 사고 1 · 정상 3
+    # 검증: 사고 1, 정상 3
     '260827_ReA_0031', '260909_ReS_0024', '260909_ReS_0026', '260909_ReS_0036',
-    # 평가: 사고 1 · 정상 2
+    # 평가: 사고 1, 정상 2
     '260828_TA_0020', '260909_TS_0007', '260909_TS_0011',
 })
 
@@ -147,13 +147,13 @@ TRAIN_SPLIT_LOCK = (Path(os.environ["TRAIN_SPLIT_LOCK"]) if os.environ.get("TRAI
 # 서버 RC 817개는 아직 안 쟀다(로컬 RC 16개는 모두 30fps). 목록으로 빼는 것만 끄기: 환경변수 EXCLUDE_LOW_FPS=0
 LOW_FPS_EXCLUDED_DIR = _ROOT / "data" / "excluded_lowfps"   # 안에 train/·eval/ — 원래 폴더 구조 그대로
 LOW_FPS_VIDEOS = (
-    # 학습(9)
+    # 학습 9개
     '260827_ReA_0029', '260827_ReA_0030',
     '260909_ReS_0002', '260909_ReS_0003', '260909_ReS_0004', '260909_ReS_0010',
     '260909_ReS_0016', '260909_ReS_0022', '260909_ReS_0025',
-    # 검증(1)
+    # 검증 1개
     '260827_ReA_0005',
-    # 평가(7)
+    # 평가 7개
     '260828_TA_0001', '260828_TA_0002', '260828_TA_0005',
     '260909_TS_0003', '260909_TS_0004', '260909_TS_0006', '260909_TS_0008',
 )
@@ -395,7 +395,7 @@ TRAIN_NUM_WORKERS = int(os.getenv("TRAIN_NUM_WORKERS", "0") or 0) or None
 # ※ 논문(Hwang & Lee 2024)은 3D-CNN을 scratch로 학습했으나 그 이유나 비교실험을
 #   제시하지 않았다. 어느 쪽이 나은지는 우리 데이터로 직접 비교해야 한다.
 PRETRAINED = os.getenv("PRETRAINED", "1").strip().lower() not in ("0", "false", "no")
-# 결과물이 서로 덮어쓰이지 않도록 사전학습 여부를 파일명에 박는다(ptY/ptN).
+# 결과물이 서로 덮어쓰이지 않도록 사전학습 여부를 파일 이름에 넣습니다(ptY, ptN).
 PRETRAIN_TAG = "ptY" if PRETRAINED else "ptN"
 # 입력 정규화 통계 — Kinetics-400 사전학습과 동일한 값 사용 (전이 효율 최대화)
 # ⚠️ pytorchvideo 계열(X3D/SlowFast)은 torchvision(S3D)과 통계가 다르다.
@@ -481,13 +481,13 @@ EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
 SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_261121_1915_ep026_ptY_bal_lqw_top3.pth"
-# 서버에서 코드를 고치지 않고 바꿀 때: .env 에 SERVICE_WEIGHTS=weights/<파일>.pth (상대경로는 프로젝트 루트 기준)
+# 서버에서 코드를 고치지 않고 바꿀 때는 .env에 SERVICE_WEIGHTS=weights/<파일>.pth를 줍니다(상대경로는 프로젝트 루트 기준).
 if os.getenv("SERVICE_WEIGHTS", "").strip():
     SERVICE_WEIGHTS_PATH = Path(os.environ["SERVICE_WEIGHTS"].strip())
     if not SERVICE_WEIGHTS_PATH.is_absolute():
         SERVICE_WEIGHTS_PATH = _ROOT / SERVICE_WEIGHTS_PATH
 
-# ---------- 단일 영상 예측/CAM 출력 전용 ----------
+# ---------- 영상 하나 예측과 CAM 출력 전용 ----------
 PREDICT_WEIGHTS_PATH = SERVICE_WEIGHTS_PATH
 PREDICT_VIDEO_PATH = _ROOT / "data" / "eval" / "real01.mp4"
 PREDICT_TXT_PATH = _ROOT / "data" / "eval" / "real01.txt"
@@ -531,9 +531,9 @@ PREDICT_CLIP_CAM_OVERLAY = True
 # 낮추면 넓게, 높이면 가장 강한 곳만 좁게 칠한다. 사용자가 보여 준 참고 모양(충돌 지점에 작은 무지개 고리)에 맞춰
 # 0.5 → 0.8 로 했다가, 0.8 은 칠해지는 칸이 1~5개뿐이라 근거가 길쭉해도 늘 동그랗게 나와 0.7 로(2026-10-27)
 PREDICT_CLIP_CAM_MIN = 0.7
-# 가장 강한 곳(가운데)의 히트맵 불투명도(0~1). 기준선에서 0 으로 시작해 안쪽으로 갈수록 진해진다
+# 가장 강한 곳(가운데)의 히트맵 불투명도(0~1)입니다. 기준선에서 0으로 시작해 안쪽으로 갈수록 진해집니다.
 PREDICT_CLIP_CAM_ALPHA = 0.9
-# 기준선에서 가운데까지 진해지는 빠르기 — 1 이면 고르게, 작을수록 안쪽으로 빨리 진해진다(고리가 또렷하게)
+# 기준선에서 가운데까지 진해지는 빠르기입니다. 1이면 고르게, 작을수록 안쪽으로 빨리 진해져 고리가 또렷해집니다.
 PREDICT_CLIP_CAM_GAMMA = 0.6
 # 사고 클립 앞뒤로 붙이는 여유(프레임). 사고 판정 구간 앞뒤로 이만큼 더 잘라 보여 준다.
 # (30fps 기준 1초. 프레임 단위라 fps 에 따라 실제 시간은 달라진다)

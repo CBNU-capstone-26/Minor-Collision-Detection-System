@@ -202,7 +202,7 @@ if __name__ == "__main__":
     if (args.run or args.paths) and args.mode != "suggest":
         parser.error("--run·--paths 는 --mode suggest 에만 씁니다.")
     if args.a_mode and args.mode != "train":
-        # 추론(평가·서비스)은 A 방식과 무관하다 — span 으로 학습한 가중치를 --weights 로 고른다
+        # 추론(평가, 서비스)은 학습 방식과 무관합니다. span으로 학습한 가중치는 --weights로 고릅니다.
         parser.error("--a-mode 는 학습(--mode train)에만 씁니다. 평가할 가중치는 --weights 로 고르세요.")
     if args.weights and args.mode == "train":
         parser.error("--weights 는 eval·predict·check-backend·detect 에만 씁니다.")
@@ -224,7 +224,7 @@ if __name__ == "__main__":
     if args.lr is not None and args.lr <= 0:
         parser.error("--lr 은 0보다 커야 합니다.")
     if args.scratch:
-        # 이름표(ptN)도 함께 바꾼다 — config 가 읽힐 때 이미 정해진 값이라서
+        # 이름표(ptN)도 함께 바꿉니다. config를 불러올 때 이미 정해진 값이기 때문입니다.
         config.PRETRAINED = False
         config.PRETRAIN_TAG = "ptN"
     if args.a_mode:
@@ -249,7 +249,7 @@ if __name__ == "__main__":
         from epoch_suggest import candidate_paths
         paths = candidate_paths(args.run)
         if not paths:
-            # 경로 대신 안내문이 W=$(...) 에 들어가지 않게 화면 오류로만 알리고 실패로 끝낸다
+            # 안내문이 경로 대신 W=$(...)에 들어가지 않도록 오류 출력으로만 알리고 실패로 끝냅니다.
             import sys
             print(f"추천할 에포크 가중치가 없습니다: {args.run}", file=sys.stderr)
             sys.exit(1)

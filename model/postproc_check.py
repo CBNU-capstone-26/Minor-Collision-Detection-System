@@ -56,7 +56,7 @@ def _now_post():
     return 'fps' if config.PREDICT_FPS_SCALED_POSTPROC else 'frame'
 
 
-# ── 영상 목록 ──────────────────────────────────────────────────────────────
+# 영상 목록
 
 def _label(mp4):
     bboxes, sf, ef = _read_label(str(mp4.with_suffix('.txt')))
@@ -100,7 +100,7 @@ def _val_videos(split):
         rel = rel.replace('\\', '/')
         if not rel.startswith('realdata/'):
             continue
-        # 검증 폴더(config.VAL_DATA_DIR, 11-04~)로 옮긴 영상도, 예전처럼 학습 폴더에 있는 영상도 찾는다
+        # 검증 폴더(config.VAL_DATA_DIR)로 옮긴 영상도, 학습 폴더에 남아 있는 영상도 찾습니다.
         roots = [Path(r) for r in (getattr(config, 'VAL_DATA_DIR', None), config.DATA_DIR) if r]
         mp4 = next((r / rel for r in roots if (r / rel).exists()), Path(config.DATA_DIR) / rel)
         if _excluded(mp4.stem):
@@ -111,7 +111,7 @@ def _val_videos(split):
     return out
 
 
-# ── 창별 P(A) ─────────────────────────────────────────────────────────────
+# 묶음별 P(A)
 
 def _read_crops(mp4, bbox):
     """서비스와 같은 크롭(0번 차량 박스, r=config.R_VALUE, 224) — uint8 RGB 목록."""
@@ -223,7 +223,7 @@ def _load_probs(wdir, set_key, mode):
     return dict(sorted(out.items()))
 
 
-# ── 서비스 판정 다시 계산 ────────────────────────────────────────────────────
+# 서비스 판정 다시 계산
 
 def _events(pa, meta, t, *, coarse_prob=None, fps_scale=None, min_span=None, use_coarse=None):
     """inference.predict_events_and_clips 의 이벤트 결정(창 간격 1). 반환: [(시작, 끝)] 원본 프레임, 평가한 창 수.
@@ -296,7 +296,7 @@ def _short(name):
     return name.split('_', 1)[1] if '_' in name else name
 
 
-# ── 서비스 재현 확인 ────────────────────────────────────────────────────────
+# 서비스 재현 확인
 
 def _service_check(model, wtag, sets, probs_root):
     """지금 설정 그대로의 다시 계산이 실제 서비스 함수(predict_events_and_clips)와 같은지 영상별로."""
@@ -327,7 +327,7 @@ def _service_check(model, wtag, sets, probs_root):
     return bad, total
 
 
-# ── 집계·보고 ───────────────────────────────────────────────────────────────
+# 집계와 보고
 
 def _grid():
     for mode in RESAMPLES:
@@ -492,7 +492,7 @@ def _report(results, wtags):
                 tot = results.get((wtag, *cfg), {}).get(set_key)
                 if tot:
                     print(f'  {_cfg_name(*cfg):<38} {_fmt(tot)}  {_lists(tot)}')
-        # 검증 영상으로 고른 설정 → 평가 영상에서 확인
+        # 검증 영상으로 고른 설정을 평가 영상에서 확인합니다.
         both = [(k, v) for k, v in results.items() if k[0] == wtag and 'val' in v and 'eval' in v]
         if not both:
             continue
@@ -512,7 +512,7 @@ def _report(results, wtags):
     print('· 모든 조합은 summary.csv, 영상별 P(A)·이벤트는 videos.csv, 창별 P(A)는 probs/ 에 있다.')
 
 
-# ── 실행 ────────────────────────────────────────────────────────────────────
+# 실행
 
 def main():
     ap = argparse.ArgumentParser(description='판정 기준·후처리·저fps 시간축 점검')
@@ -547,7 +547,7 @@ def main():
     finally:
         sys.stdout = tee.stdout
         tee.close()
-        # 오류로 멈췄을 때 [저장] 을 찍으면 끝난 줄 알고 다음 단계를 시작하는 대기 명령이 속는다(11-22)
+        # 오류로 멈췄을 때 [저장]을 찍으면 이어서 기다리던 명령이 끝난 줄 알고 다음 단계를 시작하므로 [중단]을 찍습니다.
         print(f'\n[저장] {out_dir}' if done else f'\n[중단] 오류로 멈춤 — 일부만 남음: {out_dir}')
 
 
@@ -562,7 +562,7 @@ def _run(args, out_dir, suffix):
         sets = {'eval': _folder_videos(args.folder)}
         print(f'평가 영상: {args.folder} — {len(sets["eval"])}개')
         if not args.no_val:
-            # 가중치마다 회차의 검증 영상이 다를 수 있어(TRAIN_FORCE_TRAIN_VIDEOS 등) 모두의 검증에 공통인 영상만 쓴다
+            # 가중치마다 회차의 검증 영상이 다를 수 있어(TRAIN_FORCE_TRAIN_VIDEOS 등) 모두의 검증에 공통인 영상만 씁니다.
             splits = ([Path(args.split)] if args.split else
                       list(dict.fromkeys(p for p in (_split_path(w, None) for w in args.weights) if p)))
             if not splits:
