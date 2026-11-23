@@ -12,6 +12,7 @@
     python -m model.main --mode suggest --run outputs/trainlogs/<회차 폴더>   # 학습 중·중단 후에도
 """
 import csv
+import shlex
 from pathlib import Path
 
 import config
@@ -108,10 +109,21 @@ def suggest(run_dir, k=None, gap=None):
     have = [p for p in files if p]
     if have:
         from hitandrun_model import weights_head_pool, weights_input_size
-        lines.append("  평가 명령(가중치 학습 설정을 자동으로 맞춥니다):")
+        lines.append("  평가 명령(하나씩 차례로 · 화면 로그는 outputs/console/):")
+        lines.append("    mkdir -p outputs/console && {")
         for path in have:
             size = weights_input_size(path.name)
             pool = weights_head_pool(path.name)
             env = (f"INPUT_SIZE={size} " if size else "") + (f"HEAD_TEMPORAL_POOL={pool} " if pool != 'avg' else "")
-            lines.append(f'    {env}python -u -m model.main --mode eval --weights "{path}"')
+            lines.append(f'      {env}python -u -m model.main --mode eval --weights {shlex.quote(str(path))};')
+        eval_log = shlex.quote(f'outputs/console/eval_{run_dir.name}_')
+        lines.append(f'    }} 2>&1 | tee {eval_log}$(date +%y%m%d_%H%M).log')
+        lines.append("  권장: 검증 영상 서비스 판정으로 순위(후반 절반 에포크를 재고 상위 2개 평가 명령을 냄):")
+        size = weights_input_size(have[0].name)
+        pool = weights_head_pool(have[0].name)
+        env = (f"INPUT_SIZE={size} " if size else "") + (f"HEAD_TEMPORAL_POOL={pool} " if pool != 'avg' else "")
+        rank_log = shlex.quote(f'outputs/console/rank_{run_dir.name}_')
+        lines.append(f"    mkdir -p outputs/console && {env}python -u -m model.epoch_rank "
+                     f"--run {shlex.quote(str(run_dir))} 2>&1 "
+                     f"| tee {rank_log}$(date +%y%m%d_%H%M).log")
     return pick, lines

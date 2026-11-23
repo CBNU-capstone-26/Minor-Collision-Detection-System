@@ -473,9 +473,11 @@ def train_model(
         rc_car1_val_dropped = n0 - len(val_rc_idx)
     # 사고 영상의 충돌 전·후 정상 클립(config.TRAIN_A_CONTEXT_NEG)은 학습 데이터셋에만 있고 맨 뒤에 붙는다.
     # 검증 폴더가 없어 학습 폴더 안에서 나눌 때 검증 쪽에 들어간 것은 뺀다(검증 데이터셋엔 그 번호가 없음).
+    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV)도 같다.
     if not use_val_dir:
-        val_rc_idx[:] = [i for i in val_rc_idx if not train_dataset.samples[i].get('ctx_neg')]
-        val_real_idx[:] = [i for i in val_real_idx if not train_dataset.samples[i].get('ctx_neg')]
+        _extra = lambda i: train_dataset.samples[i].get('ctx_neg') or train_dataset.samples[i].get('hardneg')  # noqa: E731
+        val_rc_idx[:] = [i for i in val_rc_idx if not _extra(i)]
+        val_real_idx[:] = [i for i in val_real_idx if not _extra(i)]
 
     print(f"[분할] 영상 {n_train_vid + n_val_vid}개 → train {n_train_vid} / "
           f"val {n_val_vid} (영상 단위, 누수 없음)")
@@ -524,6 +526,12 @@ def train_model(
     else:
         print("[A 방식] pre — 충돌 영상당 창 1개(충돌 시작 "
               f"{getattr(config, 'TRAIN_A_PRE_FRAMES', 0)}프레임 전부터)")
+    if val_dataset.span_windows:
+        print(f"[검증 지표] 기존(학습 방식대로) + 첫 창 재현율·구간 재현율(접근~충돌 종료 창 최대 "
+              f"{getattr(config, 'TRAIN_SPAN_MAX_WINDOWS', 6)}개 중 하나라도 A)·구분력 — "
+              f"판정 기준 P(A) {config.A_THRESHOLD:g}")
+    else:
+        print("[검증 지표] A 슬라이싱(TRAIN_A_SLICE_ENABLED)이 켜져 있어 구간 재현율 = 첫 창 재현율")
     # 실제 영상 S 의 1번 차량 클립 (config.TRAIN_S_REAL_USE_CAR1)
     car1 = [s for s in train_dataset.samples if s.get('car_id') == 1 and s['label'] == 0]
     if getattr(config, 'TRAIN_S_RC_USE_CAR1', False):
@@ -554,6 +562,20 @@ def train_model(
                     f"(충돌 전 {n_pre} · 후 {n_post}, 실제 {n_dom['real']} · RC {n_dom['rc']}) · 사고 영상 {n_vid}개 · 매 에포크 전부")
         run_tag = f"{run_tag}_ctx{'' if ctx_mode == 'real' else 'all'}{'' if abs(margin - 0.5) < 1e-9 else f'{margin:g}'}"
         print(f"[충돌 전·후 정상] {ctx_info}")
+    # 헷갈리는 정상 묶음(config.TRAIN_HARDNEG_CSV, 기본 끔) — 켜면 이름에 _hn(반복 k≠1 이면 _hn<k>)
+    hn_csv = getattr(config, 'TRAIN_HARDNEG_CSV', None)
+    hn_info = '끔'
+    if hn_csv:
+        tr_hn = [train_dataset.samples[i] for i in train_idx if train_dataset.samples[i].get('hardneg')]
+        rep = int(getattr(config, 'TRAIN_HARDNEG_REPEAT', 1))
+        n_dom = {d: sum(_domain(s['mp4_path']) == d for s in tr_hn) for d in ('real', 'rc')}
+        hn_info = (f"{os.path.relpath(hn_csv, config._ROOT)} — 클립 {len(tr_hn)}개(묶음 {len(tr_hn) // rep}개 × {rep}번, "
+                   f"실제 {n_dom['real']} · RC {n_dom['rc']}) · 영상 {len({s['video_key'] for s in tr_hn})}개 · "
+                   f"창 흔들기 ±{getattr(config, 'TRAIN_HARDNEG_JITTER', 5)}프레임 · 매 에포크 전부")
+        if not tr_hn:
+            raise ValueError(f'TRAIN_HARDNEG_CSV 의 묶음이 학습 영상과 하나도 맞지 않습니다: {hn_csv}')
+        run_tag = f"{run_tag}_hn{'' if rep == 1 else rep}"
+        print(f"[헷갈리는 정상] {hn_info}")
 
     # ── 학습 묶음 구성 (config.TRAIN_S_MOTION_CSV · TRAIN_SPREAD_A, 기본 끔) ──
     # 학습 쪽만 바꾸고 검증 로더는 그대로다. 켜면 이름에 _bal 을 붙여 기존 학습과 구분한다.
@@ -594,13 +616,27 @@ def train_model(
     # ── 저화질(압축) 증강 (config.TRAIN_LQ_AUG_PROB, 기본 끔) ── 켜면 이름에 _lq 를 붙여 기존 학습과 구분한다
     lq_p = float(getattr(config, 'TRAIN_LQ_AUG_PROB', 0) or 0)
     lq_default = (abs(float(config.TRAIN_LQ_SIZE_PROB) - 0.5) < 1e-9 and tuple(config.TRAIN_LQ_CRF_RANGE) == (28, 42))
+    lq_small = bool(getattr(config, 'TRAIN_LQ_SMALL', False))
     if lq_p > 0:
         # 10-29 의 설정 그대로면 _lq, 줄이기 비율·CRF 상한을 바꾼 약한 설정이면 _lqw(섞이지 않게)
-        run_tag = f"{run_tag}_{'lq' if lq_default else 'lqw'}"
+        run_tag = f"{run_tag}_{'lq' if lq_default else 'lqw'}{'s' if lq_small else ''}"
         lo, hi = config.TRAIN_LQ_SIZE_RANGE
         c_lo, c_hi = config.TRAIN_LQ_CRF_RANGE
         print(f"[저화질 증강] 켬 — 확률 {lq_p:g} · 원본 크롭 {config.TRAIN_LQ_MIN_CROP}px 이상만 · H.264 CRF {c_lo}~{c_hi}"
               f" · {config.TRAIN_LQ_SIZE_PROB:.0%}는 {lo}~{hi}px 로 줄였다 압축")
+
+    if lq_p > 0 and lq_small:
+        s_min, s_crf = config.TRAIN_LQ_SMALL_MIN, max(c_lo, min(c_hi, config.TRAIN_LQ_SMALL_CRF_MAX))
+        n_sm = {0: 0, 1: 0}
+        for i in train_idx:
+            smp = train_dataset.samples[i]
+            b = smp['bbox']
+            if s_min <= max(b[2] - b[0], b[3] - b[1]) < config.TRAIN_LQ_MIN_CROP:
+                n_sm[int(smp['label'])] += 1
+        print(f"[저화질 증강] 작은 크롭({s_min}~{config.TRAIN_LQ_MIN_CROP - 1}px)도 — 원래 크기로 줄여 CRF {c_lo}~{s_crf} 압축 후"
+              f" 다시 키움(TRAIN_LQ_SMALL) · 해당 학습 클립 충돌 {n_sm[1]} · 정상 {n_sm[0]}")
+    elif lq_small:
+        print("⚠️ TRAIN_LQ_SMALL 은 저화질 증강(TRAIN_LQ_AUG_PROB)이 켜져 있어야 씁니다 — 이번 학습엔 적용 안 됨")
 
     # ── 불빛 증강 (config.TRAIN_LIGHT_AUG_PROB, 기본 끔) ── 켜면 이름에 _light
     light_p = float(getattr(config, 'TRAIN_LIGHT_AUG_PROB', 0) or 0)
@@ -723,6 +759,7 @@ def train_model(
         ('학습률', f"헤드 {learning_rate:g} / 백본 {learning_rate * backbone_lr_mult:g}"),
         ('S 클립 차량', s_car_info),
         ('충돌 전·후 정상', ctx_info),
+        ('헷갈리는 정상', hn_info),
         ('묶음 구성', ' / '.join(l.strip() for l in balance_lines) if balance_on
                      else '기본(무작위 섞기, 정상 전부)'),
         ('A 클립 방식', (f'span (접근~충돌 종료를 창 여러 개로 전부 학습, 첫 창 무게 {first_w:g})'
@@ -751,7 +788,9 @@ def train_model(
                    + (f"{r_aug_p:.0%} 를 r {'·'.join(f'{v:g}' for v in r_aug_vals)}" if r_aug_p > 0 and r_aug_vals else '끔')
                    + ' (11-05~11-15 학습은 r 증강 없음, 그 전은 40% 를 r 1.5·2·2.33·3)'),
         ('저화질 증강', (f'확률 {lq_p:g} · 줄이기 {config.TRAIN_LQ_SIZE_PROB:g} · CRF {config.TRAIN_LQ_CRF_RANGE[0]}~'
-                    f'{config.TRAIN_LQ_CRF_RANGE[1]}') if lq_p > 0 else '끔'),
+                    f'{config.TRAIN_LQ_CRF_RANGE[1]}'
+                    + (f' · 작은 크롭 {config.TRAIN_LQ_SMALL_MIN}px~ 원래 크기 압축 CRF 상한 {config.TRAIN_LQ_SMALL_CRF_MAX}'
+                       if lq_small else ' · 작은 크롭 제외')) if lq_p > 0 else '끔'),
         ('fps 증강', f"확률 {fps_p:g} · {'·'.join(map(str, fps_ks))}장마다 한 장" if fps_p > 0 else '끔'),
         ('불빛 증강', f'확률 {light_p:g} (사고·정상 같은 확률)' if light_p > 0 else '끔'),
         ('클래스 가중치', f'정상 {class_weights[0]:g} · 사고 {class_weights[1]:g}' if class_weights else '없음'),
@@ -1043,8 +1082,9 @@ def train_model(
         def _fmt(d):
             if d is None:
                 return 'N/A'
-            rs = f"{d['rec']:.3f}" if d['rec'] is not None else '-'
-            return f"{d['loss']:.4f}/{d['acc']:.4f}/A{rs}"
+            def _v(k):
+                return f"{d[k]:.3f}" if d.get(k) is not None else '-'
+            return f"{d['loss']:.4f}/{d['acc']:.4f}/A{_v('rec')} 구간A{_v('spanRec')} 구분{_v('auc')}"
         print(f'Epoch [{epoch+1}/{num_epochs}] Train {avg_train_loss:.4f} | '
               f'val_rc(L/Acc/Arecall) {_fmt(rc)} | '
               f'val_real(L/Acc/Arecall) {_fmt(real)} | '

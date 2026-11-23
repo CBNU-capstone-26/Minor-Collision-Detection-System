@@ -724,9 +724,12 @@ def evaluate_folder_accuracy(model, folder_path=config.EVAL_FOLDER_PATH, **kwarg
     # A 클립 방식 span 으로 학습한 가중치면 회차 폴더·파일 이름에 _span 을 붙여 'pre' 결과와 구분한다.
     # 묶음 구성(--balance)으로 학습한 가중치는 _bal, 저화질 증강(TRAIN_LQ_AUG_PROB)은 _lq 도 붙인다.
     # fps 증강(TRAIN_FPS_AUG_PROB)은 _fps, 224 아닌 입력 크기(INPUT_SIZE)는 _s<크기>, 헤드 시간 풀링(HEAD_TEMPORAL_POOL)은 _top3 등.
+    # 충돌 전·후 정상(_ctx)·헷갈리는 정상(_hn) 학습도 붙인다(11-22 — 없으면 평가 폴더 이름이 같은 조건의 다른 학습과 같아짐)
     name_tag = (tag + ('_span' if '_span_' in weights else '')
+                + ('_ctx' if '_ctx_' in weights or '_ctxall' in weights else '')
+                + ('_hn' if '_hn_' in weights or any(f'_hn{k}_' in weights for k in range(2, 10)) else '')
                 + ('_bal' if '_bal_' in weights else '')
-                + ('_lq' if '_lq_' in weights else '_lqw' if '_lqw_' in weights else '')
+                + next((t for t in ('_lqws', '_lqs', '_lqw', '_lq') if f'{t}_' in weights), '')
                 + ('_fps' if '_fps_' in weights else '')
                 + ('_light' if '_light_' in weights else '')
                 + (f'_s{config.RESIZE[0]}' if config.RESIZE[0] != 224 else '')

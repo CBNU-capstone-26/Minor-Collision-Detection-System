@@ -69,6 +69,16 @@ TRAIN_LQ_SIZE_RANGE = (48, 128)      # 줄일 때 크기(px). 원래 크롭의 3
 # '압축 화질 튐은 사고가 아니다'(ReS_0018 오탐)를 가르친다. 기본값(0.5·42)이 아니면 이름에 _lq 대신 _lqw.
 TRAIN_LQ_SIZE_PROB = float(os.getenv("TRAIN_LQ_SIZE_PROB", "0.5") or 0)   # 압축할 때 먼저 줄이는 비율
 TRAIN_LQ_CRF_RANGE = (28, int(os.getenv("TRAIN_LQ_CRF_MAX", "42") or 42))  # H.264 CRF(클수록 압축 심함). 224px 30프레임 PSNR 약 30 ~ 22dB
+# 작은 크롭도 저화질 증강(2026-11-23, 기본 끔 — 저화질 증강이 켜져 있어야 씀): ep39 는 H.264 CRF 35 로 압축하면
+# 크롭이 작은 평가 사고만 놓쳤다(robust_check 261122_022726 — TA_0009 126px 0.99→0.05 · TA_0011 42px 1.00→0.27 ·
+# TA_0016 104px 0.98→0.16, 191px 이상은 그대로). 위 TRAIN_LQ_MIN_CROP 때문에 학습 사고 43개 중 10개(128px 미만)는
+# 압축된 모습을 본 적이 없다. 압축 뒤에도 충돌 흔들림은 남아(원본과 움직임 지도 상관 0.87~0.98) 증거가 지워진 게 아니라
+# 처음 보는 모습이라 정상 쪽으로 기운 것으로 본다. 켜면 TRAIN_LQ_SMALL_MIN 이상 128px 미만 크롭도 같은 확률로, 실제 CCTV 처럼
+# 원래 크기(짝수)로 줄여 압축한 뒤 다시 키운다(줄이기 비율은 안 씀). 사고·정상 구분 없음. CRF 상한은 TRAIN_LQ_SMALL_CRF_MAX 까지.
+# 켜기: 환경변수 TRAIN_LQ_SMALL=1 (이름 _lq/_lqw 가 _lqs/_lqws 로). 끄면 난수를 더 쓰지 않아 지금과 같다.
+TRAIN_LQ_SMALL = os.getenv("TRAIN_LQ_SMALL", "").strip() not in ("", "0")
+TRAIN_LQ_SMALL_MIN = 32              # 이보다 작은 크롭은 그대로(학습 실차 사고 최소 49px)
+TRAIN_LQ_SMALL_CRF_MAX = int(os.getenv("TRAIN_LQ_SMALL_CRF_MAX", "36") or 36)
 
 # ---------- fps 증강 (실험용, 기본 끔, 2026-10-30) ----------
 # RC 833개는 전부 30fps 이고 실제 사고 중 10fps 는 3개뿐인데, 평가 영상은 30개 중 6개가 10fps 다. 모델은 늘 30프레임을
@@ -275,6 +285,20 @@ if TRAIN_A_CONTEXT_NEG not in (None, "real", "all"):
     raise ValueError(f"TRAIN_A_CONTEXT_NEG 는 real · all · 빈 값 중 하나여야 합니다: {_ctx!r}")
 TRAIN_A_CONTEXT_NEG_MARGIN_SEC = float(os.getenv("TRAIN_A_CONTEXT_NEG_MARGIN_SEC", "0.5") or 0.5)
 TRAIN_A_CONTEXT_NEG_STRIDE = 30
+# 2026-11-22 결과: 충돌 밖 A·표시 늦음은 크게 줄었지만 놓침 검증 0→2~3·평가 0→4~6 이라 미채택(ep39 유지).
+
+# ---------- 헷갈리는 정상 묶음(하드 네거티브) 더 학습 (실험용, 기본 끔, 2026-11-22) ----------
+# 남은 오탐은 모두 다른 차가 대상 차 앞·뒤·옆을 지나가는 장면이다(평가 TS_0002·0007·0009·0011 — 멀고 작은 박스라
+# 화면 전체로는 멈춘 장면처럼 보임). model/hardneg_mine.py 가 학습 영상(실제 정상 + 사고 영상의 충돌에서 3초 이상 먼 곳,
+# --rc 면 RC 도)에서 '정상인데 P(A) 높은 묶음'을 캐 CSV 로 낸다. 켜면 그 묶음을 정상 클립으로 학습 데이터셋 맨 뒤에 붙인다.
+#   · 검증은 그대로(학습 데이터셋에만). 창 흔들기는 캔 위치 ±TRAIN_HARDNEG_JITTER 프레임 안 — 지나가는 장면이 창에 남게.
+#     fps 증강은 걸지 않고, balance 에선 솎지 않고 매 에포크 전부 쓴다. TRAIN_HARDNEG_REPEAT 번 넣어 더 자주 본다.
+#   · 안 B(충돌 0.5초 옆 정상)는 미세 충돌을 놓치게 했다 → 캘 때 충돌과 먼 곳만(기본 3초).
+#   켜기: 환경변수 TRAIN_HARDNEG_CSV=outputs/hardneg/<시각>/hardneg.csv (프로젝트 루트 기준 또는 절대 경로). 이름 _hn(반복 k≠1 이면 _hn<k>).
+_hn = os.getenv("TRAIN_HARDNEG_CSV", "").strip()
+TRAIN_HARDNEG_CSV = (Path(_hn) if Path(_hn).is_absolute() else _ROOT / _hn) if _hn else None
+TRAIN_HARDNEG_REPEAT = max(1, int(os.getenv("TRAIN_HARDNEG_REPEAT", "1") or 1))
+TRAIN_HARDNEG_JITTER = 5
 
 # ---------- 학습 묶음 구성: 빈 장면 정상 솎기 + 묶음마다 충돌 고르게 (실험용, 기본 끔) ----------
 # 2026-10-22 서버 측정(model/s_motion_check.py, outputs/s_motion/261022_0323): A:S 1:20.5,
@@ -456,7 +480,7 @@ EVAL_LOG_DIR = _ROOT / "outputs" / "evallogs"
 
 # ---------- 웹 서비스(백엔드 Celery 워커) 전용 ----------
 # 백엔드 prediction_job이 로드하는 배포 가중치. 반드시 X3D-M 래퍼 구조(.pth)여야 한다.
-SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_261121_1915_ep039_ptY_bal_lqw_top3.pth"
+SERVICE_WEIGHTS_PATH = _ROOT / "weights" / "hitandrun_x3d_261121_1915_ep026_ptY_bal_lqw_top3.pth"
 # 서버에서 코드를 고치지 않고 바꿀 때: .env 에 SERVICE_WEIGHTS=weights/<파일>.pth (상대경로는 프로젝트 루트 기준)
 if os.getenv("SERVICE_WEIGHTS", "").strip():
     SERVICE_WEIGHTS_PATH = Path(os.environ["SERVICE_WEIGHTS"].strip())
